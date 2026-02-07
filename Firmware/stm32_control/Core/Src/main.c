@@ -64,7 +64,10 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+int main ()
+{
+  while(1);
+}
 /* USER CODE END 0 */
 
 /**

@@ -1,4 +1,4 @@
-name: ESP32 Build Test
+name: GAR Build ESP32 and STM32 Firmware
 
 on:
   push:
@@ -25,3 +25,20 @@ jobs:
         run: |
           cd Firmware/esp32_gateway
           pio run
+
+  build-stm32:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: Install ARM Toolchain
+          uses: carlosperate/arm-none-eabi-gcc-action@v1
+          with:
+            # Esta versión es muy estable para STM32F4
+            release: '10.3-2021.10' 
+
+        - name: Build STM32 Firmware
+          run: |
+            cd Firmware/stm32_control
+            make -j$(nproc)

@@ -23,5 +23,5 @@ jobs:
 
       - name: Build ESP32 Firmware
         run: |
-          cd firmware/esp32_gateway
+          cd Firmware/esp32_gateway
           pio run

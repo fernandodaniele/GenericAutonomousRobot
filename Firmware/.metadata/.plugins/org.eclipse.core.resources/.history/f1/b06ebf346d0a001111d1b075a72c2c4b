@@ -1,0 +1,13 @@
+/*
+ * drv_motor.h
+ *
+ *  Created on: Feb 15, 2026
+ *      Author: fer_e
+ */
+
+#ifndef CORE_INC_DRV_MOTOR_H_
+#define CORE_INC_DRV_MOTOR_H_
+
+
+
+#endif /* CORE_INC_DRV_MOTOR_H_ */

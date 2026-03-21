@@ -1,0 +1,29 @@
+/*
+ * mid_kinematics.c
+ *
+ *  Created on: Feb 15, 2026
+ *      Author: fer_e
+ */
+
+#include "mid_kinematics.h"
+#include "drv_motor.h" // Para usar MOTOR_MAX_SPEED
+
+void Kinematics_Compute(RobotCommand_t cmd, int16_t* out_l_pwm, int16_t* out_r_pwm) {
+
+    // 1. Calculo de velocidades diferenciales
+    // Nota: El factor de angular_vel puede ajustarse segun ROBOT_WHEEL_BASE
+    float left = cmd.linear_vel - (cmd.angular_vel * (ROBOT_WHEEL_BASE / 2.0f));
+    float right = cmd.linear_vel + (cmd.angular_vel * (ROBOT_WHEEL_BASE / 2.0f));
+
+    // 2. Mapeo a unidades de PWM (-1000 a 1000)
+    // Aqui los alumnos deberan ajustar la escala segun las pruebas de campo
+    *out_l_pwm = (int16_t)left;
+    *out_r_pwm = (int16_t)right;
+
+    // 3. Limite de seguridad final (Clamping)
+    if (*out_l_pwm > MOTOR_MAX_SPEED) *out_l_pwm = MOTOR_MAX_SPEED;
+    if (*out_l_pwm < MOTOR_MIN_SPEED) *out_l_pwm = MOTOR_MIN_SPEED;
+
+    if (*out_r_pwm > MOTOR_MAX_SPEED) *out_r_pwm = MOTOR_MAX_SPEED;
+    if (*out_r_pwm < MOTOR_MIN_SPEED) *out_r_pwm = MOTOR_MIN_SPEED;
+}

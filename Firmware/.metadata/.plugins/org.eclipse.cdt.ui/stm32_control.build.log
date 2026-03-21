@@ -1,0 +1,6 @@
+11:48:50 **** Incremental Build of configuration Debug for project stm32_control ****
+make -j12 
+make: Nothing to be done for 'all'.
+
+11:48:50 Build Finished. 0 errors, 0 warnings. (took 431ms)
+

@@ -138,6 +138,16 @@
 			<locationURI>PROJECT_LOC/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c</locationURI>
 		</link>
 		<link>
+			<name>Drivers/STM32F4xx_HAL_Driver/stm32f4xx_hal_tim.c</name>
+			<type>1</type>
+			<locationURI>PROJECT_LOC/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c</locationURI>
+		</link>
+		<link>
+			<name>Drivers/STM32F4xx_HAL_Driver/stm32f4xx_hal_tim_ex.c</name>
+			<type>1</type>
+			<locationURI>PROJECT_LOC/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c</locationURI>
+		</link>
+		<link>
 			<name>Drivers/STM32F4xx_HAL_Driver/stm32f4xx_ll_usb.c</name>
 			<type>1</type>
 			<locationURI>PROJECT_LOC/Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_usb.c</locationURI>
@@ -178,19 +188,14 @@
 			<locationURI>PROJECT_LOC/Core/Src/stm32f4xx_it.c</locationURI>
 		</link>
 		<link>
-			<name>Application/User/USB_HOST/App/usb_host.c</name>
+			<name>Application/User/Core/tim.c</name>
 			<type>1</type>
-			<locationURI>PROJECT_LOC/USB_HOST/App/usb_host.c</locationURI>
+			<locationURI>PROJECT_LOC/Core/Src/tim.c</locationURI>
 		</link>
 		<link>
-			<name>Application/User/USB_HOST/Target/usbh_conf.c</name>
+			<name>Application/User/Core/usb_otg.c</name>
 			<type>1</type>
-			<locationURI>PROJECT_LOC/USB_HOST/Target/usbh_conf.c</locationURI>
-		</link>
-		<link>
-			<name>Application/User/USB_HOST/Target/usbh_platform.c</name>
-			<type>1</type>
-			<locationURI>PROJECT_LOC/USB_HOST/Target/usbh_platform.c</locationURI>
+			<locationURI>PROJECT_LOC/Core/Src/usb_otg.c</locationURI>
 		</link>
 	</linkedResources>
 </projectDescription>

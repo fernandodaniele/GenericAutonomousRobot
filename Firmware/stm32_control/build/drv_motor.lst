@@ -1,0 +1,122 @@
+ARM GAS  C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"drv_motor.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/drv_motor.c"
+  20              		.section	.text.Motor_Init,"ax",%progbits
+  21              		.align	1
+  22              		.global	Motor_Init
+  23              		.syntax unified
+  24              		.thumb
+  25              		.thumb_func
+  27              	Motor_Init:
+  28              	.LVL0:
+  29              	.LFB134:
+   1:Core/Src/drv_motor.c **** /*
+   2:Core/Src/drv_motor.c ****  * drv_motor.c
+   3:Core/Src/drv_motor.c ****  *
+   4:Core/Src/drv_motor.c ****  *  Created on: Feb 15, 2026
+   5:Core/Src/drv_motor.c ****  *      Author: Fernando E. Daniele
+   6:Core/Src/drv_motor.c ****  */
+   7:Core/Src/drv_motor.c **** 
+   8:Core/Src/drv_motor.c **** 
+   9:Core/Src/drv_motor.c **** #include "drv_motor.h"
+  10:Core/Src/drv_motor.c **** 
+  11:Core/Src/drv_motor.c **** void Motor_Init(MotorHandle_t* motor) {
+  30              		.loc 1 11 39 view -0
+  31              		.cfi_startproc
+  32              		@ args = 0, pretend = 0, frame = 0
+  33              		@ frame_needed = 0, uses_anonymous_args = 0
+  34              		@ link register save eliminated.
+  12:Core/Src/drv_motor.c **** 
+  13:Core/Src/drv_motor.c **** }
+  35              		.loc 1 13 1 view .LVU1
+  36 0000 7047     		bx	lr
+  37              		.cfi_endproc
+  38              	.LFE134:
+  40              		.section	.text.Motor_SetSpeed,"ax",%progbits
+  41              		.align	1
+  42              		.global	Motor_SetSpeed
+  43              		.syntax unified
+  44              		.thumb
+  45              		.thumb_func
+  47              	Motor_SetSpeed:
+ARM GAS  C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s 			page 2
+
+
+  48              	.LVL1:
+  49              	.LFB135:
+  14:Core/Src/drv_motor.c **** 
+  15:Core/Src/drv_motor.c **** void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed) {
+  50              		.loc 1 15 58 view -0
+  51              		.cfi_startproc
+  52              		@ args = 0, pretend = 0, frame = 0
+  53              		@ frame_needed = 0, uses_anonymous_args = 0
+  54              		@ link register save eliminated.
+  16:Core/Src/drv_motor.c ****   
+  17:Core/Src/drv_motor.c **** }
+  55              		.loc 1 17 1 view .LVU3
+  56 0000 7047     		bx	lr
+  57              		.cfi_endproc
+  58              	.LFE135:
+  60              		.section	.text.Motor_Stop,"ax",%progbits
+  61              		.align	1
+  62              		.global	Motor_Stop
+  63              		.syntax unified
+  64              		.thumb
+  65              		.thumb_func
+  67              	Motor_Stop:
+  68              	.LVL2:
+  69              	.LFB136:
+  18:Core/Src/drv_motor.c **** 
+  19:Core/Src/drv_motor.c **** void Motor_Stop(MotorHandle_t* motor) {
+  70              		.loc 1 19 39 view -0
+  71              		.cfi_startproc
+  72              		@ args = 0, pretend = 0, frame = 0
+  73              		@ frame_needed = 0, uses_anonymous_args = 0
+  74              		@ link register save eliminated.
+  20:Core/Src/drv_motor.c **** 
+  21:Core/Src/drv_motor.c **** }
+  75              		.loc 1 21 1 view .LVU5
+  76 0000 7047     		bx	lr
+  77              		.cfi_endproc
+  78              	.LFE136:
+  80              		.text
+  81              	.Letext0:
+  82              		.file 2 "C:\\ST\\STM32CubeIDE_2.1.1\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+  83              		.file 3 "C:\\ST\\STM32CubeIDE_2.1.1\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltools
+  84              		.file 4 "Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f407xx.h"
+  85              		.file 5 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_def.h"
+  86              		.file 6 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_dma.h"
+  87              		.file 7 "Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h"
+  88              		.file 8 "Core/Inc/drv_motor.h"
+ARM GAS  C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s 			page 3
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 drv_motor.c
+C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s:21     .text.Motor_Init:00000000 $t
+C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s:27     .text.Motor_Init:00000000 Motor_Init
+C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s:41     .text.Motor_SetSpeed:00000000 $t
+C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s:47     .text.Motor_SetSpeed:00000000 Motor_SetSpeed
+C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s:61     .text.Motor_Stop:00000000 $t
+C:\Users\leogo\AppData\Local\Temp\ccX9WyHh.s:67     .text.Motor_Stop:00000000 Motor_Stop
+
+NO UNDEFINED SYMBOLS

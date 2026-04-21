@@ -53,3 +53,24 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Build output files
+*.lst
+
+# Firmware-specific build directories and IDE configuration
+Firmware/**/build/
+Firmware/**/Debug/
+Firmware/**/Release/
+Firmware/**/.settings/
+Firmware/**/.externalToolBuilders/
+Firmware/**/.metadata/
+
+# STM32 IDE configuration files
+Firmware/stm32_control/.cproject
+Firmware/stm32_control/.project
+Firmware/stm32_control/.mxproject
+Firmware/stm32_control/*.launch
+
+# ESP32 configuration files (generated per board)
+Firmware/esp32_gateway/sdkconfig*
+Firmware/esp32_gateway/.vscode/

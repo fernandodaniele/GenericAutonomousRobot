@@ -73,3 +73,4 @@ Firmware/stm32_control/*.launch
 
 # ESP32 configuration files (generated per board)
 Firmware/esp32_gateway/sdkconfig*
+Firmware/esp32_gateway/.vscode/

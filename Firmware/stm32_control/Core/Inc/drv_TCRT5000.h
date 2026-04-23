@@ -14,10 +14,6 @@
 /* Cantidad de sensores */
 #define TCRT_NUM_SENSORS 2
 
-/* Índices en el buffer DMA */
-#define TCRT_LEFT_INDEX   0
-#define TCRT_RIGHT_INDEX  1
-
 /* API */
 void drv_tcrt5000_init(void);
 void drv_tcrt5000_update(void);

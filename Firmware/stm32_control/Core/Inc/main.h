@@ -113,6 +113,14 @@ void Error_Handler(void);
 #define I2S3_SCK_GPIO_Port GPIOC
 #define I2S3_SD_Pin GPIO_PIN_12
 #define I2S3_SD_GPIO_Port GPIOC
+#define AIN1_Pin GPIO_PIN_0
+#define AIN1_GPIO_Port GPIOD
+#define AIN2_Pin GPIO_PIN_1
+#define AIN2_GPIO_Port GPIOD
+#define BIN1_Pin GPIO_PIN_2
+#define BIN1_GPIO_Port GPIOD
+#define BIN2_Pin GPIO_PIN_3
+#define BIN2_GPIO_Port GPIOD
 #define Audio_RST_Pin GPIO_PIN_4
 #define Audio_RST_GPIO_Port GPIOD
 #define OTG_FS_OverCurrent_Pin GPIO_PIN_5
@@ -121,6 +129,10 @@ void Error_Handler(void);
 #define SWO_GPIO_Port GPIOB
 #define Audio_SCL_Pin GPIO_PIN_6
 #define Audio_SCL_GPIO_Port GPIOB
+#define TIM4_CH2_PWMA_Pin GPIO_PIN_7
+#define TIM4_CH2_PWMA_GPIO_Port GPIOB
+#define TIM4_CH3_PWMB_Pin GPIO_PIN_8
+#define TIM4_CH3_PWMB_GPIO_Port GPIOB
 #define Audio_SDA_Pin GPIO_PIN_9
 #define Audio_SDA_GPIO_Port GPIOB
 #define MEMS_INT2_Pin GPIO_PIN_1

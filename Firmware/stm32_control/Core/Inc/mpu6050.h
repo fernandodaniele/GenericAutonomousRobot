@@ -1,8 +1,5 @@
 /*
- * mpu6050.h
- *
- *  Created on: Nov 13, 2019
- *      Author: Bulanov Konstantin
+
  */
 
 #ifndef INC_GY521_H_

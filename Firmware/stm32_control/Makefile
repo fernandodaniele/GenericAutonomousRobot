@@ -67,7 +67,9 @@ Core/Src/spi.c \
 Core/Src/tim.c \
 Core/Src/drv_motor.c \
 Core/Src/drv_ultrasound.c \
+Core/Src/drv_sd_spi.c \
 Core/Src/mid_kinematics.c \
+Core/Src/mid_log.c \
 Core/Src/sysmem.c \
 Core/Src/syscalls.c \
 USB_DEVICE/App/usb_device.c \

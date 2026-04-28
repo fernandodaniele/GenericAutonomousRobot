@@ -1,32 +1,43 @@
-/*
- * drv_ultrasound.h
- *
- *  Created on: Feb 15, 2026
- *      Author: Fernando E. Daniele
- */
-
-#ifndef CORE_INC_DRV_ULTRASOUND_H_
-#define CORE_INC_DRV_ULTRASOUND_H_
+#ifndef DRV_ULTRASOUND_H_
+#define DRV_ULTRASOUND_H_
 
 #include "stm32f4xx_hal.h"
 
-typedef struct {
-    GPIO_TypeDef* trig_port;
-    uint16_t trig_pin;
-    GPIO_TypeDef* echo_port;
-    uint16_t echo_pin;
-    TIM_HandleTypeDef* timer; // Timer to measure microseconds (e.g. TIM2)
-} Ultrasound_t;
+/*
+ * Driver para sensor de distancia ultrasónico HC-SR04 — STM32F407VG @ 168 MHz.
+ *
+ * Hardware:
+ *   TRIG: PB4  — salida GPIO push-pull
+ *   ECHO: PA6  — TIM3 CH1 (captura de entrada, ambos flancos, DMA, AF2)
+ *
+ * TIM3 (APB1, 84 MHz) configurado a 1 MHz con PSC=83.
+ * DMA1 Stream4 Channel5 captura dos timestamps de 16 bits (flanco ascendente y descendente).
+ * El pulso de TRIG (10 µs) se genera con el contador DWT — sin timer adicional.
+ *
+ * NOTA: HAL_TIM_IC_MspInit y HAL_TIM_IC_CaptureCallback están definidos en
+ * drv_ultrasound.c. Si otros drivers usan TIM IC, unificar esos callbacks.
+ */
 
 /**
- * @brief Initializes the sensor (make sure the timer is configured to 1MHz)
+ * @brief Inicializa el GPIO de TRIG y TIM3 con DMA para captura del ECHO.
  */
-void Ultrasound_Init(Ultrasound_t* dev);
+void HCSR04_Init(void);
 
 /**
- * @brief Performs a reading and returns the distance in millimeters.
- * @return Distance in mm. Returns 0 if error or out of range.
+ * @brief Emite un pulso de 10 µs en TRIG y arma la captura DMA del ECHO.
  */
-uint32_t Ultrasound_Read_mm(Ultrasound_t* dev);
+void HCSR04_Trigger(void);
 
-#endif /* CORE_INC_DRV_ULTRASOUND_H_ */
+/**
+ * @brief Indica si la captura DMA completó (flanco descendente recibido).
+ * @return 1 si hay nueva medición disponible, 0 si aún está pendiente.
+ */
+uint8_t HCSR04_IsReady(void);
+
+/**
+ * @brief Calcula la distancia a partir de los timestamps capturados.
+ * @return Distancia en metros. Consume el resultado (marca como no listo).
+ */
+float HCSR04_GetDistance(void);
+
+#endif /* DRV_ULTRASOUND_H_ */

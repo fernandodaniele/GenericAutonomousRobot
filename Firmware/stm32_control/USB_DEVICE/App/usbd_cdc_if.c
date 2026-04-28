@@ -94,7 +94,7 @@ uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
 uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* USER CODE BEGIN PRIVATE_VARIABLES */
-
+static uint8_t s_dtr_active = 0;  /* 1 cuando el host abre el puerto (DTR activo) */
 /* USER CODE END PRIVATE_VARIABLES */
 
 /**
@@ -228,7 +228,8 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
     break;
 
     case CDC_SET_CONTROL_LINE_STATE:
-
+      /* pbuf[0] bit 0 = DTR: el host abrió (1) o cerró (0) el puerto */
+      s_dtr_active = (pbuf[0] & 0x01u) ? 1u : 0u;
     break;
 
     case CDC_SEND_BREAK:
@@ -316,7 +317,9 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
-
+uint8_t CDC_IsConnected(void) {
+    return s_dtr_active;
+}
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 
 /**

@@ -109,7 +109,10 @@ extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
 
 /* USER CODE BEGIN EXPORTED_FUNCTIONS */
-
+/**
+ * @brief  Retorna 1 si el host tiene el puerto serie abierto (DTR activo).
+ */
+uint8_t CDC_IsConnected(void);
 /* USER CODE END EXPORTED_FUNCTIONS */
 
 /**

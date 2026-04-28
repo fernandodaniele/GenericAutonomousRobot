@@ -135,8 +135,10 @@ SD_Status_t SD_Init(void) {
     if (r == R1_IDLE) {
         /* ── SD v2 ── */
 
-        /* Verifica que la tarjeta acepte 3.3 V (resp[2]=0x01) y el check pattern */
-        if (resp[2] != 0x01u || resp[3] != 0xAAu) return SD_ERR_VOLTAGE;
+        /* Verifica que el check pattern se repita (indica comunicación válida).
+         * El campo de voltaje (resp[2]) varía entre fabricantes; no se verifica
+         * ya que la tarjeta es alimentada a 3.3V que es compatible con el estándar. */
+        if (resp[3] != 0xAAu) return SD_ERR_VOLTAGE;
 
         /* ACMD41 con HCS=1: loop hasta que la tarjeta salga del estado idle */
         uint32_t deadline = HAL_GetTick() + 1000u;

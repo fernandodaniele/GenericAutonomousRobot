@@ -18,11 +18,13 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "adc.h"
 #include "i2c.h"
 #include "i2s.h"
 #include "spi.h"
 #include "tim.h"
 #include "usb_device.h"
+#include "usbd_cdc_if.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -30,6 +32,7 @@
 #include "drv_motor.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
+#include "drv_TCRT5000.c"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -66,49 +69,74 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int main ()
+int main(void)
 {
-	/* Reset peripherals, initialize Flash and Systick */
-	  HAL_Init();
-	  SystemClock_Config();
+    HAL_Init();
+    SystemClock_Config();
 
-	  /* Initialize all configured peripherals */
-	  MX_GPIO_Init();
-	  MX_TIM2_Init();
-	  MX_TIM4_Init();
+    MX_GPIO_Init();
+    MX_TIM2_Init();
+    MX_TIM4_Init();
+    MX_ADC1_Init();
     MX_USB_DEVICE_Init();
-	  motor_l.channel = TIM_CHANNEL_2;
-	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
-	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
-	  Motor_Init(&motor_l);
 
-	  /* 2. Right Motor Driver Configuration */
-	  motor_r.htim = &htim4;
-	  motor_r.channel = TIM_CHANNEL_3;
-	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
-	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
-	  Motor_Init(&motor_r);
+    motor_l.channel = TIM_CHANNEL_2;
+    motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
+    motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
+    Motor_Init(&motor_l);
 
-	  /* 3. Ultrasound Driver Configuration */
-	  hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
-	  hc_sr04.echo_port = GPIOB; hc_sr04.echo_pin = GPIO_PIN_5;
-	  hc_sr04.timer = &htim2;
-	  Ultrasound_Init(&hc_sr04);
+    motor_r.htim = &htim4;
+    motor_r.channel = TIM_CHANNEL_3;
+    motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
+    motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
+    Motor_Init(&motor_r);
 
-	  uint8_t data[10] = "Hola";
-	  uint32_t value = 2026;
-	  /* Infinite loop */
-	  while (1)
-	  {
-      /* Blink LD4 every 1 second (TEST) */
-      HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
-      //sprintf(data, "%.2f V\n", value);
-      CDC_Transmit_FS(data, strlen(data));
-      HAL_Delay(1000);
-    }
+    hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
+    hc_sr04.echo_port = GPIOB; hc_sr04.echo_pin = GPIO_PIN_5;
+    hc_sr04.timer = &htim2;
+    Ultrasound_Init(&hc_sr04);
+
+    drv_tcrt5000_init();
+
+       /* USER CODE BEGIN 2 */
+       HAL_Delay(2000);
+       CDC_Transmit_FS((uint8_t *)"=== TEST TCRT5000 ===\r\n", 23);
+
+       char     tx_buf[48];
+       uint32_t last_print = 0;
+       /* USER CODE END 2 */
+
+       while (1)
+       {
+           /* USER CODE BEGIN WHILE */
+           drv_tcrt5000_update();
+
+           tcrt_reading_t left  = drv_tcrt5000_get_left();
+           tcrt_reading_t right = drv_tcrt5000_get_right();
+
+           uint32_t now = HAL_GetTick();
+           if ((now - last_print) >= 100)
+           {
+               last_print = now;
+
+               const char *ls = (left.state  == TCRT_STATE_LINE)  ? "LINE " :
+                                (left.state  == TCRT_STATE_CLIFF) ? "CLIFF" : "FLOOR";
+               const char *rs = (right.state == TCRT_STATE_LINE)  ? "LINE " :
+                                (right.state == TCRT_STATE_CLIFF) ? "CLIFF" : "FLOOR";
+
+               snprintf(tx_buf, sizeof(tx_buf),
+                   "L:%4u[%s%s] R:%4u[%s%s]\r\n",
+                   left.value,  ls, left.unstable  ? "?" : " ",
+                   right.value, rs, right.unstable ? "?" : " ");
+
+               CDC_Transmit_FS((uint8_t *)tx_buf, strlen(tx_buf));
+           }
+
+           HAL_Delay(10);
+           /* USER CODE END WHILE */
+       }
+
 }
-
-
 /* USER CODE END 0 */
 
 /**
@@ -174,9 +202,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  while (1)
-  {
-  }
+
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

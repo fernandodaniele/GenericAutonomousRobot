@@ -18,14 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "task_example.h"
 #include "i2c.h"
 #include "i2s.h"
 #include "spi.h"
 #include "tim.h"
-#include "usb_device.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -63,7 +59,6 @@ RobotCommand_t robot_cmd;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void TaskExample_Create(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -80,7 +75,10 @@ int main ()
 	  MX_GPIO_Init();
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
-    MX_USB_DEVICE_Init();
+	  //MX_USART2_UART_Init();
+
+	  /* 1. Left Motor Driver Configuration */
+	  motor_l.htim = &htim4;
 	  motor_l.channel = TIM_CHANNEL_2;
 	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
 	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
@@ -99,19 +97,14 @@ int main ()
 	  hc_sr04.timer = &htim2;
 	  Ultrasound_Init(&hc_sr04);
 
-    TaskExample_Create();
-
-    vTaskStartScheduler();
-    
-    /* If all is well, the scheduler will now be running, and the following
-     line will never be reached. If it does, there was insufficient FreeRTOS
-     heap memory available for the idle task. */
-    Error_Handler();
+	  /* Infinite loop */
+	  while (1)
+	  {
+      /* Blink LD4 every 1 second (TEST) */
+      HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
+      HAL_Delay(1000);
+    }
 }
-
-
-/* USER CODE END 0 */
-
 /**
   * @brief  The application entry point.
   * @retval int

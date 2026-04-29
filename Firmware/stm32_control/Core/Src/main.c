@@ -22,7 +22,6 @@
 #include "i2s.h"
 #include "spi.h"
 #include "tim.h"
-#include "usb_device.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -76,7 +75,10 @@ int main ()
 	  MX_GPIO_Init();
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
-    MX_USB_DEVICE_Init();
+	  //MX_USART2_UART_Init();
+
+	  /* 1. Left Motor Driver Configuration */
+	  motor_l.htim = &htim4;
 	  motor_l.channel = TIM_CHANNEL_2;
 	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
 	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
@@ -95,22 +97,14 @@ int main ()
 	  hc_sr04.timer = &htim2;
 	  Ultrasound_Init(&hc_sr04);
 
-	  uint8_t data[10] = "Hola";
-	  uint32_t value = 2026;
 	  /* Infinite loop */
 	  while (1)
 	  {
       /* Blink LD4 every 1 second (TEST) */
       HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
-      //sprintf(data, "%.2f V\n", value);
-      CDC_Transmit_FS(data, strlen(data));
       HAL_Delay(1000);
     }
 }
-
-
-/* USER CODE END 0 */
-
 /**
   * @brief  The application entry point.
   * @retval int

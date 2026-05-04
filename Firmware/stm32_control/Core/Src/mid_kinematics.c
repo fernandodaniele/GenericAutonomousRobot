@@ -6,7 +6,8 @@
  */
 
 #include "mid_kinematics.h"
-#include "drv_motor.h"
+
+#include "../Inc/drv_motor.h"
 
 void Kinematics_Compute(RobotCommand_t cmd, int16_t* out_l_pwm, int16_t* out_r_pwm) {
 

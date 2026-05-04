@@ -1,18 +1,17 @@
-19:45:13 **** Incremental Build of configuration Default for project stm32_control ****
+13:59:58 **** Incremental Build of configuration Default for project stm32_control ****
 make all 
-arm-none-eabi-gcc -c -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -DUSE_HAL_DRIVER -DSTM32F407xx -ICore/Inc -IDrivers/STM32F4xx_HAL_Driver/Inc -IDrivers/STM32F4xx_HAL_Driver/Inc/Legacy -IDrivers/CMSIS/Device/ST/STM32F4xx/Include -IDrivers/CMSIS/Include -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2 -MMD -MP -MF"build/main.d" -Wa,-a,-ad,-alms=build/main.lst Core/Src/main.c -o build/main.o
+arm-none-eabi-gcc -c -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -DUSE_HAL_DRIVER -DSTM32F407xx -ICore/Inc -IDrivers/STM32F4xx_HAL_Driver/Inc -IDrivers/STM32F4xx_HAL_Driver/Inc/Legacy -IDrivers/CMSIS/Device/ST/STM32F4xx/Include -IDrivers/CMSIS/Include -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2 -MMD -MP -MF"build/drv_motor.d" -Wa,-a,-ad,-alms=build/drv_motor.lst Core/Src/drv_motor.c -o build/drv_motor.o
+Core/Src/drv_motor.c: In function 'Motor_SetSpeed':
+Core/Src/drv_motor.c:66:14: warning: unused variable 'pwm_value' [-Wunused-variable]
+   66 |     uint16_t pwm_value = (speed > 0) ? speed : -speed;
+      |              ^~~~~~~~~
 arm-none-eabi-gcc build/main.o build/stm32f4xx_it.o build/stm32f4xx_hal_msp.o build/stm32f4xx_hal_rcc.o build/stm32f4xx_hal_rcc_ex.o build/stm32f4xx_hal_flash.o build/stm32f4xx_hal_flash_ex.o build/stm32f4xx_hal_flash_ramfunc.o build/stm32f4xx_hal_gpio.o build/stm32f4xx_hal_dma_ex.o build/stm32f4xx_hal_dma.o build/stm32f4xx_hal_pwr.o build/stm32f4xx_hal_pwr_ex.o build/stm32f4xx_hal_cortex.o build/stm32f4xx_hal.o build/stm32f4xx_hal_exti.o build/stm32f4xx_hal_i2c.o build/stm32f4xx_hal_i2c_ex.o build/stm32f4xx_hal_i2s.o build/stm32f4xx_hal_i2s_ex.o build/stm32f4xx_hal_spi.o build/stm32f4xx_hal_tim.o build/stm32f4xx_hal_tim_ex.o build/system_stm32f4xx.o build/gpio.o build/i2c.o build/i2s.o build/spi.o build/tim.o build/drv_motor.o build/drv_ultrasound.o build/mid_kinematics.o build/sysmem.o build/syscalls.o build/startup_stm32f407xx.o -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -specs=nano.specs -TSTM32F407XX_FLASH.ld  -lc -lm -lnosys  -Wl,-Map=build/stm32_control.map,--cref -Wl,--gc-sections -o build/stm32_control.elf
+C:/ST/STM32CubeIDE_1.19.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.13.3.rel1.win32_1.0.0.202411081344/tools/bin/../lib/gcc/arm-none-eabi/13.3.1/../../../../arm-none-eabi/bin/ld.exe: warning: build/stm32_control.elf has a LOAD segment with RWX permissions
 arm-none-eabi-size build/stm32_control.elf
    text	   data	    bss	    dec	    hex	filename
-   7916	     12	   1788	   9716	   25f4	build/stm32_control.elf
+   6840	     20	   1716	   8576	   2180	build/stm32_control.elf
 arm-none-eabi-objcopy -O ihex build/stm32_control.elf build/stm32_control.hex
 arm-none-eabi-objcopy -O binary -S build/stm32_control.elf build/stm32_control.bin	
-19:45:14 **** Incremental Build of configuration Debug for project stm32_control ****
-make -j12 
-make: Nothing to be done for 'all'.
-11:48:48 **** Incremental Build of configuration Default for project stm32_control ****
-make all 
-make: Nothing to be done for 'all'.
-11:48:50 **** Incremental Build of configuration Debug for project stm32_control ****
-make -j12 
+13:59:59 **** Incremental Build of configuration Debug for project stm32_control ****
+make -j8 
 make: Nothing to be done for 'all'.

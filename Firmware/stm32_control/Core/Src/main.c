@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+
 #include "i2c.h"
 #include "i2s.h"
 #include "spi.h"
@@ -26,7 +27,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "drv_motor.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 /* USER CODE END Includes */
@@ -52,7 +52,7 @@
 
 
 // Objects of our layers
-MotorHandle_t motor_l, motor_r;
+// MotorHandle_t motor_l, motor_r;
 Ultrasound_t hc_sr04;
 RobotCommand_t robot_cmd;
 /* USER CODE END PV */
@@ -78,21 +78,21 @@ int main ()
 	  //MX_USART2_UART_Init();
 
 	  /* 1. Left Motor Driver Configuration */
-	  motor_l.htim = &htim4;
+/*	  motor_l.htim = &htim4;
 	  motor_l.channel = TIM_CHANNEL_2;
 	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
 	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
 	  Motor_Init(&motor_l);
 
 	  /* 2. Right Motor Driver Configuration */
-	  motor_r.htim = &htim4;
+/*	  motor_r.htim = &htim4;
 	  motor_r.channel = TIM_CHANNEL_3;
 	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
 	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
 	  Motor_Init(&motor_r);
 
 	  /* 3. Ultrasound Driver Configuration */
-	  hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
+/*	  hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
 	  hc_sr04.echo_port = GPIOB; hc_sr04.echo_pin = GPIO_PIN_5;
 	  hc_sr04.timer = &htim2;
 	  Ultrasound_Init(&hc_sr04);

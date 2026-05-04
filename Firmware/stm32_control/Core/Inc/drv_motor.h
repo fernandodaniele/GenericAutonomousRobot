@@ -1,47 +1,48 @@
 /*
- * drv_motor.h
+ * drv_ultrasound.h
  *
- *  Created on: Feb 15, 2026
- *      Author: Fernando E. Daniele
+ *  Created on: Apr 18, 2026
+ *      Author: Parucci, Santiago
  */
+
+//Si no está definido se define el archivo. Evita que se incluya mas de una vez
 
 #ifndef CORE_INC_DRV_MOTOR_H_
 #define CORE_INC_DRV_MOTOR_H_
 
-
 #include "tim.h"
 #include "gpio.h"
 
-// Definitions for speed limits (0 to 1000)
-#define MOTOR_MAX_SPEED 1000
-#define MOTOR_MIN_SPEED -1000
+// Escala de velocidad entre 0 a 8399
+#define MOTOR_MAX_SPEED 8399
+#define MOTOR_MIN_SPEED -8399
 
 typedef struct {
-    TIM_HandleTypeDef* htim;    // PWM Timer (e.g. &htim4)
-    uint32_t channel;           // Channel (e.g. TIM_CHANNEL_1)
+    TIM_HandleTypeDef* htim;   	// Timer PWM
+    uint32_t channel;          	// Canal PWM
 
-    GPIO_TypeDef* port_a;       // Port Pin Direction A
-    uint16_t pin_a;             // Pin Direction A
+    GPIO_TypeDef* port_a;      	// Puerto pin A
+    uint16_t pin_a;				// Pin dirección A
 
-    GPIO_TypeDef* port_b;       // Port Pin Direction B
-    uint16_t pin_b;             // Pin Direction B
+    GPIO_TypeDef* port_b;      	// Puerto pin B
+    uint16_t pin_b;				// Pin dirección B
 
-    int16_t current_speed;      // Current state (-1000 to 1000)
+    int16_t current_speed;     	// Estado actual de velocidad
 } MotorHandle_t;
 
 /**
- * @brief Initializes the motor PWM.
+ * @brief Inicializa el motor
  */
 void Motor_Init(MotorHandle_t* motor);
 
 /**
- * @brief Sets the motor speed.
- * @param speed Value between -1000 (backward) and 1000 (forward). 0 is brake.
+ * @brief Inicializa funcion que setea velocidad
+ * @param speed -8399 a 8399
  */
 void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed);
 
 /**
- * @brief Stops the motor immediately.
+ * @brief Inicializa funcion que frena el motor
  */
 void Motor_Stop(MotorHandle_t* motor);
 

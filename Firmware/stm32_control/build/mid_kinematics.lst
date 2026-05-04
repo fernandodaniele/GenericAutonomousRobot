@@ -1,0 +1,81 @@
+ARM GAS  C:\Users\santi\AppData\Local\Temp\ccJQ7XjZ.s 			page 1
+
+
+   1              		.cpu cortex-m4
+   2              		.arch armv7e-m
+   3              		.fpu fpv4-sp-d16
+   4              		.eabi_attribute 27, 1
+   5              		.eabi_attribute 28, 1
+   6              		.eabi_attribute 20, 1
+   7              		.eabi_attribute 21, 1
+   8              		.eabi_attribute 23, 3
+   9              		.eabi_attribute 24, 1
+  10              		.eabi_attribute 25, 1
+  11              		.eabi_attribute 26, 1
+  12              		.eabi_attribute 30, 1
+  13              		.eabi_attribute 34, 1
+  14              		.eabi_attribute 18, 4
+  15              		.file	"mid_kinematics.c"
+  16              		.text
+  17              	.Ltext0:
+  18              		.cfi_sections	.debug_frame
+  19              		.file 1 "Core/Src/mid_kinematics.c"
+  20              		.section	.text.Kinematics_Compute,"ax",%progbits
+  21              		.align	1
+  22              		.global	Kinematics_Compute
+  23              		.syntax unified
+  24              		.thumb
+  25              		.thumb_func
+  27              	Kinematics_Compute:
+  28              	.LVL0:
+  29              	.LFB134:
+   1:Core/Src/mid_kinematics.c **** /*
+   2:Core/Src/mid_kinematics.c ****  * mid_kinematics.c
+   3:Core/Src/mid_kinematics.c ****  *
+   4:Core/Src/mid_kinematics.c ****  *  Created on: Feb 15, 2026
+   5:Core/Src/mid_kinematics.c ****  *      Author: Fernando E. Daniele
+   6:Core/Src/mid_kinematics.c ****  */
+   7:Core/Src/mid_kinematics.c **** 
+   8:Core/Src/mid_kinematics.c **** #include "mid_kinematics.h"
+   9:Core/Src/mid_kinematics.c **** 
+  10:Core/Src/mid_kinematics.c **** #include "../Inc/drv_motor.h"
+  11:Core/Src/mid_kinematics.c **** 
+  12:Core/Src/mid_kinematics.c **** void Kinematics_Compute(RobotCommand_t cmd, int16_t* out_l_pwm, int16_t* out_r_pwm) {
+  30              		.loc 1 12 85 view -0
+  31              		.cfi_startproc
+  32              		@ args = 0, pretend = 0, frame = 8
+  33              		@ frame_needed = 0, uses_anonymous_args = 0
+  34              		@ link register save eliminated.
+  35              		.loc 1 12 85 is_stmt 0 view .LVU1
+  36 0000 82B0     		sub	sp, sp, #8
+  37              	.LCFI0:
+  38              		.cfi_def_cfa_offset 8
+  39 0002 8DED000A 		vstr.32	s0, [sp]
+  40 0006 CDED010A 		vstr.32	s1, [sp, #4]
+  13:Core/Src/mid_kinematics.c **** 
+  14:Core/Src/mid_kinematics.c **** }
+  41              		.loc 1 14 1 is_stmt 1 view .LVU2
+  42 000a 02B0     		add	sp, sp, #8
+  43              	.LCFI1:
+  44              		.cfi_def_cfa_offset 0
+ARM GAS  C:\Users\santi\AppData\Local\Temp\ccJQ7XjZ.s 			page 2
+
+
+  45              		@ sp needed
+  46 000c 7047     		bx	lr
+  47              		.cfi_endproc
+  48              	.LFE134:
+  50              		.text
+  51              	.Letext0:
+  52              		.file 2 "C:\\ST\\STM32CubeIDE_1.19.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltool
+  53              		.file 3 "C:\\ST\\STM32CubeIDE_1.19.0\\STM32CubeIDE\\plugins\\com.st.stm32cube.ide.mcu.externaltool
+  54              		.file 4 "Core/Inc/mid_kinematics.h"
+ARM GAS  C:\Users\santi\AppData\Local\Temp\ccJQ7XjZ.s 			page 3
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 mid_kinematics.c
+C:\Users\santi\AppData\Local\Temp\ccJQ7XjZ.s:21     .text.Kinematics_Compute:00000000 $t
+C:\Users\santi\AppData\Local\Temp\ccJQ7XjZ.s:27     .text.Kinematics_Compute:00000000 Kinematics_Compute
+
+NO UNDEFINED SYMBOLS

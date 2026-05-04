@@ -1,4 +1,7 @@
 # Prerequisites
+Firmware/.metadata/
+Firmware/stm32_control/build/
+.vscode/
 *.d
 
 # Object files

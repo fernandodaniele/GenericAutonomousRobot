@@ -71,6 +71,33 @@ Firmware/stm32_control/.project
 Firmware/stm32_control/.mxproject
 Firmware/stm32_control/*.launch
 
+# STM32 CubeMX-generated files without user code
+# (files with USER CODE are kept: main.c, stm32f4xx_it.c, main.h)
+Firmware/stm32_control/Core/Src/gpio.c
+Firmware/stm32_control/Core/Src/i2c.c
+Firmware/stm32_control/Core/Src/i2s.c
+Firmware/stm32_control/Core/Src/spi.c
+Firmware/stm32_control/Core/Src/tim.c
+Firmware/stm32_control/Core/Src/stm32f4xx_hal_msp.c
+Firmware/stm32_control/Core/Inc/gpio.h
+Firmware/stm32_control/Core/Inc/i2c.h
+Firmware/stm32_control/Core/Inc/i2s.h
+Firmware/stm32_control/Core/Inc/spi.h
+Firmware/stm32_control/Core/Inc/tim.h
+Firmware/stm32_control/Core/Inc/stm32f4xx_it.h
+Firmware/stm32_control/Core/Inc/stm32f4xx_hal_conf.h
+
+Firmware/stm32_control/Drivers/
+Firmware/stm32_control/FATFS/App/
+Firmware/stm32_control/USB_DEVICE/App/
+Firmware/stm32_control/*.ld
+Firmware/stm32_control/.mxproject
+
 # ESP32 configuration files (generated per board)
 Firmware/esp32_gateway/sdkconfig*
 Firmware/esp32_gateway/.vscode/
+
+
+# para desarrollo de driver ignorar main.c y main.h
+Firmware/stm32_control/Core/Inc/main.h
+Firmware/stm32_control/Core/Src/main.c

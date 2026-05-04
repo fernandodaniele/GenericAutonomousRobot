@@ -12,15 +12,30 @@ El driver requiere que SPI2 y un pin GPIO para CS estén configurados en CubeMX
 antes de ser usado. Esos cambios generan el `hspi2` y las definiciones de pin que
 el driver consume.
 
-| Parámetro CubeMX | Valor requerido |
-|---|---|
-| SPI2 → Mode | Full-Duplex Master |
-| SPI2 → NSS | Software |
-| SPI2 → Prescaler | 256 (init a 164 kHz; el driver sube a 10.5 MHz post-init) |
-| SPI2 → CPOL / CPHA | Low / 1 Edge (Mode 0) |
-| SPI2 → Data Size | 8 Bit |
-| PC4 → GPIO Output | Label: `SD_CS`, Level inicial: High |
-| Middleware → FATFS | User-defined |
+### Paso 1 — Liberar I2S2 (periférico compartido con SPI2)
+- Clic en pin **PB10** → **Reset State**
+- Clic en pin **PC3** → **Reset State**
+
+### Paso 2 — Habilitar SPI2
+- `Connectivity → SPI2 → Full-Duplex Master`
+- NSS: Software
+- Prescaler: **256** (164 kHz — velocidad segura para init de SD)
+- First Bit: MSB
+- CPOL: Low, CPHA: 1 Edge (Mode 0)
+- CubeMX asigna automáticamente PB10/PC2/PC3
+
+### Paso 3 — Pin CS de la SD
+- Clic en pin **PC4** → **GPIO_Output**
+- GPIO → User Label: `SD_CS`
+- Output Level: **High** (CS inactivo = HIGH)
+
+### Paso 4 — Middleware FatFs
+- `Middleware and Software Packs → FATFS → Enable`
+- Type: **User-defined**
+- Configuration → dejar defaults (MAX_SS = 512 está bien para hello world)
+
+### Paso 5 — GENERATE CODE
+
 
 ---
 
@@ -29,7 +44,7 @@ el driver consume.
 ```
 Módulo SD SPI    →   STM32F407 Discovery
 ─────────────────────────────────────────
-VCC (3.3 V)      →   3V pin
+VCC (5 V)        →   5V pin
 GND              →   GND
 SCK              →   PB10
 MISO             →   PC2

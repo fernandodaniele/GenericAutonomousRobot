@@ -1,0 +1,81 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36" version="29.6.4" pages="3">
+  <diagram name="Esquema general" id="PDnqkP6B21GGxYmNxlcf">
+    <mxGraphModel dx="670" dy="464" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-1" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;" value="ESP32" vertex="1">
+          <mxGeometry height="120" width="120" x="414" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-12" edge="1" parent="1" source="-S28m7Xszqkx91NH3Ykd-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="-S28m7Xszqkx91NH3Ykd-7" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-13" connectable="0" parent="-S28m7Xszqkx91NH3Ykd-12" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="PWM" vertex="1">
+          <mxGeometry relative="1" x="-0.0417" y="-2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-3" parent="1" style="whiteSpace=wrap;html=1;aspect=fixed;" value="STM32" vertex="1">
+          <mxGeometry height="120" width="120" x="140" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-4" edge="1" parent="1" source="-S28m7Xszqkx91NH3Ykd-3" style="endArrow=classic;startArrow=classic;html=1;rounded=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="-S28m7Xszqkx91NH3Ykd-1" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <mxPoint x="320" y="270" as="sourcePoint" />
+            <mxPoint x="370" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-5" connectable="0" parent="-S28m7Xszqkx91NH3Ykd-4" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="UART" vertex="1">
+          <mxGeometry relative="1" x="-0.2688" y="4" as="geometry">
+            <mxPoint x="14" y="-16" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-9" edge="1" parent="1" source="-S28m7Xszqkx91NH3Ykd-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" target="-S28m7Xszqkx91NH3Ykd-3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-6" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;" value="Sensor X" vertex="1">
+          <mxGeometry height="60" width="120" x="140" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="-S28m7Xszqkx91NH3Ykd-7" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;" value="" vertex="1">
+          <mxGeometry height="60" width="120" x="140" y="50" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="exV4nlYpEQgTn70-wDeZ" name="Tareas ESP32">
+    <mxGraphModel dx="670" dy="464" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="NwhOypvKvdyG0-fLHZQ1" name="Tareas STM32">
+    <mxGraphModel dx="670" dy="464" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="_P6CaxKKDojYFXKaTWrm-1" parent="1" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" value="Tareas" vertex="1">
+          <mxGeometry height="120" width="140" x="50" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="_P6CaxKKDojYFXKaTWrm-2" parent="_P6CaxKKDojYFXKaTWrm-1" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" value="Tarea 1" vertex="1">
+          <mxGeometry height="30" width="140" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="_P6CaxKKDojYFXKaTWrm-3" parent="_P6CaxKKDojYFXKaTWrm-1" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" value="Tarea 2" vertex="1">
+          <mxGeometry height="30" width="140" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="_P6CaxKKDojYFXKaTWrm-4" parent="_P6CaxKKDojYFXKaTWrm-1" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" value="Tarea 3" vertex="1">
+          <mxGeometry height="30" width="140" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="_P6CaxKKDojYFXKaTWrm-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Tarea Movimiento: Funcion&lt;br&gt;Priridad Alta&lt;br&gt;One Shot/Periodica/Continua" vertex="1">
+          <mxGeometry height="80" width="144" x="390" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="_P6CaxKKDojYFXKaTWrm-6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Tarea deteccion sensores" vertex="1">
+          <mxGeometry height="60" width="130" x="397" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="_P6CaxKKDojYFXKaTWrm-7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Tarea: Comunicacion con ESP32" vertex="1">
+          <mxGeometry height="60" width="134" x="400" y="440" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

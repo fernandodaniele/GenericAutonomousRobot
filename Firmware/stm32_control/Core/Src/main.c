@@ -18,6 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "task_example.h"
 #include "i2c.h"
 #include "i2s.h"
 #include "spi.h"
@@ -60,6 +63,7 @@ RobotCommand_t robot_cmd;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void TaskExample_Create(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -95,17 +99,14 @@ int main ()
 	  hc_sr04.timer = &htim2;
 	  Ultrasound_Init(&hc_sr04);
 
-	  uint8_t data[10] = "Hola";
-	  uint32_t value = 2026;
-	  /* Infinite loop */
-	  while (1)
-	  {
-      /* Blink LD4 every 1 second (TEST) */
-      HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
-      //sprintf(data, "%.2f V\n", value);
-      CDC_Transmit_FS(data, strlen(data));
-      HAL_Delay(1000);
-    }
+    TaskExample_Create();
+
+    vTaskStartScheduler();
+    
+    /* If all is well, the scheduler will now be running, and the following
+     line will never be reached. If it does, there was insufficient FreeRTOS
+     heap memory available for the idle task. */
+    Error_Handler();
 }
 
 

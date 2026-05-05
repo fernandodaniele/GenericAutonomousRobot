@@ -69,6 +69,7 @@ Core/Src/drv_motor.c \
 Core/Src/drv_ultrasound.c \
 Core/Src/mid_kinematics.c \
 Core/Src/task_example.c \
+Core/Src/drv_TCRT5000.c\
 Core/Src/sysmem.c \
 Core/Src/mpu6050.c \
 Core/Src/syscalls.c \

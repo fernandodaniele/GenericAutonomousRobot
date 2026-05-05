@@ -112,6 +112,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : Sensor_Del_Izq_Pin Sensor_Del_Der_Pin Sensor_Tras_Izq_Pin Sensor_Tras_Der_Pin */
+  GPIO_InitStruct.Pin = Sensor_Del_Izq_Pin|Sensor_Del_Der_Pin|Sensor_Tras_Izq_Pin|Sensor_Tras_Der_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
   /*Configure GPIO pin : CLK_IN_Pin */
   GPIO_InitStruct.Pin = CLK_IN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;

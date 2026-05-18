@@ -74,3 +74,56 @@ Firmware/stm32_control/*.launch
 # ESP32 configuration files (generated per board)
 Firmware/esp32_gateway/sdkconfig*
 Firmware/esp32_gateway/.vscode/
+
+# Claude cache
+CLAUDE.md
+claude*
+
+# Language server cache
+compile_commands.json
+.clangd
+
+# Custom scripts
+flash
+monitor
+
+# Unmodified dependencies
+Firmware/stm32_control/Drivers/
+Firmware/stm32_control/FATFS/
+Firmware/stm32_control/USB_DEVICE/
+Firmware/stm32_control/Middlewares/
+Firmware/stm32_control/Application/
+Firmware/stm32_control/Debug/
+Firmware/stm32_control/Release/
+
+Firmware/stm32_control/.cproject
+Firmware/stm32_control/.project
+Firmware/stm32_control/*.ld
+Firmware/stm32_control/*.s
+Firmware/stm32_control/*.launch
+
+# Unmodified .c files (also ignore main)
+Firmware/stm32_control/Core/Src/drv_motor.c
+Firmware/stm32_control/Core/Src/gpio.c
+Firmware/stm32_control/Core/Src/i2c.c
+Firmware/stm32_control/Core/Src/i2s.c
+Firmware/stm32_control/Core/Src/main.c
+Firmware/stm32_control/Core/Src/mid_kinematics.c
+Firmware/stm32_control/Core/Src/spi.c
+Firmware/stm32_control/Core/Src/stm32f4xx_hal_msp.c
+Firmware/stm32_control/Core/Src/stm32f4xx_it.c
+Firmware/stm32_control/Core/Src/syscalls.c
+Firmware/stm32_control/Core/Src/sysmem.c
+Firmware/stm32_control/Core/Src/system_stm32f4xx.c
+Firmware/stm32_control/Core/Src/tim.c
+
+Firmware/stm32_control/Core/Inc/drv_motor.h
+Firmware/stm32_control/Core/Inc/gpio.h
+Firmware/stm32_control/Core/Inc/i2c.h
+Firmware/stm32_control/Core/Inc/i2s.h
+Firmware/stm32_control/Core/Inc/main.h
+Firmware/stm32_control/Core/Inc/mid_kinematics.h
+Firmware/stm32_control/Core/Inc/spi.h
+Firmware/stm32_control/Core/Inc/stm32f4xx_hal_conf.h
+Firmware/stm32_control/Core/Inc/stm32f4xx_it.h
+Firmware/stm32_control/Core/Inc/tim.h

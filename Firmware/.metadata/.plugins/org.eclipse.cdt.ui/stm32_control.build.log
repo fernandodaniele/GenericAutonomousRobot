@@ -1,6 +1,0 @@
-13:59:59 **** Incremental Build of configuration Debug for project stm32_control ****
-make -j8 
-make: Nothing to be done for 'all'.
-
-13:59:59 Build Finished. 0 errors, 0 warnings. (took 326ms)
-

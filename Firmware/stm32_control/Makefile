@@ -72,6 +72,7 @@ Core/Src/drv_motor.c \
 Core/Src/drv_ultrasound.c \
 Core/Src/drv_sd_spi.c \
 Core/Src/mid_kinematics.c \
+Core/Src/drv_uart.c \
 Core/Src/mid_log.c \
 Core/Src/task_example.c \
 Core/Src/sysmem.c \
@@ -84,6 +85,8 @@ Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c \
 Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c \
 Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c \
 Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c \
+Core/Src/usart.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
 Core/Src/freertos.c \
 Middlewares/Third_Party/FreeRTOS/Source/croutine.c \
 Middlewares/Third_Party/FreeRTOS/Source/event_groups.c \

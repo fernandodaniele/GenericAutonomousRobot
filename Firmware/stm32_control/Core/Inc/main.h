@@ -59,6 +59,8 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define RST_DS1302_Pin GPIO_PIN_3
+#define RST_DS1302_GPIO_Port GPIOE
 #define PC14_OSC32_IN_Pin GPIO_PIN_14
 #define PC14_OSC32_IN_GPIO_Port GPIOC
 #define PC15_OSC32_OUT_Pin GPIO_PIN_15
@@ -81,14 +83,18 @@ void Error_Handler(void);
 #define SPI1_MISO_GPIO_Port GPIOA
 #define DAT_DS1302_Pin GPIO_PIN_7
 #define DAT_DS1302_GPIO_Port GPIOA
+#define BOOT1_Pin GPIO_PIN_2
+#define BOOT1_GPIO_Port GPIOB
 #define CLK_IN_Pin GPIO_PIN_10
 #define CLK_IN_GPIO_Port GPIOB
 #define LD4_Pin GPIO_PIN_12
 #define LD4_GPIO_Port GPIOD
 #define LD3_Pin GPIO_PIN_13
 #define LD3_GPIO_Port GPIOD
-#define TIM4_CH3_PWMB_Pin GPIO_PIN_14
-#define TIM4_CH3_PWMB_GPIO_Port GPIOD
+#define LD5_Pin GPIO_PIN_14
+#define LD5_GPIO_Port GPIOD
+#define LD6_Pin GPIO_PIN_15
+#define LD6_GPIO_Port GPIOD
 #define I2S3_MCK_Pin GPIO_PIN_7
 #define I2S3_MCK_GPIO_Port GPIOC
 #define VBUS_FS_Pin GPIO_PIN_9
@@ -125,6 +131,8 @@ void Error_Handler(void);
 #define Audio_SCL_GPIO_Port GPIOB
 #define TIM4_CH2_PWMA_Pin GPIO_PIN_7
 #define TIM4_CH2_PWMA_GPIO_Port GPIOB
+#define TIM4_CH3_PWMB_Pin GPIO_PIN_8
+#define TIM4_CH3_PWMB_GPIO_Port GPIOB
 #define Audio_SDA_Pin GPIO_PIN_9
 #define Audio_SDA_GPIO_Port GPIOB
 #define MEMS_INT2_Pin GPIO_PIN_1

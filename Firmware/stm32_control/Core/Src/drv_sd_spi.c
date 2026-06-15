@@ -31,16 +31,16 @@ static SD_Type_t s_card_type = SD_TYPE_UNKNOWN;
 static uint8_t spi_byte(uint8_t tx) {
     uint8_t rx = 0;
     /* Timeout de 10 ms: evita colgarse si el bus SPI no responde */
-    HAL_SPI_TransmitReceive(&hspi1, &tx, &rx, 1, 10);
+    HAL_SPI_TransmitReceive(&hspi2, &tx, &rx, 1, 10);
     return rx;
 }
 
 /* Cambia el baud rate de SPI1 en tiempo de ejecución.
  * Deshabilitar el periférico es obligatorio antes de tocar CR1.BR (RM 28.5.1). */
 static void spi_set_prescaler(uint32_t prescaler_bits) {
-    __HAL_SPI_DISABLE(&hspi1);
-    MODIFY_REG(hspi1.Instance->CR1, SPI_CR1_BR_Msk, prescaler_bits);
-    __HAL_SPI_ENABLE(&hspi1);
+    __HAL_SPI_DISABLE(&hspi2);
+    MODIFY_REG(hspi2.Instance->CR1, SPI_CR1_BR_Msk, prescaler_bits);
+    __HAL_SPI_ENABLE(&hspi2);
 }
 
 /* ── Protocolo SD ─────────────────────────────────────────────────────────── */

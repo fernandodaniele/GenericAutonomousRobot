@@ -65,44 +65,19 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int main ()
+int main(void)
 {
-	/* Reset peripherals, initialize Flash and Systick */
-	  HAL_Init();
-	  SystemClock_Config();
+    HAL_Init();
+    SystemClock_Config();
 
-	  /* Initialize all configured peripherals */
-	  MX_GPIO_Init();
-	  MX_TIM2_Init();
-	  MX_TIM4_Init();
-	  //MX_USART2_UART_Init();
+    MX_GPIO_Init();
 
-	  /* 1. Left Motor Driver Configuration */
-	  motor_l.htim = &htim4;
-	  motor_l.channel = TIM_CHANNEL_2;
-	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
-	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
-	  Motor_Init(&motor_l);
+    MX_FREERTOS_Init();
 
-	  /* 2. Right Motor Driver Configuration */
-	  motor_r.htim = &htim4;
-	  motor_r.channel = TIM_CHANNEL_3;
-	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
-	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
-	  Motor_Init(&motor_r);
+    osKernelStart();
 
-	  /* 3. Ultrasound Driver Configuration */
-	  hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
-	  hc_sr04.echo_port = GPIOB; hc_sr04.echo_pin = GPIO_PIN_5;
-	  hc_sr04.timer = &htim2;
-	  Ultrasound_Init(&hc_sr04);
-
-	  /* Infinite loop */
-	  while (1)
-	  {
-      /* Blink LD4 every 1 second (TEST) */
-      HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
-      HAL_Delay(1000);
+    while (1)
+    {
     }
 }
 /**

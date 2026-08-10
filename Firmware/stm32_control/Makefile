@@ -70,6 +70,7 @@ Core/Src/drv_ultrasound.c \
 Core/Src/mid_kinematics.c \
 Core/Src/task_example.c \
 Core/Src/drv_TCRT5000.c\
+Core/Src/drv_uart.c \
 Core/Src/sysmem.c \
 Core/Src/mpu6050.c \
 Core/Src/syscalls.c \
@@ -94,7 +95,9 @@ Middlewares/Third_Party/FreeRTOS/Source/tasks.c \
 Middlewares/Third_Party/FreeRTOS/Source/timers.c \
 Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c \
 Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c \
-Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/port.c
+Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/port.c \
+Core/Src/usart.c \
+Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c
 
 # ASM sources
 ASM_SOURCES =  \

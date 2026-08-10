@@ -25,6 +25,7 @@
 #include "i2s.h"
 #include "spi.h"
 #include "tim.h"
+#include "usart.h"
 #include "usb_device.h"
 #include "gpio.h"
 
@@ -33,6 +34,9 @@
 #include "drv_motor.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
+
+#include "drv_uart.h"
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,6 +63,9 @@
 MotorHandle_t motor_l, motor_r;
 Ultrasound_t hc_sr04;
 RobotCommand_t robot_cmd;
+DrvUart_t esp_uart;
+char uart_message[UART_RX_BUFFER_SIZE];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -78,9 +85,15 @@ int main ()
 
 	  /* Initialize all configured peripherals */
 	  MX_GPIO_Init();
+	  MX_USART2_UART_Init();
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
-    MX_USB_DEVICE_Init();
+	  MX_USB_DEVICE_Init();
+
+	  DrvUart_Init(&esp_uart, &huart2);
+	  DrvUart_StartReceive(&esp_uart);
+	  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
+
 	  motor_l.channel = TIM_CHANNEL_2;
 	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
 	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
@@ -163,7 +176,15 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+/**
+ * @brief Callback ejecutado cuando se completa la recepción UART por interrupción.
+ * @param huart Puntero al handle UART que generó la interrupción.
+ */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART2) {
+        DrvUart_RxCallback(&esp_uart);
+    }
+}
 /* USER CODE END 4 */
 
 /**

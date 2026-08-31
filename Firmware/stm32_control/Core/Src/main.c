@@ -20,9 +20,7 @@
 #include "main.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "task_example.h"
 #include "i2c.h"
-#include "i2s.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -36,10 +34,10 @@
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 #include "ds1302.h"
+#include "mid_log.h"
+#include "task_example.h"
 #include "task_ds1302.h"
 #include "task_sensors.h"
-#include "mid_log.h"
-
 #include "drv_uart.h"
 #include <string.h>
 /* USER CODE END Includes */
@@ -51,7 +49,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* SAFE_DISTANCE_MM vive ahora en task_sensors.h (donde se usa). */
+/* SAFE_DISTANCE_MM vive en task_sensors.h (donde se usa). */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -62,97 +60,22 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
-
-// Objects of our layers
+/* Objetos de las capas de la aplicación. */
 MotorHandle_t motor_l, motor_r;
 RobotCommand_t robot_cmd;
 DrvUart_t esp_uart;
 char uart_message[UART_RX_BUFFER_SIZE];
 Ds1302_t ds1302;
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void TaskExample_Create(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int main ()
-{
-	/* Reset peripherals, initialize Flash and Systick */
-	  HAL_Init();
-	  SystemClock_Config();
-
-	  /* Initialize all configured peripherals */
-	  MX_GPIO_Init();
-	  MX_USART2_UART_Init();
-	  MX_TIM2_Init();
-	  MX_TIM4_Init();
-	  MX_I2C1_Init();          /* MPU6050 */
-	  MX_SPI2_Init();          /* tarjeta SD */
-	  MX_FATFS_Init();         /* enlaza el driver USER (drv_sd_spi) a FatFs */
-	  MX_USB_DEVICE_Init();
-
-	  DrvUart_Init(&esp_uart, &huart2);
-	  DrvUart_StartReceive(&esp_uart);
-	  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
-
-	  motor_l.htim = &htim4;
-	  motor_l.channel = TIM_CHANNEL_2;
-	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
-	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
-	  Motor_Init(&motor_l);
-
-	  /* 2. Right Motor Driver Configuration */
-	  motor_r.htim = &htim4;
-	  motor_r.channel = TIM_CHANNEL_3;
-	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
-	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
-	  Motor_Init(&motor_r);
-
-	  /* 3. Ultrasound Driver Configuration (HC-SR04)
-	   *    TRIG=PB4, ECHO=PA6 (TIM3_CH1 + DMA1_Stream4). El driver gestiona
-	   *    TIM3 y el DMA internamente; la API nueva no recibe handle. */
-	  HCSR04_Init();
-
-	  /* 4. RTC DS1302 (bit-bang: CLK=PD8, DAT=PD9, RST=PD10; GPIO en MX_GPIO_Init) */
-	  const Ds1302Config_t ds1302_cfg = {
-	      .reset_pin = { .mcu_port = GPIOD, .pin = GPIO_PIN_10 }
-	  };
-	  DS1302_Init(&ds1302, &ds1302_cfg);
-	  /* Bring-up: se fija una hora conocida en cada arranque para validar el driver.
-	   * TODO(Fase 3): setear solo si el reloj no corre (bit CH) y tomar la hora real. */
-	  DS1302_SetTime(&ds1302,
-	                 0U,      /* formato 24 h            */
-	                 12U,     /* horas                   */
-	                 0U,      /* minutos                 */
-	                 0U,      /* segundos                */
-	                 0U,      /* am_pm (ignorado en 24h) */
-	                 1U,      /* dia de semana (1 = Dom)  */
-	                 1U,      /* dia del mes             */
-	                 1U,      /* mes (1 = Ene)           */
-	                 2026);   /* anio                    */
-
-	  /* 5. Logger por USB CDC con timestamp del DS1302. */
-	  Log_Init(&ds1302);
-
-    TaskExample_Create();
-    TaskDs1302_Create();
-    TaskSensors_Create(&motor_l, &motor_r);
-
-    vTaskStartScheduler();
-    
-    /* If all is well, the scheduler will now be running, and the following
-     line will never be reached. If it does, there was insufficient FreeRTOS
-     heap memory available for the idle task. */
-    Error_Handler();
-}
-
 
 /* USER CODE END 0 */
 
@@ -160,6 +83,106 @@ int main ()
   * @brief  The application entry point.
   * @retval int
   */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_SPI2_Init();
+  MX_TIM2_Init();
+  MX_TIM4_Init();
+  MX_USART2_UART_Init();
+  /* USER CODE BEGIN 2 */
+
+  /* MX_USB_DEVICE_Init() se llama acá (no en StartDefaultTask): este proyecto
+   * arranca el scheduler a mano con vTaskStartScheduler(), no usa MX_FREERTOS_Init. */
+  MX_USB_DEVICE_Init();
+  MX_FATFS_Init();          /* enlaza el driver USER (drv_sd_spi) a FatFs */
+
+  /* 1. UART hacia el ESP32 */
+  DrvUart_Init(&esp_uart, &huart2);
+  DrvUart_StartReceive(&esp_uart);
+  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
+
+  /* 2. Motores (TB6612FNG, PWM por TIM4) */
+  motor_l.htim = &htim4;
+  motor_l.channel = TIM_CHANNEL_2;
+  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
+  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
+  Motor_Init(&motor_l);
+
+  motor_r.htim = &htim4;
+  motor_r.channel = TIM_CHANNEL_3;
+  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
+  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
+  Motor_Init(&motor_r);
+
+  /* 3. Ultrasonido HC-SR04: TRIG=PB4, ECHO=PA6 (TIM3_CH1 + DMA1_Stream4).
+   *    El driver gestiona TIM3 y el DMA internamente. */
+  HCSR04_Init();
+
+  /* 4. RTC DS1302 (bit-bang: CLK=PD8, DAT=PD9, RST=PD10; GPIO en MX_GPIO_Init) */
+  const Ds1302Config_t ds1302_cfg = {
+      .reset_pin = { .mcu_port = GPIOD, .pin = GPIO_PIN_10 }
+  };
+  DS1302_Init(&ds1302, &ds1302_cfg);
+  /* Bring-up: hora fija en cada arranque para validar el driver.
+   * TODO: setear solo si el reloj no corre (bit CH) y tomar la hora real. */
+  DS1302_SetTime(&ds1302,
+                 0U,      /* formato 24 h            */
+                 12U,     /* horas                   */
+                 0U,      /* minutos                 */
+                 0U,      /* segundos                */
+                 0U,      /* am_pm (ignorado en 24h) */
+                 1U,      /* dia de semana (1 = Dom)  */
+                 1U,      /* dia del mes             */
+                 1U,      /* mes (1 = Ene)           */
+                 2026);   /* anio                    */
+
+  /* 5. Logger por USB CDC + SD, con timestamp del DS1302. */
+  Log_Init(&ds1302);
+
+  /* 6. Tareas de la aplicación y arranque del scheduler. */
+  TaskExample_Create();
+  TaskDs1302_Create();
+  TaskSensors_Create(&motor_l, &motor_r);
+
+  vTaskStartScheduler();
+
+  /* Si el scheduler arrancó no se llega acá; si se llega, faltó heap de FreeRTOS. */
+  Error_Handler();
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
+}
 
 /**
   * @brief System Clock Configuration

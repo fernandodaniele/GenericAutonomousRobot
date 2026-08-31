@@ -28,6 +28,7 @@
 #include "usart.h"
 #include "usb_device.h"
 #include "gpio.h"
+#include "fatfs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -92,6 +93,7 @@ int main ()
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
 	  MX_SPI2_Init();          /* tarjeta SD */
+	  MX_FATFS_Init();         /* enlaza el driver USER (drv_sd_spi) a FatFs */
 	  MX_USB_DEVICE_Init();
 
 	  DrvUart_Init(&esp_uart, &huart2);

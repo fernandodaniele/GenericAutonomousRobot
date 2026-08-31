@@ -1,0 +1,13 @@
+# Normalizar finales de línea a LF en el repo.
+# STM32CubeMX en Linux escribe CRLF al regenerar; sin esto, un "Generate Code"
+# ensucia decenas de archivos (Middlewares/, USB_DEVICE/, *.ld, *.mk) con
+# cambios que son solo CRLF. Con esto, git los normaliza a LF en el `add`.
+* text=auto eol=lf
+
+# Binarios explícitos (no tocar).
+*.drawio  binary
+*.bin     binary
+*.hex     binary
+*.elf     binary
+*.a       binary
+*.o       binary

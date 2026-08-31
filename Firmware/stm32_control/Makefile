@@ -54,25 +54,15 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c_ex.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2s.c \
-Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2s_ex.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c \
 Core/Src/system_stm32f4xx.c \
 Core/Src/gpio.c \
 Core/Src/i2c.c \
-Core/Src/i2s.c \
 Core/Src/spi.c \
 Core/Src/tim.c \
-Core/Src/drv_motor.c \
-Core/Src/drv_ultrasound.c \
-Core/Src/mid_kinematics.c \
-Core/Src/task_example.c \
-Core/Src/drv_TCRT5000.c\
-Core/Src/drv_uart.c \
 Core/Src/sysmem.c \
-Core/Src/mpu6050.c \
 Core/Src/syscalls.c \
 USB_DEVICE/App/usb_device.c \
 USB_DEVICE/App/usbd_desc.c \

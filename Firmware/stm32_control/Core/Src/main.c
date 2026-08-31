@@ -18,11 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "task_example.h"
+#include "cmsis_os.h"
 #include "i2c.h"
-#include "i2s.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
@@ -31,12 +28,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "drv_motor.h"
-#include "drv_ultrasound.h"
-#include "mid_kinematics.h"
 
-#include "drv_uart.h"
-#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,7 +38,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAFE_DISTANCE 200	// Safety distance in mm
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -58,70 +50,17 @@
 
 /* USER CODE BEGIN PV */
 
-
-// Objects of our layers
-MotorHandle_t motor_l, motor_r;
-Ultrasound_t hc_sr04;
-RobotCommand_t robot_cmd;
-DrvUart_t esp_uart;
-char uart_message[UART_RX_BUFFER_SIZE];
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void TaskExample_Create(void);
+void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int main ()
-{
-	/* Reset peripherals, initialize Flash and Systick */
-	  HAL_Init();
-	  SystemClock_Config();
-
-	  /* Initialize all configured peripherals */
-	  MX_GPIO_Init();
-	  MX_USART2_UART_Init();
-	  MX_TIM2_Init();
-	  MX_TIM4_Init();
-	  MX_USB_DEVICE_Init();
-
-	  DrvUart_Init(&esp_uart, &huart2);
-	  DrvUart_StartReceive(&esp_uart);
-	  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
-
-	  motor_l.channel = TIM_CHANNEL_2;
-	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
-	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
-	  Motor_Init(&motor_l);
-
-	  /* 2. Right Motor Driver Configuration */
-	  motor_r.htim = &htim4;
-	  motor_r.channel = TIM_CHANNEL_3;
-	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
-	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
-	  Motor_Init(&motor_r);
-
-	  /* 3. Ultrasound Driver Configuration */
-	  hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
-	  hc_sr04.echo_port = GPIOB; hc_sr04.echo_pin = GPIO_PIN_5;
-	  hc_sr04.timer = &htim2;
-	  Ultrasound_Init(&hc_sr04);
-
-    TaskExample_Create();
-
-    vTaskStartScheduler();
-    
-    /* If all is well, the scheduler will now be running, and the following
-     line will never be reached. If it does, there was insufficient FreeRTOS
-     heap memory available for the idle task. */
-    Error_Handler();
-}
-
 
 /* USER CODE END 0 */
 
@@ -176,15 +115,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-/**
- * @brief Callback ejecutado cuando se completa la recepción UART por interrupción.
- * @param huart Puntero al handle UART que generó la interrupción.
- */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    if (huart->Instance == USART2) {
-        DrvUart_RxCallback(&esp_uart);
-    }
-}
+
 /* USER CODE END 4 */
 
 /**

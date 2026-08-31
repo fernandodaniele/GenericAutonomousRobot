@@ -1,9 +1,7 @@
-/* USER CODE BEGIN Header */
 /**
   ******************************************************************************
-  * @file    i2s.h
-  * @brief   This file contains all the function prototypes for
-  *          the i2s.c file
+  * @file   fatfs.h
+  * @brief  Header for fatfs applications
   ******************************************************************************
   * @attention
   *
@@ -16,37 +14,25 @@
   *
   ******************************************************************************
   */
-/* USER CODE END Header */
-/* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __I2S_H__
-#define __I2S_H__
-
+#ifndef __fatfs_H
+#define __fatfs_H
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Includes ------------------------------------------------------------------*/
-#include "main.h"
+#include "ff.h"
+#include "ff_gen_drv.h"
+#include "user_diskio.h"
 
-/* USER CODE BEGIN Includes */
+extern uint8_t retUSER;    /* Return value for USER */
+extern char USERPath[4];   /* USER logical drive path */
 
-/* USER CODE END Includes */
-
-extern I2S_HandleTypeDef hi2s3;
-
-/* USER CODE BEGIN Private defines */
-
-/* USER CODE END Private defines */
-
-void MX_I2S3_Init(void);
+void MX_FATFS_Init(void);
 
 /* USER CODE BEGIN Prototypes */
-
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __I2S_H__ */
-
+#endif /*__fatfs_H */

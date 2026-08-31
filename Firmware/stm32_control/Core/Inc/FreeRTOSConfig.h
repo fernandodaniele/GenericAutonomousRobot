@@ -166,6 +166,13 @@ standard names. */
 
 /* USER CODE BEGIN Defines */
 /* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */
+
+/* Las 5 tareas de la app + idle + timer service no entran en los 15 KB por
+ * defecto. Se sobre-escribe acá (regen-safe: está en USER CODE) en vez de
+ * tocar el #define generado arriba. El F407VG tiene 128 KB de RAM.
+ * Idealmente, fijar 24576 en el panel FreeRTOS de CubeMX para que el .ioc lo lleve. */
+#undef  configTOTAL_HEAP_SIZE
+#define configTOTAL_HEAP_SIZE                    ((size_t)24576)
 /* USER CODE END Defines */
 
 #endif /* FREERTOS_CONFIG_H */

@@ -1,29 +1,28 @@
 #include "main.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "usbd_cdc_if.h"
 #include "task_example.h"
+#include "mid_log.h"
 
 static void vTaskExample(void *pvParameters)
 {
-  const uint8_t message[] = "Hola";
-
   (void) pvParameters;
 
   for (;;)
   {
     HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
-    CDC_Transmit_FS((uint8_t *)message, sizeof(message) - 1);
+    LOG_INFO("hola desde task_example");
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
 void TaskExample_Create(void)
 {
+  /* 384 words: LOG_INFO usa vsnprintf (newlib-nano). */
   BaseType_t result = xTaskCreate(
       vTaskExample,
       "Example",
-      256,
+      384,
       NULL,
       tskIDLE_PRIORITY + 1,
       NULL);

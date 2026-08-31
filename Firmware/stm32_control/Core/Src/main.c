@@ -36,6 +36,7 @@
 #include "mid_kinematics.h"
 #include "ds1302.h"
 #include "task_ds1302.h"
+#include "mid_log.h"
 
 #include "drv_uart.h"
 #include <string.h>
@@ -132,8 +133,11 @@ int main ()
 	                 1U,      /* mes (1 = Ene)           */
 	                 2026);   /* anio                    */
 
+	  /* 5. Logger por USB CDC con timestamp del DS1302. */
+	  Log_Init(&ds1302);
+
     TaskExample_Create();
-    TaskDs1302_Create(&ds1302);
+    TaskDs1302_Create();
 
     vTaskStartScheduler();
     

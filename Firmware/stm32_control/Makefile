@@ -68,6 +68,7 @@ Core/Src/tim.c \
 Core/Src/drv_motor.c \
 Core/Src/drv_ultrasound.c \
 Core/Src/mid_kinematics.c \
+Core/Src/mid_log.c \
 Core/Src/task_example.c \
 Core/Src/task_ds1302.c \
 Core/Src/ds1302.c \

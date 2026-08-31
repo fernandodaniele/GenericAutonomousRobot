@@ -147,7 +147,9 @@ void Error_Handler(void);
 #define MEMS_INT2_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
-
+/* Chip-select de la tarjeta SD (SPI2). Pin libre en Grupo-1. */
+#define SD_CS_Pin GPIO_PIN_4
+#define SD_CS_GPIO_Port GPIOC
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

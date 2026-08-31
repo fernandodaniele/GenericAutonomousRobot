@@ -28,11 +28,11 @@ static void vTaskDs1302(void *pvParameters)
 
 void TaskDs1302_Create(void)
 {
-  /* 384 words: LOG_INFO usa vsnprintf (newlib-nano). */
+  /* 512 words: LOG_INFO -> vsnprintf (newlib-nano) + FatFs (f_write/f_sync). */
   BaseType_t result = xTaskCreate(
       vTaskDs1302,
       "ds1302",
-      384,
+      512,
       NULL,
       tskIDLE_PRIORITY + 1,
       NULL);

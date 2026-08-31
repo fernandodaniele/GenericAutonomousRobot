@@ -18,11 +18,11 @@ static void vTaskExample(void *pvParameters)
 
 void TaskExample_Create(void)
 {
-  /* 384 words: LOG_INFO usa vsnprintf (newlib-nano). */
+  /* 512 words: LOG_INFO -> vsnprintf (newlib-nano) + FatFs (f_write/f_sync). */
   BaseType_t result = xTaskCreate(
       vTaskExample,
       "Example",
-      384,
+      512,
       NULL,
       tskIDLE_PRIORITY + 1,
       NULL);

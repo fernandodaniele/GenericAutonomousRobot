@@ -1,11 +1,16 @@
 /**
  * @file    mid_log.c
- * @brief   Logger de desarrollo por USB CDC con timestamp del RTC DS1302.
+ * @brief   Logger con timestamp del RTC DS1302.
+ *
+ * Cada línea va a dos destinos, serializados por un mutex:
+ *   1) archivo "0:/GAR.LOG" en la SD (black box) — siempre, aunque no haya PC.
+ *   2) USB CDC — solo si el host tiene el puerto abierto (DTR).
  */
 
 #include "mid_log.h"
 #include "usbd_cdc_if.h"
 #include "ds1302.h"
+#include "fatfs.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -17,9 +22,14 @@
 
 #define LOG_BUF_SIZE     160
 #define LOG_CDC_RETRIES  5
+#define LOG_FILE_PATH    "0:/GAR.LOG"
 
 static Ds1302_t         *s_rtc   = NULL;
 static SemaphoreHandle_t s_mutex = NULL;
+
+static FATFS   s_fs;
+static FIL     s_fil;
+static uint8_t s_sd_ok = 0U;   /* 1 = SD montada y GAR.LOG abierto en append */
 
 static int scheduler_running(void)
 {
@@ -81,6 +91,17 @@ void Log_Init(Ds1302_t *rtc)
     {
         s_mutex = xSemaphoreCreateMutex();
     }
+
+    /* Montar la SD y abrir el log en append. Bloqueante (SPI bit por bit); se
+     * llama antes del scheduler. Si no hay tarjeta, se sigue sin SD. */
+    if (!s_sd_ok)
+    {
+        if ((f_mount(&s_fs, USERPath, 1) == FR_OK) &&
+            (f_open(&s_fil, LOG_FILE_PATH, FA_OPEN_APPEND | FA_WRITE) == FR_OK))
+        {
+            s_sd_ok = 1U;
+        }
+    }
 }
 
 void Log_Write(const char *level, const char *fmt, ...)
@@ -91,8 +112,8 @@ void Log_Write(const char *level, const char *fmt, ...)
     int pos = 0;
     int r;
 
-    /* Sin terminal abierta (DTR): se descarta la línea. */
-    if (!CDC_IsConnected())
+    /* Nada a lo que escribir: ni SD ni terminal. */
+    if (!s_sd_ok && !CDC_IsConnected())
     {
         return;
     }
@@ -129,13 +150,30 @@ void Log_Write(const char *level, const char *fmt, ...)
     buf[pos++] = '\r';
     buf[pos++] = '\n';
 
-    for (int i = 0; i < LOG_CDC_RETRIES; i++)
+    /* 1) SD (black box): siempre que esté montada, haya o no terminal. */
+    if (s_sd_ok)
     {
-        if (CDC_Transmit_FS((uint8_t *)buf, (uint16_t)pos) != USBD_BUSY)
+        UINT bw = 0U;
+        if ((f_write(&s_fil, buf, (UINT)pos, &bw) != FR_OK) ||
+            (bw != (UINT)pos) ||
+            (f_sync(&s_fil) != FR_OK))
         {
-            break;
+            /* Tarjeta retirada o error de escritura: dejar de intentar. */
+            s_sd_ok = 0U;
         }
-        log_delay(2U);
+    }
+
+    /* 2) USB CDC: solo si el host tiene el puerto abierto (DTR). */
+    if (CDC_IsConnected())
+    {
+        for (int i = 0; i < LOG_CDC_RETRIES; i++)
+        {
+            if (CDC_Transmit_FS((uint8_t *)buf, (uint16_t)pos) != USBD_BUSY)
+            {
+                break;
+            }
+            log_delay(2U);
+        }
     }
 
     log_unlock();

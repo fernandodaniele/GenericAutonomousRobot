@@ -6,6 +6,8 @@ on:
       - master
       - Grupo-1
       - 'G1-add/**'
+      - 'G1-int/**'
+      - 'G1-fix/**'
       - add/UART
   pull_request:
     branches:

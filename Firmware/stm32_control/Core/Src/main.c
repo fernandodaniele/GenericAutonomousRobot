@@ -34,6 +34,8 @@
 #include "drv_motor.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
+#include "ds1302.h"
+#include "task_ds1302.h"
 
 #include "drv_uart.h"
 #include <string.h>
@@ -64,6 +66,7 @@ MotorHandle_t motor_l, motor_r;
 RobotCommand_t robot_cmd;
 DrvUart_t esp_uart;
 char uart_message[UART_RX_BUFFER_SIZE];
+Ds1302_t ds1302;
 
 /* USER CODE END PV */
 
@@ -111,7 +114,26 @@ int main ()
 	   *    TIM3 y el DMA internamente; la API nueva no recibe handle. */
 	  HCSR04_Init();
 
+	  /* 4. RTC DS1302 (bit-bang: CLK=PD8, DAT=PD9, RST=PD10; GPIO en MX_GPIO_Init) */
+	  const Ds1302Config_t ds1302_cfg = {
+	      .reset_pin = { .mcu_port = GPIOD, .pin = GPIO_PIN_10 }
+	  };
+	  DS1302_Init(&ds1302, &ds1302_cfg);
+	  /* Bring-up: se fija una hora conocida en cada arranque para validar el driver.
+	   * TODO(Fase 3): setear solo si el reloj no corre (bit CH) y tomar la hora real. */
+	  DS1302_SetTime(&ds1302,
+	                 0U,      /* formato 24 h            */
+	                 12U,     /* horas                   */
+	                 0U,      /* minutos                 */
+	                 0U,      /* segundos                */
+	                 0U,      /* am_pm (ignorado en 24h) */
+	                 1U,      /* dia de semana (1 = Dom)  */
+	                 1U,      /* dia del mes             */
+	                 1U,      /* mes (1 = Ene)           */
+	                 2026);   /* anio                    */
+
     TaskExample_Create();
+    TaskDs1302_Create(&ds1302);
 
     vTaskStartScheduler();
     

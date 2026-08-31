@@ -18,26 +18,22 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "cmsis_os.h"
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
 #include "usb_device.h"
 #include "gpio.h"
-#include "fatfs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "fatfs.h"
 #include "drv_motor.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 #include "ds1302.h"
 #include "mid_log.h"
-#include "task_example.h"
-#include "task_ds1302.h"
-#include "task_sensors.h"
 #include "drv_uart.h"
 #include <string.h>
 /* USER CODE END Includes */
@@ -60,7 +56,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-/* Objetos de las capas de la aplicación. */
+/* Objetos de las capas de la aplicación (las tareas se crean en freertos.c). */
 MotorHandle_t motor_l, motor_r;
 RobotCommand_t robot_cmd;
 DrvUart_t esp_uart;
@@ -70,6 +66,7 @@ Ds1302_t ds1302;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -114,10 +111,10 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  /* MX_USB_DEVICE_Init() se llama acá (no en StartDefaultTask): este proyecto
-   * arranca el scheduler a mano con vTaskStartScheduler(), no usa MX_FREERTOS_Init. */
-  MX_USB_DEVICE_Init();
-  MX_FATFS_Init();          /* enlaza el driver USER (drv_sd_spi) a FatFs */
+  /* MX_USB_DEVICE_Init() lo llama StartDefaultTask (freertos.c), como genera CubeMX. */
+
+  /* FatFs: enlaza el driver USER (drv_sd_spi). No está en el .ioc, ver FATFS/README.md. */
+  MX_FATFS_Init();
 
   /* 1. UART hacia el ESP32 */
   DrvUart_Init(&esp_uart, &huart2);
@@ -161,17 +158,18 @@ int main(void)
 
   /* 5. Logger por USB CDC + SD, con timestamp del DS1302. */
   Log_Init(&ds1302);
-
-  /* 6. Tareas de la aplicación y arranque del scheduler. */
-  TaskExample_Create();
-  TaskDs1302_Create();
-  TaskSensors_Create(&motor_l, &motor_r);
-
-  vTaskStartScheduler();
-
-  /* Si el scheduler arrancó no se llega acá; si se llega, faltó heap de FreeRTOS. */
-  Error_Handler();
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
+
+  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */

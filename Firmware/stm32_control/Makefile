@@ -72,6 +72,7 @@ Core/Src/mid_log.c \
 Core/Src/drv_sd_spi.c \
 Core/Src/task_example.c \
 Core/Src/task_ds1302.c \
+Core/Src/task_sensors.c \
 Core/Src/ds1302.c \
 Core/Src/drv_TCRT5000.c \
 Core/Src/drv_uart.c \

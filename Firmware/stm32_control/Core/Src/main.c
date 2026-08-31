@@ -37,6 +37,7 @@
 #include "mid_kinematics.h"
 #include "ds1302.h"
 #include "task_ds1302.h"
+#include "task_sensors.h"
 #include "mid_log.h"
 
 #include "drv_uart.h"
@@ -50,7 +51,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAFE_DISTANCE 200	// Safety distance in mm
+/* SAFE_DISTANCE_MM vive ahora en task_sensors.h (donde se usa). */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -92,6 +93,7 @@ int main ()
 	  MX_USART2_UART_Init();
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
+	  MX_I2C1_Init();          /* MPU6050 */
 	  MX_SPI2_Init();          /* tarjeta SD */
 	  MX_FATFS_Init();         /* enlaza el driver USER (drv_sd_spi) a FatFs */
 	  MX_USB_DEVICE_Init();
@@ -141,6 +143,7 @@ int main ()
 
     TaskExample_Create();
     TaskDs1302_Create();
+    TaskSensors_Create(&motor_l, &motor_r);
 
     vTaskStartScheduler();
     

@@ -1,9 +1,9 @@
 # FATFS — vendorizado a mano (NO regenerar desde CubeMX)
 
 Esta carpeta y `Middlewares/Third_Party/FatFs/` se agregaron **a mano**, no con la
-opción FATFS de STM32CubeMX. Motivo: regenerar código sobre este proyecto rompe
-`Core/Src/main.c` (ver `fix-plan.md` §4), así que se prefirió no habilitar FATFS
-en el `.ioc`.
+opción FATFS de STM32CubeMX. Las fuentes se compilan vía `../GNUmakefile`
+(`APP_C_SOURCES`), no vía `Makefile` (que queda como salida pura de CubeMX).
+Ver `fix-plan.md` §5.
 
 ## Qué hay acá
 

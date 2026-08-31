@@ -2,22 +2,68 @@
 #  GNUmakefile — wrapper regen-safe del build STM32
 # ============================================================================
 #  GNU Make usa este archivo ANTES que 'Makefile'. Incluye el Makefile que
-#  genera STM32CubeMX y le suma el código que CubeMX no conoce: drivers de la
-#  aplicación, tareas de FreeRTOS, middleware propio y FatFs vendorizado.
+#  genera STM32CubeMX y le agrega TODO lo que CubeMX 4.7.0-B52 omite o rompe al
+#  regenerar sobre este proyecto:
 #
-#  Un "Generate Code" de CubeMX reescribe 'Makefile' por completo pero NUNCA
-#  toca este archivo, así que el build sigue funcionando sin retoques.
-#  ('Makefile' debe quedar como salida pura de CubeMX: no agregar fuentes ahí.)
+#    - main() -> vive en Core/Src/app_main.c (CubeMX no genera main() acá,
+#      probado 3 veces; su Core/Src/main.c sale sin main()).
+#    - Fuentes del framework (HAL / FreeRTOS / lib USB / system) -> CubeMX a
+#      veces las borra del C_SOURCES del Makefile. Se listan acá también.
+#    - Drivers/tareas/middleware propios + FatFs vendorizado.
+#
+#  $(sort) de-duplica: da igual si el Makefile de CubeMX trae o no cada fuente.
+#  CubeMX NUNCA toca este archivo -> el build siempre linkea.
 #
 #  El CI y `make` a secas usan este wrapper automáticamente.
-#  Si editás las listas de abajo:  make clean && make
-#  (la regla de compilación depende de 'Makefile', no de este archivo).
+#  Editaste una lista? -> make clean && make
+#  Ver fix-plan.md §5.
 # ============================================================================
 
 include Makefile
 
-# --- Fuentes propias (no las conoce CubeMX) --------------------------------
+# --- Framework generado/copiado por CubeMX (HAL, FreeRTOS, lib USB, system) --
+FW_C_SOURCES := \
+  Core/Src/system_stm32f4xx.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_flash_ramfunc.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_gpio.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_dma_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pwr_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_i2c_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_tim_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_uart.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pcd.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_pcd_ex.c \
+  Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_ll_usb.c \
+  Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c \
+  Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c \
+  Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c \
+  Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c \
+  Middlewares/Third_Party/FreeRTOS/Source/croutine.c \
+  Middlewares/Third_Party/FreeRTOS/Source/event_groups.c \
+  Middlewares/Third_Party/FreeRTOS/Source/list.c \
+  Middlewares/Third_Party/FreeRTOS/Source/queue.c \
+  Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c \
+  Middlewares/Third_Party/FreeRTOS/Source/tasks.c \
+  Middlewares/Third_Party/FreeRTOS/Source/timers.c \
+  Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c \
+  Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c \
+  Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F/port.c
+
+# --- app_main.c (main() — CubeMX no lo genera) + código propio --------------
 APP_C_SOURCES := \
+  Core/Src/app_main.c \
   Core/Src/drv_motor.c \
   Core/Src/drv_ultrasound.c \
   Core/Src/drv_TCRT5000.c \
@@ -31,7 +77,7 @@ APP_C_SOURCES := \
   Core/Src/task_ds1302.c \
   Core/Src/task_sensors.c
 
-# --- FatFs R0.12c vendorizado a mano (ver FATFS/README.md) ----------------
+# --- FatFs R0.12c vendorizado a mano (ver FATFS/README.md) -----------------
 APP_C_SOURCES += \
   FATFS/App/fatfs.c \
   FATFS/Target/user_diskio.c \
@@ -44,18 +90,17 @@ APP_C_INCLUDES := \
   -IFATFS/Target \
   -IMiddlewares/Third_Party/FatFs/src
 
-APP_OBJECTS := $(addprefix $(BUILD_DIR)/,$(notdir $(APP_C_SOURCES:.c=.o)))
+# --- Fusión con lo que trajo el Makefile de CubeMX -------------------------
+# $(sort) ordena y de-duplica: si el Makefile ya lista una fuente, no se repite.
+C_SOURCES   := $(sort $(C_SOURCES) $(FW_C_SOURCES) $(APP_C_SOURCES))
+ASM_SOURCES := $(sort $(ASM_SOURCES) startup_stm32f407xx.s)
+C_INCLUDES  += $(APP_C_INCLUDES)
 
-# --- Inyección en el build de CubeMX -------------------------------------
-# C_SOURCES / C_INCLUDES son variables recursivas: OBJECTS y CFLAGS las
-# expanden al usarse (en las recetas), así que basta con appendear acá.
-C_SOURCES  += $(APP_C_SOURCES)
-C_INCLUDES += $(APP_C_INCLUDES)
+# La lista de prerequisites de la regla del .elf ya quedó fijada (con lo que
+# tenía el Makefile) al leer el include. Se suman los objetos que agregamos.
+EXTRA_OBJECTS := $(addprefix $(BUILD_DIR)/,$(notdir \
+                   $(FW_C_SOURCES:.c=.o) $(APP_C_SOURCES:.c=.o) startup_stm32f407xx.o))
+$(BUILD_DIR)/$(TARGET).elf: $(EXTRA_OBJECTS)
 
-# La lista de prerequisites de la regla del .elf de 'Makefile' ya quedó fijada
-# (con la base) cuando se leyó el include. Se le suman los objetos propios como
-# prerequisites extra del mismo target (make funde prereqs de varias reglas).
-$(BUILD_DIR)/$(TARGET).elf: $(APP_OBJECTS)
-
-# vpath es acumulativo: agrega los directorios de las fuentes propias.
-vpath %.c $(sort $(dir $(APP_C_SOURCES)))
+# vpath acumulativo para los directorios de las fuentes agregadas.
+vpath %.c $(sort $(dir $(FW_C_SOURCES) $(APP_C_SOURCES)))

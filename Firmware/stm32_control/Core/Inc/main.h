@@ -83,6 +83,8 @@ void Error_Handler(void);
 #define SPI1_MISO_GPIO_Port GPIOA
 #define SPI1_MOSI_Pin GPIO_PIN_7
 #define SPI1_MOSI_GPIO_Port GPIOA
+#define SD_CS_Pin GPIO_PIN_4
+#define SD_CS_GPIO_Port GPIOC
 #define BOOT1_Pin GPIO_PIN_2
 #define BOOT1_GPIO_Port GPIOB
 #define Sensor_Del_Izq_Pin GPIO_PIN_7
@@ -95,6 +97,12 @@ void Error_Handler(void);
 #define Sensor_Tras_Der_GPIO_Port GPIOE
 #define CLK_IN_Pin GPIO_PIN_10
 #define CLK_IN_GPIO_Port GPIOB
+#define DS1302_CLK_Pin GPIO_PIN_8
+#define DS1302_CLK_GPIO_Port GPIOD
+#define DS1302_DAT_Pin GPIO_PIN_9
+#define DS1302_DAT_GPIO_Port GPIOD
+#define DS1302_RST_Pin GPIO_PIN_10
+#define DS1302_RST_GPIO_Port GPIOD
 #define LD4_Pin GPIO_PIN_12
 #define LD4_GPIO_Port GPIOD
 #define LD3_Pin GPIO_PIN_13
@@ -147,9 +155,7 @@ void Error_Handler(void);
 #define MEMS_INT2_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
-/* Chip-select de la tarjeta SD (SPI2). Pin libre en Grupo-1. */
-#define SD_CS_Pin GPIO_PIN_4
-#define SD_CS_GPIO_Port GPIOC
+/* SD_CS_Pin / SD_CS_GPIO_Port y DS1302_* ya los genera CubeMX arriba (labels del .ioc). */
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

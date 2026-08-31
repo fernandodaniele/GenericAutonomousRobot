@@ -28,14 +28,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "fatfs.h"
-#include "drv_motor.h"
-#include "drv_ultrasound.h"
-#include "mid_kinematics.h"
-#include "ds1302.h"
-#include "mid_log.h"
-#include "drv_uart.h"
-#include <string.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,7 +38,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* SAFE_DISTANCE_MM vive en task_sensors.h (donde se usa). */
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,12 +49,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-/* Objetos de las capas de la aplicación (las tareas se crean en freertos.c). */
-MotorHandle_t motor_l, motor_r;
-RobotCommand_t robot_cmd;
-DrvUart_t esp_uart;
-char uart_message[UART_RX_BUFFER_SIZE];
-Ds1302_t ds1302;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -80,107 +68,6 @@ void MX_FREERTOS_Init(void);
   * @brief  The application entry point.
   * @retval int
   */
-int main(void)
-{
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_I2C1_Init();
-  MX_SPI2_Init();
-  MX_TIM2_Init();
-  MX_TIM4_Init();
-  MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
-
-  /* MX_USB_DEVICE_Init() lo llama StartDefaultTask (freertos.c), como genera CubeMX. */
-
-  /* FatFs: enlaza el driver USER (drv_sd_spi). No está en el .ioc, ver FATFS/README.md. */
-  MX_FATFS_Init();
-
-  /* 1. UART hacia el ESP32 */
-  DrvUart_Init(&esp_uart, &huart2);
-  DrvUart_StartReceive(&esp_uart);
-  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
-
-  /* 2. Motores (TB6612FNG, PWM por TIM4) */
-  motor_l.htim = &htim4;
-  motor_l.channel = TIM_CHANNEL_2;
-  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
-  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
-  Motor_Init(&motor_l);
-
-  motor_r.htim = &htim4;
-  motor_r.channel = TIM_CHANNEL_3;
-  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
-  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
-  Motor_Init(&motor_r);
-
-  /* 3. Ultrasonido HC-SR04: TRIG=PB4, ECHO=PA6 (TIM3_CH1 + DMA1_Stream4).
-   *    El driver gestiona TIM3 y el DMA internamente. */
-  HCSR04_Init();
-
-  /* 4. RTC DS1302 (bit-bang: CLK=PD8, DAT=PD9, RST=PD10; GPIO en MX_GPIO_Init) */
-  const Ds1302Config_t ds1302_cfg = {
-      .reset_pin = { .mcu_port = GPIOD, .pin = GPIO_PIN_10 }
-  };
-  DS1302_Init(&ds1302, &ds1302_cfg);
-  /* Bring-up: hora fija en cada arranque para validar el driver.
-   * TODO: setear solo si el reloj no corre (bit CH) y tomar la hora real. */
-  DS1302_SetTime(&ds1302,
-                 0U,      /* formato 24 h            */
-                 12U,     /* horas                   */
-                 0U,      /* minutos                 */
-                 0U,      /* segundos                */
-                 0U,      /* am_pm (ignorado en 24h) */
-                 1U,      /* dia de semana (1 = Dom)  */
-                 1U,      /* dia del mes             */
-                 1U,      /* mes (1 = Ene)           */
-                 2026);   /* anio                    */
-
-  /* 5. Logger por USB CDC + SD, con timestamp del DS1302. */
-  Log_Init(&ds1302);
-  /* USER CODE END 2 */
-
-  /* Init scheduler */
-  osKernelInitialize();
-
-  /* Call init function for freertos objects (in cmsis_os2.c) */
-  MX_FREERTOS_Init();
-
-  /* Start scheduler */
-  osKernelStart();
-
-  /* We should never get here as control is now taken by the scheduler */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
-}
 
 /**
   * @brief System Clock Configuration
@@ -228,15 +115,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-/**
- * @brief Callback ejecutado cuando se completa la recepción UART por interrupción.
- * @param huart Puntero al handle UART que generó la interrupción.
- */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-    if (huart->Instance == USART2) {
-        DrvUart_RxCallback(&esp_uart);
-    }
-}
+
 /* USER CODE END 4 */
 
 /**

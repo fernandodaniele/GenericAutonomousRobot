@@ -62,19 +62,7 @@ Core/Src/gpio.c \
 Core/Src/i2c.c \
 Core/Src/spi.c \
 Core/Src/tim.c \
-Core/Src/drv_motor.c \
-Core/Src/drv_ultrasound.c \
-Core/Src/mid_kinematics.c \
-Core/Src/mid_log.c \
-Core/Src/drv_sd_spi.c \
-Core/Src/task_example.c \
-Core/Src/task_ds1302.c \
-Core/Src/task_sensors.c \
-Core/Src/ds1302.c \
-Core/Src/drv_TCRT5000.c \
-Core/Src/drv_uart.c \
 Core/Src/sysmem.c \
-Core/Src/mpu6050.c \
 Core/Src/syscalls.c \
 USB_DEVICE/App/usb_device.c \
 USB_DEVICE/App/usbd_desc.c \
@@ -88,11 +76,6 @@ Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c \
 Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c \
 Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c \
 Core/Src/freertos.c \
-FATFS/App/fatfs.c \
-FATFS/Target/user_diskio.c \
-Middlewares/Third_Party/FatFs/src/diskio.c \
-Middlewares/Third_Party/FatFs/src/ff.c \
-Middlewares/Third_Party/FatFs/src/ff_gen_drv.c \
 Middlewares/Third_Party/FreeRTOS/Source/croutine.c \
 Middlewares/Third_Party/FreeRTOS/Source/event_groups.c \
 Middlewares/Third_Party/FreeRTOS/Source/list.c \
@@ -172,10 +155,7 @@ C_INCLUDES =  \
 -IMiddlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc \
 -IMiddlewares/Third_Party/FreeRTOS/Source/include \
 -IMiddlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2 \
--IMiddlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F \
--IFATFS/App \
--IFATFS/Target \
--IMiddlewares/Third_Party/FatFs/src
+-IMiddlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 
 
 # compile gcc flags

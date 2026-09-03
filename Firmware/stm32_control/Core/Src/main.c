@@ -18,12 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
 #include "i2c.h"
-#include "i2s.h"
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
+#include "usb_device.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -72,52 +71,9 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int main ()
-{
-	/* Reset peripherals, initialize Flash and Systick */
-	  HAL_Init();
-	  SystemClock_Config();
 
-	  /* Initialize all configured peripherals */
-	  MX_GPIO_Init();
-	  MX_USART2_UART_Init();
-	  MX_TIM2_Init();
-	  MX_TIM4_Init();
-	  MX_USB_DEVICE_Init();
+/* USER CODE END 0 */
 
-	  DrvUart_Init(&esp_uart, &huart2);
-	  DrvUart_StartReceive(&esp_uart);
-	  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
-
-	  motor_l.channel = TIM_CHANNEL_2;
-	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
-	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
-	  Motor_Init(&motor_l);
-
-	  /* 2. Right Motor Driver Configuration */
-	  motor_r.htim = &htim4;
-	  motor_r.channel = TIM_CHANNEL_3;
-	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
-	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
-	  Motor_Init(&motor_r);
-
-	  /* 3. Ultrasound Driver Configuration */
-	  hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
-	  hc_sr04.echo_port = GPIOB; hc_sr04.echo_pin = GPIO_PIN_5;
-	  hc_sr04.timer = &htim2;
-	  Ultrasound_Init(&hc_sr04);
-
-	  /* Infinite loop */
-	  while (1) {
-	      if (DrvUart_IsMessageReady(&esp_uart)) {
-	          DrvUart_GetMessage(&esp_uart, uart_message, sizeof(uart_message));
-
-	          if (strcmp(uart_message, "PING") == 0) {
-	              DrvUart_SendString(&esp_uart, "OK\n");
-	          }
-	      }
-	  }
-}
 /**
   * @brief  The application entry point.
   * @retval int

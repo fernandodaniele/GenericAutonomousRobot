@@ -37,10 +37,10 @@
 #define DS1302_PM                      ("PM")
 #define DS1302_EMPTY                   ("  ")
 
-#define DS1302_CLK_PORT                GPIOA
-#define DS1302_CLK_PIN                 GPIO_PIN_5
-#define DS1302_IO_PORT                 GPIOA
-#define DS1302_IO_PIN                  GPIO_PIN_7
+#define DS1302_CLK_PORT                GPIOD
+#define DS1302_CLK_PIN                 GPIO_PIN_8
+#define DS1302_IO_PORT                 GPIOD
+#define DS1302_IO_PIN                  GPIO_PIN_9
 
 #define DS1302_BCD_TO_BIN(tens, units) (((tens) * 10U) + (units))
 #define DS1302_BIN_TO_BCD_TENS(value)  ((value) / 10U)

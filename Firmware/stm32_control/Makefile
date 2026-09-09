@@ -66,10 +66,9 @@ Core/Src/i2s.c \
 Core/Src/spi.c \
 Core/Src/tim.c \
 Core/Src/drv_motor.c \
-Core/Src/drv_ultrasound.c \
-Core/Src/mid_kinematics.c \
 Core/Src/task_example.c \
 Core/Src/drv_TCRT5000.c\
+Core/Src/ds1302.c \
 Core/Src/drv_uart.c \
 Core/Src/sysmem.c \
 Core/Src/mpu6050.c \

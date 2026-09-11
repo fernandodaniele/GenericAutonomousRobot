@@ -87,6 +87,7 @@ int main ()
 	  MX_USART2_UART_Init();
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
+    MX_SPI2_Init();
 	  MX_USB_DEVICE_Init();
 
 	  DrvUart_Init(&esp_uart, &huart2);

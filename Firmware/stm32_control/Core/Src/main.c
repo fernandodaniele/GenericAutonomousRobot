@@ -61,7 +61,6 @@
 
 // Objects of our layers
 MotorHandle_t motor_l, motor_r;
-Ultrasound_t hc_sr04;
 RobotCommand_t robot_cmd;
 DrvUart_t esp_uart;
 char uart_message[UART_RX_BUFFER_SIZE];
@@ -107,10 +106,6 @@ int main ()
 	  Motor_Init(&motor_r);
 
 	  /* 3. Ultrasound Driver Configuration */
-	  hc_sr04.trig_port = GPIOB; hc_sr04.trig_pin = GPIO_PIN_4;
-	  hc_sr04.echo_port = GPIOB; hc_sr04.echo_pin = GPIO_PIN_5;
-	  hc_sr04.timer = &htim2;
-	  Ultrasound_Init(&hc_sr04);
 
     TaskExample_Create();
 

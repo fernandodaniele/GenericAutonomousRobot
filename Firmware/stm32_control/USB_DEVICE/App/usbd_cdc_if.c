@@ -94,7 +94,7 @@ uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
 uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* USER CODE BEGIN PRIVATE_VARIABLES */
-
+static uint8_t s_dtr_active = 0U;  /* 1 cuando el host abre el puerto (DTR activo) */
 /* USER CODE END PRIVATE_VARIABLES */
 
 /**
@@ -228,7 +228,13 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
     break;
 
     case CDC_SET_CONTROL_LINE_STATE:
-
+      /* Para SET_CONTROL_LINE_STATE wLength==0, así que usbd_cdc.c pasa el
+       * setup packet crudo en pbuf (no un buffer de datos). Los bits DTR/RTS
+       * viajan en wValue: bit0 = DTR, bit1 = RTS. */
+      {
+        USBD_SetupReqTypedef *req = (USBD_SetupReqTypedef *)(void *)pbuf;
+        s_dtr_active = (req->wValue & 0x0001U) ? 1U : 0U;
+      }
     break;
 
     case CDC_SEND_BREAK:
@@ -316,7 +322,10 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
-
+uint8_t CDC_IsConnected(void)
+{
+  return s_dtr_active;
+}
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 
 /**

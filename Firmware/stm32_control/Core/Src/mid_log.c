@@ -87,13 +87,8 @@ static int log_prefix(char *buf, size_t n)
 void Log_Init(Ds1302_t *rtc)
 {
     s_rtc = rtc;
-    if (s_mutex == NULL)
-    {
-        s_mutex = xSemaphoreCreateMutex();
-    }
 
-    /* Montar la SD y abrir el log en append. Bloqueante (SPI bit por bit); se
-     * llama antes del scheduler. Si no hay tarjeta, se sigue sin SD. */
+    /* Primero montar SD */
     if (!s_sd_ok)
     {
         if ((f_mount(&s_fs, USERPath, 1) == FR_OK) &&
@@ -101,6 +96,12 @@ void Log_Init(Ds1302_t *rtc)
         {
             s_sd_ok = 1U;
         }
+    }
+
+    /* Crear mutex al final */
+    if (s_mutex == NULL)
+    {
+        s_mutex = xSemaphoreCreateMutex();
     }
 }
 

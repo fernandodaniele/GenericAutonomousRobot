@@ -35,6 +35,8 @@
 #include "drv_motor.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
+#include "ds1302.h"
+#include "mid_log.h"
 
 #include "drv_uart.h"
 #include <string.h>
@@ -59,6 +61,14 @@
 
 /* USER CODE BEGIN PV */
 
+Ds1302_t rtc;
+
+Ds1302Config_t rtc_config = {
+    .reset_pin = {
+        .mcu_port = GPIOE,
+        .pin = GPIO_PIN_6
+    }
+};
 
 // Objects of our layers
 MotorHandle_t motor_l, motor_r;
@@ -88,14 +98,15 @@ int main ()
 	  MX_USART2_UART_Init();
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
-    MX_SPI2_Init();
-    MX_FATFS_Init();
+	  MX_SPI2_Init();
+	  MX_FATFS_Init();
 	  MX_USB_DEVICE_Init();
 
 	  DrvUart_Init(&esp_uart, &huart2);
 	  DrvUart_StartReceive(&esp_uart);
 	  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
 
+	  motor_l.htim = &htim4;
 	  motor_l.channel = TIM_CHANNEL_2;
 	  motor_l.port_a = GPIOD; motor_l.pin_a = GPIO_PIN_0;
 	  motor_l.port_b = GPIOD; motor_l.pin_b = GPIO_PIN_1;
@@ -110,13 +121,20 @@ int main ()
 
 	  /* 3. Ultrasound Driver Configuration */
 
+    if (DS1302_Init(&rtc, &rtc_config) != DS1302_OK)
+    {
+        Error_Handler();
+    }
+
+    Log_Init(&rtc);
+
     TaskExample_Create();
 
     vTaskStartScheduler();
     
     /* If all is well, the scheduler will now be running, and the following
-     line will never be reached. If it does, there was insufficient FreeRTOS
-     heap memory available for the idle task. */
+    line will never be reached. If it does, there was insufficient FreeRTOS
+    heap memory available for the idle task. */
     Error_Handler();
 }
 

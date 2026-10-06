@@ -27,17 +27,18 @@ void HCSR04_Init(void) {
     DWT->CYCCNT = 0;
     DWT->CTRL  |= DWT_CTRL_CYCCNTENA_Msk;
 
-    /* Pin TRIG: PB4 como salida GPIO, reposo en LOW */
-    __HAL_RCC_GPIOB_CLK_ENABLE();
+    /* Pin TRIG: PC9 como salida GPIO, reposo en LOW */
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
     GPIO_InitTypeDef trig = {0};
-    trig.Pin   = GPIO_PIN_4;
+    trig.Pin   = GPIO_PIN_9;
     trig.Mode  = GPIO_MODE_OUTPUT_PP;
     trig.Pull  = GPIO_NOPULL;
-    trig.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(GPIOB, &trig);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
+    trig.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOC, &trig);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
 
-    /* Pin ECHO: PA6 como TIM3 CH1, captura en ambos flancos */
+    /* Pin ECHO: PC6 como TIM3 CH1, captura en ambos flancos */
     TIM_IC_InitTypeDef ic = {0};
 
     htim3_echo.Instance               = TIM3;
@@ -62,13 +63,13 @@ void HCSR04_Trigger(void) {
     /* Cancela cualquier captura pendiente de un disparo anterior sin respuesta */
     HAL_TIM_IC_Stop_DMA(&htim3_echo, TIM_CHANNEL_1);
 
-    /* Pulso de 10 µs en PB4 */
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_SET);
-    Delay_Us(10);
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
-
     /* Arma el DMA para capturar los timestamps de subida y bajada */
     HAL_TIM_IC_Start_DMA(&htim3_echo, TIM_CHANNEL_1, (uint32_t *)captures, 2);
+
+    /* Pulso de 10 µs en PC9 */
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+    Delay_Us(10);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
 }
 
 uint8_t HCSR04_IsReady(void) { return capture_done; }
@@ -107,16 +108,15 @@ void HAL_TIM_IC_MspInit(TIM_HandleTypeDef *htim) {
 
     __HAL_RCC_TIM3_CLK_ENABLE();
     __HAL_RCC_DMA1_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
 
-    /* PA6 = TIM3 CH1 = ECHO */
     GPIO_InitTypeDef echo = {0};
     echo.Pin       = GPIO_PIN_6;
     echo.Mode      = GPIO_MODE_AF_PP;
-    echo.Pull      = GPIO_PULLDOWN;
+    echo.Pull      = GPIO_NOPULL;
     echo.Speed     = GPIO_SPEED_FREQ_LOW;
     echo.Alternate = GPIO_AF2_TIM3;
-    HAL_GPIO_Init(GPIOA, &echo);
+    HAL_GPIO_Init(GPIOC, &echo);
 
     /* DMA1 Stream4 Channel5 ← TIM3 CH1 */
     hdma_tim3_ic.Instance                 = DMA1_Stream4;
@@ -133,9 +133,6 @@ void HAL_TIM_IC_MspInit(TIM_HandleTypeDef *htim) {
 
     __HAL_LINKDMA(htim, hdma[TIM_DMA_ID_CC1], hdma_tim3_ic);
 
-    HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
-
-    HAL_NVIC_SetPriority(TIM3_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(TIM3_IRQn);
 }

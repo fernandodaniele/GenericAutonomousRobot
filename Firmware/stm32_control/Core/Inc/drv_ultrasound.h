@@ -7,8 +7,8 @@
  * Driver para sensor de distancia ultrasónico HC-SR04 — STM32F407VG @ 168 MHz.
  *
  * Hardware:
- *   TRIG: PB4  — salida GPIO push-pull
- *   ECHO: PA6  — TIM3 CH1 (captura de entrada, ambos flancos, DMA, AF2)
+ *   TRIG: PC9  — salida GPIO push-pull
+ *   ECHO: PC6  — TIM3 CH1 (captura de entrada, ambos flancos, DMA, AF2)
  *
  * TIM3 (APB1, 84 MHz) configurado a 1 MHz con PSC=83.
  * DMA1 Stream4 Channel5 captura dos timestamps de 16 bits (flanco ascendente y descendente).

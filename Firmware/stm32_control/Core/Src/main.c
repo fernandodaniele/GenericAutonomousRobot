@@ -24,6 +24,9 @@
 #include "usart.h"
 #include "usb_device.h"
 #include "gpio.h"
+#include "adc.h"
+#include "cmsis_os.h"
+#include "task_example.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -78,6 +81,44 @@ void SystemClock_Config(void);
   * @brief  The application entry point.
   * @retval int
   */
+
+void MX_FREERTOS_Init(void);
+
+int main(void)
+{
+  /* Reset de periféricos, inicializa Flash y SysTick */
+  HAL_Init();
+
+  /* Reloj del sistema a 168 MHz */
+  SystemClock_Config();
+
+  /* Inicialización de periféricos */
+  MX_GPIO_Init();
+  MX_ADC1_Init();
+  MX_I2C1_Init();
+  MX_I2C3_Init();
+  MX_SPI1_Init();
+  MX_TIM2_Init();
+  MX_TIM4_Init();
+  MX_USART2_UART_Init();
+  /* USB se inicializa dentro de StartDefaultTask (freertos.c) */
+
+  /* USER CODE BEGIN 2 */
+  DrvUart_Init(&esp_uart, &huart2);
+  DrvUart_StartReceive(&esp_uart);
+  /* USER CODE END 2 */
+
+  /* FreeRTOS */
+  osKernelInitialize();
+  MX_FREERTOS_Init();
+  TaskExample_Create();   /* Parpadeo de LD4 para verificar que el RTOS corre */
+  osKernelStart();
+
+  /* No se debería llegar nunca acá */
+  while (1)
+  {
+  }
+}
 
 /**
   * @brief System Clock Configuration

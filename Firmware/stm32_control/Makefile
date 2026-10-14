@@ -66,6 +66,7 @@ Core/Src/i2s.c \
 Core/Src/spi.c \
 Core/Src/tim.c \
 Core/Src/drv_motor.c \
+Core/Src/drv_encoder.c \
 Core/Src/drv_ultrasound.c \
 Core/Src/mid_kinematics.c \
 Core/Src/task_example.c \

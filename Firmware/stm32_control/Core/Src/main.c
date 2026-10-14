@@ -33,6 +33,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "drv_motor.h"
+#include "drv_encoder.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 #include "ds1302.h"
@@ -73,6 +74,7 @@ Ds1302Config_t rtc_config = {
 // Objects of our layers
 MotorHandle_t motor_l, motor_r;
 RobotCommand_t robot_cmd;
+EncoderHandle_t encoder_left, encoder_right;
 DrvUart_t esp_uart;
 char uart_message[UART_RX_BUFFER_SIZE];
 
@@ -97,11 +99,23 @@ int main ()
 	  MX_GPIO_Init();
     MX_I2C1_Init();
 	  MX_USART2_UART_Init();
+    MX_TIM1_Init();
 	  MX_TIM2_Init();
 	  MX_TIM4_Init();
 	  MX_SPI2_Init();
 	  MX_FATFS_Init();
 	  MX_USB_DEVICE_Init();
+
+    Encoder_Init(&encoder_left, &htim1);
+    Encoder_Init(&encoder_right, &htim2);
+
+    if (Encoder_Start(&encoder_left) != HAL_OK) {
+        Error_Handler();
+    }
+
+    if (Encoder_Start(&encoder_right) != HAL_OK) {
+        Error_Handler();
+    }
 
 	  DrvUart_Init(&esp_uart, &huart2);
 	  DrvUart_StartReceive(&esp_uart);

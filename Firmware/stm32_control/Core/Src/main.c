@@ -20,7 +20,6 @@
 #include "main.h"
 #include "FreeRTOS.h"
 #include "task.h"
-#include "task_example.h"
 #include "i2c.h"
 #include "i2s.h"
 #include "spi.h"
@@ -34,6 +33,7 @@
 /* USER CODE BEGIN Includes */
 #include "drv_motor.h"
 #include "drv_encoder.h"
+#include "task_motor_control.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 #include "ds1302.h"
@@ -82,7 +82,6 @@ char uart_message[UART_RX_BUFFER_SIZE];
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void TaskExample_Create(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -134,8 +133,6 @@ int main ()
 	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
 	  Motor_Init(&motor_r);
 
-	  /* 3. Ultrasound Driver Configuration */
-
     if (DS1302_Init(&rtc, &rtc_config) != DS1302_OK)
     {
         Error_Handler();
@@ -143,13 +140,15 @@ int main ()
 
     Log_Init(&rtc);
 
-    TaskExample_Create();
+    TaskMotorControl_Create(&encoder_left, &encoder_right,
+                            &motor_l, &motor_r);
 
     vTaskStartScheduler();
-    
-    /* If all is well, the scheduler will now be running, and the following
-    line will never be reached. If it does, there was insufficient FreeRTOS
-    heap memory available for the idle task. */
+
+    /* Si el scheduler inicia correctamente, esta parte del código
+    * nunca debería ejecutarse. Si se alcanza, puede deberse a
+    * memoria insuficiente para crear las tareas internas de FreeRTOS.
+    */
     Error_Handler();
 }
 

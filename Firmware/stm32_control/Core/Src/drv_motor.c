@@ -1,30 +1,40 @@
 /*
- * drv_ultrasound.h
+ * drv_motor.c
  *
  *  Created on: Apr 18, 2026
  *      Author: Parucci, Santiago
+ *
+ *  Adaptado al driver L9110S (IA = PWM, IB = sentido).
  */
 
 
 #include "../Inc/drv_motor.h"
+
+// Compare mayor al ARR: la salida PWM queda siempre en alto
+#define MOTOR_PWM_ALWAYS_HIGH (MOTOR_MAX_SPEED + 1)
+
+/**
+ * @brief Freno activo: IA=1, IB=1 (ambas salidas del L9110S en bajo)
+ */
+static void Motor_Brake(MotorHandle_t* motor)
+{
+    HAL_GPIO_WritePin(motor->dir_port, motor->dir_pin, GPIO_PIN_SET);
+    __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, MOTOR_PWM_ALWAYS_HIGH);
+}
 
 /**
  * @brief Inicializa el motor
  */
 void Motor_Init(MotorHandle_t* motor)
 {
-    // Arranca PWM en canal
-    HAL_TIM_PWM_Start(motor->htim, motor->channel);
-
     // Estado inicial de velocidad en 0
     motor->current_speed = 0;
 
-    // Freno activo (IN1=1, IN2=1). Sin velocidad al iniciar
-    HAL_GPIO_WritePin(motor->port_a, motor->pin_a, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(motor->port_b, motor->pin_b, GPIO_PIN_SET);
+    // Freno activo antes de arrancar el PWM. Sin velocidad al iniciar
+    Motor_Brake(motor);
 
-    // PWM en 0
-    __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, 0);
+    // Arranca PWM en canal
+    HAL_TIM_PWM_Start(motor->htim, motor->channel);
 }
 
 
@@ -40,34 +50,24 @@ void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed)
     // Guarda el estado de velocidad
     motor->current_speed = speed;
 
-    // Valor absoluto → PWM
-    uint16_t pwm = (speed >= 0) ? speed : -speed;
-
-    // Configuración de dirección o de freno
     if (speed > 0)
     {
-        // Adelante
-        HAL_GPIO_WritePin(motor->port_a, motor->pin_a, GPIO_PIN_SET);
-        HAL_GPIO_WritePin(motor->port_b, motor->pin_b, GPIO_PIN_RESET);
+        // Adelante: IB=0, el motor gira mientras IA está en 1
+        HAL_GPIO_WritePin(motor->dir_port, motor->dir_pin, GPIO_PIN_RESET);
+        __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, (uint32_t)speed);
     }
     else if (speed < 0)
     {
-        // Atrás
-        HAL_GPIO_WritePin(motor->port_a, motor->pin_a, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(motor->port_b, motor->pin_b, GPIO_PIN_SET);
+        // Atrás: IB=1, el motor gira mientras IA está en 0 -> ciclo invertido
+        HAL_GPIO_WritePin(motor->dir_port, motor->dir_pin, GPIO_PIN_SET);
+        __HAL_TIM_SET_COMPARE(motor->htim, motor->channel,
+                              (uint32_t)(MOTOR_MAX_SPEED + speed));
     }
     else
     {
         // Freno
-        HAL_GPIO_WritePin(motor->port_a, motor->pin_a, GPIO_PIN_SET);
-        HAL_GPIO_WritePin(motor->port_b, motor->pin_b, GPIO_PIN_SET);
+        Motor_Brake(motor);
     }
-
-    // Cálculo del PWM usando el valor absoluto de la velocidad
-    uint16_t pwm_value = (speed > 0) ? speed : -speed;
-
-    // Aplicar PWM
-    __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, pwm);
 }
 
 
@@ -79,9 +79,5 @@ void Motor_Stop(MotorHandle_t* motor)
     motor->current_speed = 0;
 
     // Freno activo
-    HAL_GPIO_WritePin(motor->port_a, motor->pin_a, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(motor->port_b, motor->pin_b, GPIO_PIN_SET);
-
-    // PWM en 0
-    __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, 0);
+    Motor_Brake(motor);
 }

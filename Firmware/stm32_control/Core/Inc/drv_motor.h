@@ -13,19 +13,23 @@
 #include "tim.h"
 #include "gpio.h"
 
-// Escala de velocidad entre 0 a 8399
+// Escala de velocidad entre 0 a 8399 (ARR de TIM4)
 #define MOTOR_MAX_SPEED 8399
 #define MOTOR_MIN_SPEED -8399
 
+/*
+ * Driver L9110S: cada canal tiene dos entradas, IA e IB, sin pin PWM aparte.
+ *   IA = PWM, IB = 0  -> adelante (ciclo = velocidad)
+ *   IA = PWM, IB = 1  -> atrás (el motor gira mientras IA está en 0,
+ *                        por eso el ciclo se invierte)
+ *   IA = 1,   IB = 1  -> freno
+ */
 typedef struct {
     TIM_HandleTypeDef* htim;   	// Timer PWM
-    uint32_t channel;          	// Canal PWM
+    uint32_t channel;          	// Canal PWM conectado a IA
 
-    GPIO_TypeDef* port_a;      	// Puerto pin A
-    uint16_t pin_a;				// Pin dirección A
-
-    GPIO_TypeDef* port_b;      	// Puerto pin B
-    uint16_t pin_b;				// Pin dirección B
+    GPIO_TypeDef* dir_port;    	// Puerto del pin IB
+    uint16_t dir_pin;			// Pin IB (sentido)
 
     int16_t current_speed;     	// Estado actual de velocidad
 } MotorHandle_t;

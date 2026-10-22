@@ -65,8 +65,7 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, CLK_DS1302_Pin|DAT_DS1302_Pin|RST_DS1302_Pin|LD4_Pin
-                          |LD3_Pin|AIN1_Pin|AIN2_Pin|BIN1_Pin
-                          |BIN2_Pin|Audio_RST_Pin, GPIO_PIN_RESET);
+                          |LD3_Pin|A_IB_Pin|B_IB_Pin|Audio_RST_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
@@ -114,11 +113,9 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(CLK_IN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : CLK_DS1302_Pin DAT_DS1302_Pin RST_DS1302_Pin LD4_Pin
-                           LD3_Pin AIN1_Pin AIN2_Pin BIN1_Pin
-                           BIN2_Pin Audio_RST_Pin */
+                           LD3_Pin A_IB_Pin B_IB_Pin Audio_RST_Pin */
   GPIO_InitStruct.Pin = CLK_DS1302_Pin|DAT_DS1302_Pin|RST_DS1302_Pin|LD4_Pin
-                          |LD3_Pin|AIN1_Pin|AIN2_Pin|BIN1_Pin
-                          |BIN2_Pin|Audio_RST_Pin;
+                          |LD3_Pin|A_IB_Pin|B_IB_Pin|Audio_RST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

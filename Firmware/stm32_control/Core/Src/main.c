@@ -36,6 +36,7 @@
 #include "task_motor_control.h"
 #include "task_imu.h"
 #include "task_comms.h"
+#include "task_control_robot.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 #include "ds1302.h"
@@ -148,6 +149,8 @@ int main ()
     TaskIMU_Create(&hi2c1);
 
     TaskComms_Create(&esp_uart);
+
+    TaskControlRobot_Create();
 
     vTaskStartScheduler();
 

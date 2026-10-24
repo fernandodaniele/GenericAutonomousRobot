@@ -34,37 +34,81 @@ Kalman_t KalmanY = {
     .R_measure = 0.03f,
 };
 
-uint8_t MPU6050_Init(I2C_HandleTypeDef *I2Cx)
-{
-    uint8_t check;
-    uint8_t Data;
+static void Kalman_ResetState(Kalman_t *kalman) {
+    kalman->angle = 0.0;
+    kalman->bias = 0.0;
+    kalman->P[0][0] = 0.0;
+    kalman->P[0][1] = 0.0;
+    kalman->P[1][0] = 0.0;
+    kalman->P[1][1] = 0.0;
+}
 
-    // check device ID WHO_AM_I
+HAL_StatusTypeDef MPU6050_Init(I2C_HandleTypeDef *I2Cx) {
+    uint8_t check = 0U;
+    uint8_t data;
+    HAL_StatusTypeDef status;
 
-    HAL_I2C_Mem_Read(I2Cx, MPU6050_ADDR, WHO_AM_I_REG, 1, &check, 1, i2c_timeout);
+    // Verifica la comunicación y el identificador del MPU6050.
+    status = HAL_I2C_Mem_Read(I2Cx, MPU6050_ADDR,
+                              WHO_AM_I_REG, I2C_MEMADD_SIZE_8BIT,
+                              &check, 1U, i2c_timeout);
 
-    if (check == 104) // 0x68 will be returned by the sensor if everything goes well
-    {
-        // power management register 0X6B we should write all 0's to wake the sensor up
-        Data = 0;
-        HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, PWR_MGMT_1_REG, 1, &Data, 1, i2c_timeout);
-
-        // Set DATA RATE of 1KHz by writing SMPLRT_DIV register
-        Data = 0x07;
-        HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, SMPLRT_DIV_REG, 1, &Data, 1, i2c_timeout);
-
-        // Set accelerometer configuration in ACCEL_CONFIG Register
-        // XA_ST=0,YA_ST=0,ZA_ST=0, FS_SEL=0 -> � 2g
-        Data = 0x00;
-        HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, ACCEL_CONFIG_REG, 1, &Data, 1, i2c_timeout);
-
-        // Set Gyroscopic configuration in GYRO_CONFIG Register
-        // XG_ST=0,YG_ST=0,ZG_ST=0, FS_SEL=0 -> � 250 �/s
-        Data = 0x00;
-        HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, GYRO_CONFIG_REG, 1, &Data, 1, i2c_timeout);
-        return 0;
+    if (status != HAL_OK) {
+        return status;
     }
-    return 1;
+
+    if (check != 0x68U) {
+        return HAL_ERROR;
+    }
+
+    // Despierta el sensor.
+    data = 0x00U;
+    status = HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR,
+                               PWR_MGMT_1_REG, I2C_MEMADD_SIZE_8BIT,
+                               &data, 1U, i2c_timeout);
+
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    // Configura el divisor de frecuencia de muestreo.
+    data = 0x07U;
+    status = HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR,
+                               SMPLRT_DIV_REG, I2C_MEMADD_SIZE_8BIT,
+                               &data, 1U, i2c_timeout);
+
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    // Configura el acelerómetro en ±2 g.
+    data = 0x00U;
+    status = HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR,
+                               ACCEL_CONFIG_REG, I2C_MEMADD_SIZE_8BIT,
+                               &data, 1U, i2c_timeout);
+
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    // Configura el giroscopio en ±250 grados/s.
+    data = 0x00U;
+    status = HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR,
+                               GYRO_CONFIG_REG, I2C_MEMADD_SIZE_8BIT,
+                               &data, 1U, i2c_timeout);
+
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    // Reinicia los estados internos de los filtros Kalman.
+    Kalman_ResetState(&KalmanX);
+    Kalman_ResetState(&KalmanY);
+
+    // Establece la referencia temporal inicial.
+    timer = HAL_GetTick();
+
+    return HAL_OK;
 }
 
 void MPU6050_Read_Accel(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)
@@ -124,14 +168,25 @@ void MPU6050_Read_Temp(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)
     DataStruct->Temperature = (float)((int16_t)temp / (float)340.0 + (float)36.53);
 }
 
-void MPU6050_Read_All(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)
-{
+HAL_StatusTypeDef MPU6050_Read_All(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct) {
     uint8_t Rec_Data[14];
     int16_t temp;
 
     // Read 14 BYTES of data starting from ACCEL_XOUT_H register
 
-    HAL_I2C_Mem_Read(I2Cx, MPU6050_ADDR, ACCEL_XOUT_H_REG, 1, Rec_Data, 14, i2c_timeout);
+    HAL_StatusTypeDef status = HAL_I2C_Mem_Read(
+        I2Cx,
+        MPU6050_ADDR,
+        ACCEL_XOUT_H_REG,
+        I2C_MEMADD_SIZE_8BIT,
+        Rec_Data,
+        14,
+        i2c_timeout
+    );
+
+    if (status != HAL_OK) {
+        return status;
+    }
 
     DataStruct->Accel_X_RAW = (int16_t)(Rec_Data[0] << 8 | Rec_Data[1]);
     DataStruct->Accel_Y_RAW = (int16_t)(Rec_Data[2] << 8 | Rec_Data[3]);
@@ -176,6 +231,8 @@ void MPU6050_Read_All(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)
     if (fabs(DataStruct->KalmanAngleY) > 90)
         DataStruct->Gx = -DataStruct->Gx;
     DataStruct->KalmanAngleX = Kalman_getAngle(&KalmanX, roll, DataStruct->Gx, dt);
+
+    return HAL_OK;
 }
 
 double Kalman_getAngle(Kalman_t *Kalman, double newAngle, double newRate, double dt)

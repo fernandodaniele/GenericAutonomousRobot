@@ -22,7 +22,7 @@ typedef struct {
     uint8_t rx_byte;
     char rx_buffer[UART_RX_BUFFER_SIZE];
     uint16_t rx_index;
-    uint8_t message_ready;
+    volatile uint8_t message_ready;
 } DrvUart_t;
 
 /**

@@ -7,6 +7,8 @@
 
 #include "drv_uart.h"
 #include <string.h>
+#include "FreeRTOS.h"
+#include "task.h"
 
 /**
  * @brief Inicializa la estructura del driver UART.
@@ -69,15 +71,20 @@ uint8_t DrvUart_IsMessageReady(DrvUart_t *uart) {
  * @param destination_size Tamaño máximo del buffer destino.
  */
 void DrvUart_GetMessage(DrvUart_t *uart, char *destination, uint16_t destination_size) {
-    if (destination_size == 0) {
+    if (uart == NULL || destination == NULL || destination_size == 0U) {
         return;
     }
 
-    strncpy(destination, uart->rx_buffer, destination_size - 1);
-    destination[destination_size - 1] = '\0';
+    // Protege el buffer compartido con la interrupción UART.
+    taskENTER_CRITICAL();
+
+    strncpy(destination, uart->rx_buffer, destination_size - 1U);
+    destination[destination_size - 1U] = '\0';
 
     memset(uart->rx_buffer, 0, UART_RX_BUFFER_SIZE);
-    uart->message_ready = 0;
+    uart->message_ready = 0U;
+
+    taskEXIT_CRITICAL();
 }
 
 /**
@@ -86,7 +93,7 @@ void DrvUart_GetMessage(DrvUart_t *uart, char *destination, uint16_t destination
  * @param message Mensaje terminado en null a transmitir.
  */
 void DrvUart_SendString(DrvUart_t *uart, const char *message) {
-    HAL_UART_Transmit(uart->huart, (uint8_t *)message, strlen(message), HAL_MAX_DELAY);
+    HAL_UART_Transmit(uart->huart, (uint8_t *)message, strlen(message), 50U);
 }
 
 

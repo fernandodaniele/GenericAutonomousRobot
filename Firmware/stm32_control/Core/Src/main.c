@@ -35,6 +35,7 @@
 #include "drv_encoder.h"
 #include "task_motor_control.h"
 #include "task_imu.h"
+#include "task_comms.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 #include "ds1302.h"
@@ -145,6 +146,8 @@ int main ()
                             &motor_l, &motor_r);
 
     TaskIMU_Create(&hi2c1);
+
+    TaskComms_Create(&esp_uart);
 
     vTaskStartScheduler();
 

@@ -86,6 +86,47 @@ void SystemClock_Config(void);
   * @brief  The application entry point.
   * @retval int
   */
+int main(void)
+{
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART2_UART_Init();
+  MX_TIM2_Init();
+  MX_TIM4_Init();
+  MX_USB_DEVICE_Init();
+
+  /* USER CODE BEGIN 2 */
+  /* Inicializacion de comunicacion UART con ESP32 */
+  DrvUart_Init(&esp_uart, &huart2);
+  DrvUart_StartReceive(&esp_uart);
+  DrvUart_SendString(&esp_uart, "STM32 Control Ready\r\n");
+
+  /* Inicializacion de los 3 sensores ultrasonicos (Frontal, Izquierdo, Derecho) */
+  Ultrasound_InitAll(&htim2);
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+    if (DrvUart_IsMessageReady(&esp_uart)) {
+        DrvUart_GetMessage(&esp_uart, uart_message, sizeof(uart_message));
+        if (strcmp(uart_message, "PING") == 0) {
+            DrvUart_SendString(&esp_uart, "OK\n");
+        }
+    }
+  }
+  /* USER CODE END 3 */
+}
 
 void MX_FREERTOS_Init(void);
 

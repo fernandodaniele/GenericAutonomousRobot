@@ -1,5 +1,6 @@
 #include "uart_comm.h"
 
+#include <stdio.h>
 #include <string.h>
 #include "driver/uart.h"
 #include "driver/gpio.h"
@@ -54,4 +55,45 @@ void Uart_ReadResponse(void) {
         rx_buffer[length] = '\0';
         printf("[STM32] %s", (char *)rx_buffer);
     }
+}
+
+void Uart_SendLine(const char *text) {
+    uart_write_bytes(UART_PORT, text, strlen(text));
+    uart_write_bytes(UART_PORT, "\n", 1);
+}
+
+int Uart_ReadLine(char *line, int size, int timeout_ms) {
+    TickType_t start = xTaskGetTickCount();
+    TickType_t limit = pdMS_TO_TICKS(timeout_ms);
+    int length = 0;
+
+    while (1) {
+        uint8_t byte;
+        TickType_t elapsed = xTaskGetTickCount() - start;
+
+        if (elapsed >= limit) {
+            break;
+        }
+        if (uart_read_bytes(UART_PORT, &byte, 1, limit - elapsed) != 1) {
+            continue;
+        }
+        if (byte == '\r') {
+            continue;
+        }
+        if (byte == '\n') {
+            line[length] = '\0';
+            return length;
+        }
+        // Si la línea no entra en el buffer se descarta lo que sobra
+        if (length < size - 1) {
+            line[length++] = (char)byte;
+        }
+    }
+
+    line[length] = '\0';
+    return -1;
+}
+
+void Uart_Flush(void) {
+    uart_flush_input(UART_PORT);
 }

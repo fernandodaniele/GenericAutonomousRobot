@@ -132,15 +132,15 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 /* L9110S Dual Motor Driver (Entrada A=PWM, Entrada B=DIR) */
-#define MOTOR_L_PWM_Pin        TIM4_CH2_PWMA_Pin
-#define MOTOR_L_PWM_GPIO_Port  TIM4_CH2_PWMA_GPIO_Port
-#define MOTOR_L_DIR_Pin        AIN1_Pin
-#define MOTOR_L_DIR_GPIO_Port  AIN1_GPIO_Port
+#define MOTOR_L_PWM_Pin        TIM4_CH2_A_IA_Pin
+#define MOTOR_L_PWM_GPIO_Port  TIM4_CH2_A_IA_GPIO_Port
+#define MOTOR_L_DIR_Pin        A_IB_Pin
+#define MOTOR_L_DIR_GPIO_Port  A_IB_GPIO_Port
 
-#define MOTOR_R_PWM_Pin        TIM4_CH3_PWMB_Pin
-#define MOTOR_R_PWM_GPIO_Port  TIM4_CH3_PWMB_GPIO_Port
-#define MOTOR_R_DIR_Pin        BIN1_Pin
-#define MOTOR_R_DIR_GPIO_Port  BIN1_GPIO_Port
+#define MOTOR_R_PWM_Pin        TIM4_CH3_B_IA_Pin
+#define MOTOR_R_PWM_GPIO_Port  TIM4_CH3_B_IA_GPIO_Port
+#define MOTOR_R_DIR_Pin        B_IB_Pin
+#define MOTOR_R_DIR_GPIO_Port  B_IB_GPIO_Port
 
 /* Ultrasonic Sensors (HC-SR04 x 3) */
 #define TRIG_FRONT_Pin GPIO_PIN_4

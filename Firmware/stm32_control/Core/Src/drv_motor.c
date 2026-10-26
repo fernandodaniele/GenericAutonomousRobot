@@ -96,7 +96,8 @@ void Motor_Brake(MotorHandle_t* motor) {
     if (motor->dir_port) {
         HAL_GPIO_WritePin(motor->dir_port, motor->dir_pin, GPIO_PIN_SET);
     }
-    __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, MOTOR_MAX_SPEED);
+    // Compare = ARR + 1 -> la salida PWM queda siempre en alto (sin el tick en bajo por periodo)
+    __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, MOTOR_MAX_SPEED + 1);
 }
 
 void Motors_InitAll(void) {

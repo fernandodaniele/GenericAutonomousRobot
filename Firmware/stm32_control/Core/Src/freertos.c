@@ -25,7 +25,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "drv_uart.h"
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -117,10 +118,20 @@ void StartDefaultTask(void *argument)
   /* init code for USB_DEVICE */
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartDefaultTask */
+  extern DrvUart_t esp_uart;
+  static char message[UART_RX_BUFFER_SIZE];
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    /* Prueba de enlace con el ESP32: responde OK a PING */
+    if (DrvUart_IsMessageReady(&esp_uart)) {
+        DrvUart_GetMessage(&esp_uart, message, sizeof(message));
+        if (strcmp(message, "PING") == 0) {
+            DrvUart_SendString(&esp_uart, "OK\n");
+        }
+    }
+    osDelay(10);
   }
   /* USER CODE END StartDefaultTask */
 }

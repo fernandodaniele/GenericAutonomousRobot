@@ -59,12 +59,8 @@
 
 
 // Objects of our layers
-// Motores sobre el L9110S: IA = PWM de TIM4, IB = pin de sentido
-MotorHandle_t motor_l = { .htim = &htim4, .channel = TIM_CHANNEL_2,
-                          .dir_port = A_IB_GPIO_Port, .dir_pin = A_IB_Pin };   // A-IA PB7, A-IB PD0
-MotorHandle_t motor_r = { .htim = &htim4, .channel = TIM_CHANNEL_3,
-                          .dir_port = B_IB_GPIO_Port, .dir_pin = B_IB_Pin };   // B-IA PB8, B-IB PD2
-Ultrasound_t hc_sr04;
+// Los motores (L9110S) y los 3 HC-SR04 viven dentro de sus drivers:
+// Motors_InitAll() / Ultrasound_InitAll()
 RobotCommand_t robot_cmd;
 DrvUart_t esp_uart;
 char uart_message[UART_RX_BUFFER_SIZE];
@@ -86,48 +82,6 @@ void SystemClock_Config(void);
   * @brief  The application entry point.
   * @retval int
   */
-int main(void)
-{
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_USART2_UART_Init();
-  MX_TIM2_Init();
-  MX_TIM4_Init();
-  MX_USB_DEVICE_Init();
-
-  /* USER CODE BEGIN 2 */
-  /* Inicializacion de comunicacion UART con ESP32 */
-  DrvUart_Init(&esp_uart, &huart2);
-  DrvUart_StartReceive(&esp_uart);
-  DrvUart_SendString(&esp_uart, "STM32 Control Ready\r\n");
-
-  /* Inicializacion de los 3 sensores ultrasonicos (Frontal, Izquierdo, Derecho) */
-  Ultrasound_InitAll(&htim2);
-  /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-    if (DrvUart_IsMessageReady(&esp_uart)) {
-        DrvUart_GetMessage(&esp_uart, uart_message, sizeof(uart_message));
-        if (strcmp(uart_message, "PING") == 0) {
-            DrvUart_SendString(&esp_uart, "OK\n");
-        }
-    }
-  }
-  /* USER CODE END 3 */
-}
-
 void MX_FREERTOS_Init(void);
 
 int main(void)
@@ -150,11 +104,16 @@ int main(void)
   /* USB se inicializa dentro de StartDefaultTask (freertos.c) */
 
   /* USER CODE BEGIN 2 */
-  Motor_Init(&motor_l);   /* Arrancan frenados */
-  Motor_Init(&motor_r);
+  /* Motores L9110S: izquierdo PB7/PD0, derecho PB8/PD2. Arrancan detenidos */
+  Motors_InitAll();
 
+  /* 3 HC-SR04 (frontal, izquierdo, derecho) sobre TIM2 a 1 MHz */
+  Ultrasound_InitAll(&htim2);
+
+  /* Comunicacion UART con el ESP32 */
   DrvUart_Init(&esp_uart, &huart2);
   DrvUart_StartReceive(&esp_uart);
+  DrvUart_SendString(&esp_uart, "STM32 Control Ready\r\n");
   /* USER CODE END 2 */
 
   /* FreeRTOS */

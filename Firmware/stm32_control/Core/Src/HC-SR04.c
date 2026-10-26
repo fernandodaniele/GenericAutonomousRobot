@@ -1,91 +1,103 @@
 /* Includes */
+#include "HC-SR04.h"
+#include "drv_ultrasound.h"
+#include <stdio.h>
+
+void HCSR04_Init(HCSR04_HandleTypeDef *dev) {
+    if (!dev) return;
+    if (dev->htim) {
+        HAL_TIM_Base_Start(dev->htim);
+    }
+    if (dev->trig_port) {
+        HAL_GPIO_WritePin(dev->trig_port, dev->trig_pin, GPIO_PIN_RESET);
+    }
+    dev->is_first_captured = 0;
+    dev->distance_cm = 0;
+}
+
+void HCSR04_Trigger(HCSR04_HandleTypeDef *dev) {
+    if (!dev || !dev->trig_port || !dev->htim) return;
+
+    HAL_GPIO_WritePin(dev->trig_port, dev->trig_pin, GPIO_PIN_SET);
+    uint32_t start = __HAL_TIM_GET_COUNTER(dev->htim);
+    while ((__HAL_TIM_GET_COUNTER(dev->htim) - start) < 10) {
+        __NOP();
+    }
+    HAL_GPIO_WritePin(dev->trig_port, dev->trig_pin, GPIO_PIN_RESET);
+}
+
+void HCSR04_IC_Callback(HCSR04_HandleTypeDef *dev) {
+    if (!dev) return;
+    if (dev->is_first_captured == 0) {
+        dev->ic_val1 = HAL_TIM_ReadCapturedValue(dev->htim, dev->channel);
+        dev->is_first_captured = 1;
+        __HAL_TIM_SET_CAPTUREPOLARITY(dev->htim, dev->channel, TIM_INPUTCHANNELPOLARITY_FALLING);
+    } else if (dev->is_first_captured == 1) {
+        dev->ic_val2 = HAL_TIM_ReadCapturedValue(dev->htim, dev->channel);
+        __HAL_TIM_SET_COUNTER(dev->htim, 0);
+
+        uint32_t diff = 0;
+        if (dev->ic_val2 > dev->ic_val1) {
+            diff = dev->ic_val2 - dev->ic_val1;
+        } else {
+            diff = (0xFFFF - dev->ic_val1) + dev->ic_val2;
+        }
+
+        dev->distance_cm = diff / 58;
+        dev->is_first_captured = 0;
+        __HAL_TIM_SET_CAPTUREPOLARITY(dev->htim, dev->channel, TIM_INPUTCHANNELPOLARITY_RISING);
+        __HAL_TIM_DISABLE_IT(dev->htim, TIM_IT_CC1 | TIM_IT_CC2 | TIM_IT_CC3 | TIM_IT_CC4);
+    }
+}
+
+uint32_t HCSR04_Read(HCSR04_HandleTypeDef *dev) {
+    if (!dev) return 0;
+    Ultrasound_t temp_sensor = {
+        .trig_port = dev->trig_port,
+        .trig_pin  = dev->trig_pin,
+        .echo_port = dev->echo_port,
+        .echo_pin  = dev->echo_pin,
+        .timer     = dev->htim
+    };
+    uint32_t mm = Ultrasound_Read_mm(&temp_sensor);
+    dev->distance_cm = mm / 10;
+    return dev->distance_cm;
+}
+
+#ifdef STANDALONE_HCSR04_TEST
 #include "main.h"
 #include "tim.h"
 #include "gpio.h"
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
-#include <stdio.h>
-#include "HC-SR04.h"
 
-/* Variables */
-HCSR04_HandleTypeDef hc_sr04;
-char msg[64];
+HCSR04_HandleTypeDef hc_sr04_test;
+char test_msg[64];
 
-/* Prototipos */
-void SystemClock_Config(void);
-
-/* Callback de captura (TIM2) */
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
-{
-    if (htim->Instance == TIM2) {
-        HCSR04_IC_Callback(&hc_sr04);
-    }
-}
-
-int main(void)
-{
+int test_main(void) {
     HAL_Init();
     SystemClock_Config();
-
     MX_GPIO_Init();
-    MX_TIM2_Init();      // 1 MHz, IC en el canal del ECHO
-    MX_USB_DEVICE_Init(); // Inicializa USB CDC
+    MX_TIM2_Init();
+    MX_USB_DEVICE_Init();
 
-    /* HC-SR04: TRIG PB4, ECHO PB5 */
-    hc_sr04.htim      = &htim2;
-    hc_sr04.channel   = TIM_CHANNEL_2;
-    hc_sr04.trig_port = GPIOB;
-    hc_sr04.trig_pin  = GPIO_PIN_4;
-    hc_sr04.echo_port = GPIOB;
-    hc_sr04.echo_pin  = GPIO_PIN_5;
+    hc_sr04_test.htim      = &htim2;
+    hc_sr04_test.channel   = TIM_CHANNEL_2;
+    hc_sr04_test.trig_port = TRIG_FRONT_GPIO_Port;
+    hc_sr04_test.trig_pin  = TRIG_FRONT_Pin;
+    hc_sr04_test.echo_port = ECHO_FRONT_GPIO_Port;
+    hc_sr04_test.echo_pin  = ECHO_FRONT_Pin;
+    HCSR04_Init(&hc_sr04_test);
 
-    HCSR04_Init(&hc_sr04);
+    HAL_Delay(500);
 
-    HAL_Delay(500); // Espera a que la PC enumere el USB
-
-    while (1)
-    {
-        HCSR04_Trigger(&hc_sr04);
-        HAL_Delay(60);
-
-        uint32_t d = HCSR04_Read(&hc_sr04);
-
-        int n = sprintf(msg, "Distancia: %lu cm\r\n", d);
-
-        /* Enviar por USB CDC */
-        while (CDC_Transmit_FS((uint8_t*)msg, n) == USBD_BUSY) {
+    while (1) {
+        uint32_t d = HCSR04_Read(&hc_sr04_test);
+        int n = sprintf(test_msg, "Distancia: %lu cm\r\n", d);
+        while (CDC_Transmit_FS((uint8_t*)test_msg, n) == USBD_BUSY) {
             HAL_Delay(1);
         }
-
         HAL_Delay(200);
     }
 }
-
-/* Clock */
-void SystemClock_Config(void)
-{
-    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-    __HAL_RCC_PWR_CLK_ENABLE();
-    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-
-    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-    RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-    RCC_OscInitStruct.PLL.PLLM = 8;
-    RCC_OscInitStruct.PLL.PLLN = 336;
-    RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-    RCC_OscInitStruct.PLL.PLLQ = 7;
-    HAL_RCC_OscConfig(&RCC_OscInitStruct);
-
-    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK|
-                                 RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
-    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
-
-    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5);
-}
+#endif

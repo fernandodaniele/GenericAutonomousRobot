@@ -1,11 +1,19 @@
 #ifndef HC_SR04_H
 #define HC_SR04_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "stm32f4xx_hal.h"
+
 typedef struct {
     TIM_HandleTypeDef *htim;
     uint32_t channel;
     GPIO_TypeDef *trig_port;
     uint16_t trig_pin;
+    GPIO_TypeDef *echo_port;
+    uint16_t echo_pin;
 
     volatile uint32_t ic_val1;
     volatile uint32_t ic_val2;
@@ -18,4 +26,8 @@ void HCSR04_Trigger(HCSR04_HandleTypeDef *dev);
 void HCSR04_IC_Callback(HCSR04_HandleTypeDef *dev);
 uint32_t HCSR04_Read(HCSR04_HandleTypeDef *dev);
 
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* HC_SR04_H */

@@ -68,7 +68,8 @@ void MX_GPIO_Init(void)
                           |LD3_Pin|A_IB_Pin|B_IB_Pin|Audio_RST_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(TRIG_FRONT_GPIO_Port, TRIG_FRONT_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, TRIG_LEFT_Pin|TRIG_RIGHT_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : OTG_FS_PowerSwitchOn_Pin */
   GPIO_InitStruct.Pin = OTG_FS_PowerSwitchOn_Pin;
@@ -98,8 +99,8 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(SD_CS_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : BOOT1_Pin PB5 */
-  GPIO_InitStruct.Pin = BOOT1_Pin|GPIO_PIN_5;
+  /*Configure GPIO pins : BOOT1_Pin ECHO_LEFT_Pin ECHO_RIGHT_Pin ECHO_FRONT_Pin */
+  GPIO_InitStruct.Pin = BOOT1_Pin|ECHO_LEFT_Pin|ECHO_RIGHT_Pin|ECHO_FRONT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -135,12 +136,19 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(OTG_FS_OverCurrent_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  /*Configure GPIO pin : TRIG_FRONT_Pin */
+  GPIO_InitStruct.Pin = TRIG_FRONT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(TRIG_FRONT_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : TRIG_LEFT_Pin TRIG_RIGHT_Pin */
+  GPIO_InitStruct.Pin = TRIG_LEFT_Pin|TRIG_RIGHT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pin : MEMS_INT2_Pin */
   GPIO_InitStruct.Pin = MEMS_INT2_Pin;

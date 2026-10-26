@@ -131,7 +131,38 @@ void Error_Handler(void);
 #define MEMS_INT2_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
+/* L9110S Dual Motor Driver (Entrada A=PWM, Entrada B=DIR) */
+#define MOTOR_L_PWM_Pin        TIM4_CH2_PWMA_Pin
+#define MOTOR_L_PWM_GPIO_Port  TIM4_CH2_PWMA_GPIO_Port
+#define MOTOR_L_DIR_Pin        AIN1_Pin
+#define MOTOR_L_DIR_GPIO_Port  AIN1_GPIO_Port
 
+#define MOTOR_R_PWM_Pin        TIM4_CH3_PWMB_Pin
+#define MOTOR_R_PWM_GPIO_Port  TIM4_CH3_PWMB_GPIO_Port
+#define MOTOR_R_DIR_Pin        BIN1_Pin
+#define MOTOR_R_DIR_GPIO_Port  BIN1_GPIO_Port
+
+/* Ultrasonic Sensors (HC-SR04 x 3) */
+#define TRIG_FRONT_Pin GPIO_PIN_4
+#define TRIG_FRONT_GPIO_Port GPIOB
+#define ECHO_FRONT_Pin GPIO_PIN_5
+#define ECHO_FRONT_GPIO_Port GPIOB
+
+#define TRIG_LEFT_Pin GPIO_PIN_7
+#define TRIG_LEFT_GPIO_Port GPIOE
+#define ECHO_LEFT_Pin GPIO_PIN_0
+#define ECHO_LEFT_GPIO_Port GPIOB
+
+#define TRIG_RIGHT_Pin GPIO_PIN_8
+#define TRIG_RIGHT_GPIO_Port GPIOE
+#define ECHO_RIGHT_Pin GPIO_PIN_1
+#define ECHO_RIGHT_GPIO_Port GPIOB
+
+/* Backward compatibility aliases */
+#define TRIG_Pin TRIG_FRONT_Pin
+#define TRIG_GPIO_Port TRIG_FRONT_GPIO_Port
+#define ECHO_Pin ECHO_FRONT_Pin
+#define ECHO_GPIO_Port ECHO_FRONT_GPIO_Port
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

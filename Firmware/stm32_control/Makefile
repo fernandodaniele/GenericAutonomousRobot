@@ -71,6 +71,7 @@ Core/Src/task_motor_control.c \
 Core/Src/task_imu.c \
 Core/Src/task_comms.c \
 Core/Src/task_control_robot.c \
+Core/Src/task_safety.c \
 Core/Src/drv_ultrasound.c \
 Core/Src/mid_kinematics.c \
 Core/Src/ds1302.c \

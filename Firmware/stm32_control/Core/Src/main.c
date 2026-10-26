@@ -37,6 +37,7 @@
 #include "task_imu.h"
 #include "task_comms.h"
 #include "task_control_robot.h"
+#include "task_safety.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
 #include "ds1302.h"
@@ -44,6 +45,9 @@
 
 #include "drv_uart.h"
 #include <string.h>
+
+#include "usbd_cdc_if.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -151,6 +155,8 @@ int main ()
     TaskComms_Create(&esp_uart);
 
     TaskControlRobot_Create();
+
+    TaskSafety_Create();
 
     vTaskStartScheduler();
 

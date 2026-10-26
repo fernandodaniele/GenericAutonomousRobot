@@ -31,6 +31,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "drv_ultrasound.h"
+#include "drv_motor.h"
 #include "mid_kinematics.h"
 
 #include "drv_uart.h"
@@ -58,7 +59,11 @@
 
 
 // Objects of our layers
-// MotorHandle_t motor_l, motor_r;
+// Motores sobre el L9110S: IA = PWM de TIM4, IB = pin de sentido
+MotorHandle_t motor_l = { .htim = &htim4, .channel = TIM_CHANNEL_2,
+                          .dir_port = A_IB_GPIO_Port, .dir_pin = A_IB_Pin };   // A-IA PB7, A-IB PD0
+MotorHandle_t motor_r = { .htim = &htim4, .channel = TIM_CHANNEL_3,
+                          .dir_port = B_IB_GPIO_Port, .dir_pin = B_IB_Pin };   // B-IA PB8, B-IB PD2
 Ultrasound_t hc_sr04;
 RobotCommand_t robot_cmd;
 DrvUart_t esp_uart;
@@ -104,6 +109,9 @@ int main(void)
   /* USB se inicializa dentro de StartDefaultTask (freertos.c) */
 
   /* USER CODE BEGIN 2 */
+  Motor_Init(&motor_l);   /* Arrancan frenados */
+  Motor_Init(&motor_r);
+
   DrvUart_Init(&esp_uart, &huart2);
   DrvUart_StartReceive(&esp_uart);
   /* USER CODE END 2 */

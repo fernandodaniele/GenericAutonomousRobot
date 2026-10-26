@@ -7,10 +7,9 @@ Dedicado a las comunicaciones: ESP32 Dev Kit
 
  ===== ACTUADORES =====
 Motores de rodaje: pololu 100 rpm x 2
-Motores de sistema de capción: pololu 50 rpm x 2
 
 ==== DRIVER DE MOTORES =====
-Para ambos pares de motores: TB6612FNG 
+Para los 2 motores de rodaje: L9110S (1 driver, 2 canales)
 
 ===== SENSORES DE POSICIÓN ====
 Encargados de esquivar elementos no deseados: HC-SR04, Ultrasónicos x 3

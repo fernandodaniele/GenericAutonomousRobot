@@ -7,7 +7,7 @@ graph TB
     subgraph Hardware["🔧 Hardware"]
         STM32["STM32F407VG<br/>ARM Cortex-M4<br/>168MHz"]
         ESP32["ESP32-S3<br/>Dual-Core Xtensa<br/>240MHz"]
-        Motors["🔄 Motores DC<br/>TB6612FNG Driver"]
+        Motors["🔄 Motores DC<br/>L9110S Driver"]
         IMU["📡 MPU6050<br/>IMU"]
         Ultrasonic["📏 HC-SR04<br/>Ultrasónico"]
         IR["🔴 TCRT5000 x5<br/>Infrarrojo"]
@@ -181,7 +181,7 @@ graph TB
         MPU["MPU6050<br/>I2C"]
         US["HC-SR04<br/>GPIO/PWM"]
         IR["TCRT5000<br/>GPIO"]
-        TIM["TB6612FNG<br/>PWM"]
+        TIM["L9110S<br/>PWM"]
     end
     
     subgraph STM32_Periph["Periféricos STM32"]

@@ -17,7 +17,7 @@ The project focuses on building an autonomous rover capable of real-time navigat
 - **Control MCU:** STM32F407G-DISC1 (ARM Cortex-M4 @ 168MHz)
 - **Comms MCU:** ESP32 S3 DevKit (Xtensa Dual-Core with AI acceleration)
 - **Sensors:** MPU6050 (IMU), HC-SR04 (Ultrasonic), 5x TCRT5000 (Infrared)
-- **Actuators:** Dual DC Motors via TB6612FNG Driver
+- **Actuators:** Dual DC Motors via L9110S Driver
 - **Power:** TBD
 
 ## 📂 Project Structure

@@ -1,5 +1,6 @@
 #include "task_safety.h"
 #include "task_control_robot.h"
+#include "task_sensores.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -8,6 +9,7 @@
 #define TASK_SAFETY_PERIOD_MS 20U
 #define TASK_SAFETY_STACK_SIZE 256U
 #define TASK_SAFETY_PRIORITY (tskIDLE_PRIORITY + 6U)
+#define TASK_SAFETY_OBSTACLE_DISTANCE_M 0.20f
 
 // El sistema comienza con el movimiento bloqueado.
 static volatile bool safety_stop_active = true;
@@ -26,6 +28,20 @@ static void TaskSafety_Run(void *parameters) {
     for (;;) {
         vTaskDelayUntil(&last_wake_time,
                         pdMS_TO_TICKS(TASK_SAFETY_PERIOD_MS));
+
+        // Consulta la ultima medicion de sensores.
+        SensoresDatos_t sensores;
+
+        if (TaskSensores_GetData(&sensores) == pdTRUE) {
+
+            // Registra un obstaculo si la distancia es valida
+            // y se encuentra dentro del umbral de seguridad.
+            if ((sensores.ultrasonido_valido != 0U) &&
+                (sensores.distancia_m <= TASK_SAFETY_OBSTACLE_DISTANCE_M)) {
+
+                TaskSafety_ReportFault(SAFETY_FAULT_OBSTACLE);
+            }
+        }
 
         // Solicita el estado de parada mientras exista bloqueo.
         // Si la cola esta llena, vuelve a intentarlo.

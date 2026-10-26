@@ -37,6 +37,7 @@
 #include "task_imu.h"
 #include "task_comms.h"
 #include "task_control_robot.h"
+#include "task_sensores.h"
 #include "task_safety.h"
 #include "drv_ultrasound.h"
 #include "mid_kinematics.h"
@@ -112,6 +113,9 @@ int main ()
 	  MX_FATFS_Init();
 	  MX_USB_DEVICE_Init();
 
+    // Inicializa el sensor ultrasonico HC-SR04.
+    HCSR04_Init();
+
     Encoder_Init(&encoder_left, &htim1);
     Encoder_Init(&encoder_right, &htim2);
 
@@ -155,6 +159,8 @@ int main ()
     TaskComms_Create(&esp_uart);
 
     TaskControlRobot_Create();
+
+    TaskSensores_Create();
 
     TaskSafety_Create();
 

@@ -41,6 +41,13 @@ static void TaskSafety_Run(void *parameters) {
 
                 TaskSafety_ReportFault(SAFETY_FAULT_OBSTACLE);
             }
+
+            // Prueba inicial: supervisa solo el TCRT5000 delantero izquierdo.
+            // Pendiente ampliar a los cuatro sensores cuando esten conectados.
+            if (sensores.ir.del_izq == TCRT_NO_DETECTA) {
+
+                TaskSafety_ReportFault(SAFETY_FAULT_CLIFF);
+            }
         }
 
         // Solicita el estado de parada mientras exista bloqueo.

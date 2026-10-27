@@ -7,6 +7,7 @@
 
 
 #include "drv_motor.h"
+#include "task_safety.h"
 
 void Motor_Init(MotorHandle_t* motor)
 {
@@ -26,6 +27,11 @@ void Motor_Init(MotorHandle_t* motor)
 
 void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed)
 {
+	// Impide aplicar PWM mientras exista una parada de seguridad.
+	if (TaskSafety_IsStopActive()) {
+		Motor_Stop(motor);
+		return;
+	}
 	int16_t applied_speed = speed;
 
 	//Saturacion de velocidad para asegurar límites válidos

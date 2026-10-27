@@ -10,6 +10,7 @@
 #define TASK_SAFETY_STACK_SIZE 256U
 #define TASK_SAFETY_PRIORITY (tskIDLE_PRIORITY + 6U)
 #define TASK_SAFETY_OBSTACLE_DISTANCE_M 0.20f
+#define TASK_SAFETY_SENSOR_TIMEOUT_MS 100U
 
 // El sistema comienza con el movimiento bloqueado.
 static volatile bool safety_stop_active = true;
@@ -24,6 +25,7 @@ static void TaskSafety_Run(void *parameters) {
     (void)parameters;
 
     TickType_t last_wake_time = xTaskGetTickCount();
+    TickType_t startup_tick = last_wake_time;
 
     for (;;) {
         vTaskDelayUntil(&last_wake_time,
@@ -31,19 +33,33 @@ static void TaskSafety_Run(void *parameters) {
 
         // Consulta la ultima medicion de sensores.
         SensoresDatos_t sensores;
+        TickType_t ahora = xTaskGetTickCount();
 
-        if (TaskSensores_GetData(&sensores) == pdTRUE) {
+        if (TaskSensores_GetData(&sensores) != pdTRUE) {
 
-            // Registra un obstaculo si la distancia es valida
-            // y se encuentra dentro del umbral de seguridad.
+            // Permitir que TaskSensores publique su primer estado.
+            if ((ahora - startup_tick) >
+                pdMS_TO_TICKS(TASK_SAFETY_SENSOR_TIMEOUT_MS)) {
+
+                TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
+            }
+
+        } else if ((ahora - sensores.timestamp) >
+                pdMS_TO_TICKS(TASK_SAFETY_SENSOR_TIMEOUT_MS)) {
+
+            // La informacion de los sensores dejo de actualizarse.
+            TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
+
+        } else {
+
+            // Deteccion de obstaculos.
             if ((sensores.ultrasonido_valido != 0U) &&
                 (sensores.distancia_m <= TASK_SAFETY_OBSTACLE_DISTANCE_M)) {
 
                 TaskSafety_ReportFault(SAFETY_FAULT_OBSTACLE);
             }
 
-            // Registra una falla si cualquiera de los cuatro TCRT5000
-            // deja de detectar superficie.
+            // Deteccion de caidas mediante los cuatro TCRT5000.
             if (sensores.hay_caida != 0U) {
 
                 TaskSafety_ReportFault(SAFETY_FAULT_CLIFF);

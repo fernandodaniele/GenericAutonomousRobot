@@ -15,6 +15,7 @@
 // El sistema comienza con el movimiento bloqueado.
 static volatile bool safety_stop_active = true;
 static volatile uint32_t safety_faults = SAFETY_FAULT_NONE;
+static uint32_t safety_fault_revision = 0U;
 
 static TaskHandle_t safety_task_handle = NULL;
 
@@ -57,6 +58,14 @@ static void TaskSafety_Run(void *parameters) {
                 (sensores.distancia_m <= TASK_SAFETY_OBSTACLE_DISTANCE_M)) {
 
                 TaskSafety_ReportFault(SAFETY_FAULT_OBSTACLE);
+            }
+
+            // Si el movimiento esta habilitado y se pierde la medicion
+            // ultrasonica, detener el robot por falta de informacion confiable.
+            if (!TaskSafety_IsStopActive() &&
+                sensores.ultrasonido_valido == 0U) {
+
+                TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
             }
 
             // Deteccion de caidas mediante los cuatro TCRT5000.
@@ -116,6 +125,7 @@ void TaskSafety_ReportFault(SafetyFault_t fault) {
     taskENTER_CRITICAL();
 
     safety_faults |= (uint32_t)fault;
+    safety_fault_revision++;
     safety_stop_active = true;
 
     taskEXIT_CRITICAL();
@@ -151,7 +161,56 @@ uint32_t TaskSafety_GetFaults(void) {
  * @brief Solicita el rearme del sistema.
  */
 bool TaskSafety_RequestReset(void) {
-    // Pendiente: verificar sensores y condiciones de seguridad.
-    // Hasta entonces, el rearme permanece deshabilitado.
-    return false;
+
+    SensoresDatos_t sensores;
+    uint32_t revision_inicial;
+
+    // Registrar la version de las fallas antes de verificar sensores.
+    taskENTER_CRITICAL();
+    revision_inicial = safety_fault_revision;
+    taskEXIT_CRITICAL();
+
+    // Debe existir informacion publicada por TaskSensores.
+    if (TaskSensores_GetData(&sensores) != pdTRUE) {
+        return false;
+    }
+
+    // No aceptar datos desactualizados.
+    TickType_t ahora = xTaskGetTickCount();
+
+    if ((ahora - sensores.timestamp) >
+        pdMS_TO_TICKS(TASK_SAFETY_SENSOR_TIMEOUT_MS)) {
+        return false;
+    }
+
+    // Los cuatro sensores infrarrojos deben detectar superficie.
+    if (sensores.hay_caida != 0U) {
+        return false;
+    }
+
+    // Se requiere una medicion ultrasonica valida
+    // y una distancia superior al umbral de seguridad.
+    if ((sensores.ultrasonido_valido == 0U) ||
+        (sensores.distancia_m <= TASK_SAFETY_OBSTACLE_DISTANCE_M)) {
+        return false;
+    }
+
+    taskENTER_CRITICAL();
+
+    // No borrar fallas registradas durante la verificacion.
+    // Tampoco permitir rearme con emergencia registrada.
+    if ((safety_fault_revision != revision_inicial) ||
+        ((safety_faults & SAFETY_FAULT_EMERGENCY) != 0U)) {
+
+        taskEXIT_CRITICAL();
+        return false;
+    }
+
+    // Todas las condiciones verificadas permiten liberar el bloqueo.
+    safety_faults = SAFETY_FAULT_NONE;
+    safety_stop_active = false;
+
+    taskEXIT_CRITICAL();
+
+    return true;
 }

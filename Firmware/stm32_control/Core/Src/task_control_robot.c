@@ -4,6 +4,7 @@
 #include "task.h"
 #include "queue.h"
 #include "main.h"
+#include "task_safety.h"
 
 #define TASK_CONTROL_PERIOD_MS 20U
 #define TASK_CONTROL_STACK_SIZE 256U
@@ -21,18 +22,45 @@ static QueueHandle_t event_queue = NULL;
  */
 static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
 
+    // El rearme se procesa fuera de la seccion critica porque
+    // TaskSafety_RequestReset consulta la cola de sensores.
+    if (event == ROBOT_EVENT_SAFETY_RESET) {
+
+        if (TaskControlRobot_GetState() == ROBOT_STATE_SAFETY_STOP &&
+            TaskSafety_RequestReset()) {
+
+            // Descarta eventos anteriores al rearme.
+            (void)xQueueReset(event_queue);
+
+            taskENTER_CRITICAL();
+
+            // Verifica nuevamente que no haya aparecido una parada.
+            if (!TaskSafety_IsStopActive()) {
+                robot_state = ROBOT_STATE_IDLE;
+            }
+
+            taskEXIT_CRITICAL();
+        }
+
+        return;
+    }
+
     taskENTER_CRITICAL();
 
     switch (event) {
 
         case ROBOT_EVENT_START_AUTO:
-            if (robot_state == ROBOT_STATE_IDLE) {
+            if (robot_state == ROBOT_STATE_IDLE &&
+                !TaskSafety_IsStopActive()) {
+
                 robot_state = ROBOT_STATE_AUTONOMOUS;
             }
             break;
 
         case ROBOT_EVENT_START_MANUAL:
-            if (robot_state == ROBOT_STATE_IDLE) {
+            if (robot_state == ROBOT_STATE_IDLE &&
+                !TaskSafety_IsStopActive()) {
+
                 robot_state = ROBOT_STATE_MANUAL;
             }
             break;
@@ -44,12 +72,15 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
             break;
 
         case ROBOT_EVENT_SAFETY_STOP:
-            robot_state = ROBOT_STATE_SAFETY_STOP;
+            // Ignorar eventos de parada antiguos,
+            // anteriores a un rearme exitoso.
+            if (TaskSafety_IsStopActive()) {
+                robot_state = ROBOT_STATE_SAFETY_STOP;
+            }
             break;
 
         case ROBOT_EVENT_SAFETY_RESET:
-            // Pendiente: validar condiciones mediante TaskSafety.
-            // Por seguridad, no se permite el rearme todavia.
+            // Procesado al comienzo de la funcion.
             break;
 
         default:

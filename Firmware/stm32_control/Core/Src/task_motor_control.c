@@ -3,6 +3,7 @@
 #include "task.h"
 #include "queue.h"
 #include "main.h"
+#include "task_safety.h"
 
 #define MOTOR_CONTROL_PERIOD_MS 10U
 #define MOTOR_CONTROL_STACK_SIZE 256U
@@ -61,6 +62,21 @@ static void TaskMotorControl_Run(void *parameters) {
             context->right_target_cps = 0;
         }
 
+        // Inhibe el movimiento mientras exista una parada de seguridad.
+        if (TaskSafety_IsStopActive()) {
+
+            // Descarta los objetivos de velocidad.
+            context->left_target_cps = 0;
+            context->right_target_cps = 0;
+
+            // Elimina cualquier orden pendiente.
+            (void)xQueueReset(target_speed_queue);
+
+            // Ordena detener ambos motores.
+            Motor_Stop(context->motor_left);
+            Motor_Stop(context->motor_right);
+        }
+
         // Calcula la velocidad a partir de las cuentas del período.
         int32_t left_delta = Encoder_ReadDelta(context->encoder_left);
         int32_t right_delta = Encoder_ReadDelta(context->encoder_right);
@@ -111,6 +127,10 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
 
 void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
                                       int32_t right_speed_cps) {
+    // Rechaza nuevas ordenes durante una parada de seguridad.
+    if (TaskSafety_IsStopActive()) {
+        return;
+    }
     TaskMotorControlTarget_t target = {
         .left_speed_cps = left_speed_cps,
         .right_speed_cps = right_speed_cps

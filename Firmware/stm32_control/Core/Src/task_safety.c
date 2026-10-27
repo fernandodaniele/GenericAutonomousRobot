@@ -42,9 +42,9 @@ static void TaskSafety_Run(void *parameters) {
                 TaskSafety_ReportFault(SAFETY_FAULT_OBSTACLE);
             }
 
-            // Prueba inicial: supervisa solo el TCRT5000 delantero izquierdo.
-            // Pendiente ampliar a los cuatro sensores cuando esten conectados.
-            if (sensores.ir.del_izq == TCRT_NO_DETECTA) {
+            // Registra una falla si cualquiera de los cuatro TCRT5000
+            // deja de detectar superficie.
+            if (sensores.hay_caida != 0U) {
 
                 TaskSafety_ReportFault(SAFETY_FAULT_CLIFF);
             }

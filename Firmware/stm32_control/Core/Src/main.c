@@ -140,8 +140,8 @@ int main ()
 	  /* 2. Right Motor Driver Configuration */
 	  motor_r.htim = &htim4;
 	  motor_r.channel = TIM_CHANNEL_3;
-	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_2;
-	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_3;
+	  motor_r.port_a = GPIOD; motor_r.pin_a = GPIO_PIN_3;
+	  motor_r.port_b = GPIOD; motor_r.pin_b = GPIO_PIN_2;
 	  Motor_Init(&motor_r);
 
     if (DS1302_Init(&rtc, &rtc_config) != DS1302_OK)

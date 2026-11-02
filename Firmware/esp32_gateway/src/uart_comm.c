@@ -58,8 +58,17 @@ void Uart_ReadResponse(void) {
 }
 
 void Uart_SendLine(const char *text) {
-    uart_write_bytes(UART_PORT, text, strlen(text));
-    uart_write_bytes(UART_PORT, "\n", 1);
+    /* Una sola escritura por linea: la llaman la prueba de PING y el servidor
+     * web (START/STOP) desde tareas distintas y las lineas no deben mezclarse.
+     * Maximo 63 caracteres + '\n', el limite del protocolo con la STM32. */
+    char buffer[64];
+    size_t length = strlen(text);
+    if (length > sizeof(buffer) - 1) {
+        length = sizeof(buffer) - 1;
+    }
+    memcpy(buffer, text, length);
+    buffer[length++] = '\n';
+    uart_write_bytes(UART_PORT, buffer, length);
 }
 
 int Uart_ReadLine(char *line, int size, int timeout_ms) {

@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "uart_comm.h"
+#include "wifi_control.h"
 
 /*
  * Prueba de comunicación ESP32 <-> STM32.
@@ -16,6 +17,10 @@
  * Muestra la latencia y un resumen de enviados / respondidos / sin respuesta.
  * Cualquier otra línea que mande la STM32 (por ejemplo "STM32 Control Ready"
  * al resetearla) se imprime tal cual.
+ *
+ * Control desde el celular: conectarse a la red WiFi "GAR-Robot"
+ * (clave robot1234) y abrir http://192.168.4.1. Los botones START y STOP
+ * se envian a la STM32 por la misma UART.
  */
 
 #define PING_PERIOD_MS    1000
@@ -28,6 +33,7 @@ void app_main(void) {
 
     Uart_Init();
     Uart_Flush();
+    WifiControl_Start();
 
     printf("\n=== PRUEBA UART ESP32 <-> STM32 ===\n");
     printf("GPIO17 (TX) -> PA3 | GPIO16 (RX) <- PA2 | GND comun | 115200 8N1\n\n");

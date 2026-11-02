@@ -127,3 +127,66 @@ uint32_t Ultrasound_ReadIndex_mm(UltrasoundIndex_t index) {
     }
     return Ultrasound_Read_mm(&g_ultrasound_sensors[index]);
 }
+
+UltrasoundStatus_t Ultrasound_ReadStatus(Ultrasound_t* dev, uint32_t* out_mm) {
+    if (out_mm) {
+        *out_mm = 0;
+    }
+    if (!dev || !dev->timer || !dev->trig_port || !dev->echo_port) {
+        return ULTRASOUND_STATUS_NO_ECHO;
+    }
+
+    HAL_GPIO_WritePin(dev->trig_port, dev->trig_pin, GPIO_PIN_RESET);
+    delay_us(dev->timer, 2);
+    HAL_GPIO_WritePin(dev->trig_port, dev->trig_pin, GPIO_PIN_SET);
+    delay_us(dev->timer, HCSR04_TRIGGER_PULSE_US);
+    HAL_GPIO_WritePin(dev->trig_port, dev->trig_pin, GPIO_PIN_RESET);
+
+    // Sin flanco de subida: el sensor no respondio (falla, no obstaculo)
+    uint32_t start_wait = __HAL_TIM_GET_COUNTER(dev->timer);
+    while (HAL_GPIO_ReadPin(dev->echo_port, dev->echo_pin) == GPIO_PIN_RESET) {
+        if ((__HAL_TIM_GET_COUNTER(dev->timer) - start_wait) > HCSR04_WAIT_ECHO_TIMEOUT) {
+            dev->last_distance_mm = 0;
+            return ULTRASOUND_STATUS_NO_ECHO;
+        }
+    }
+
+    // Eco que no termina dentro del maximo: nada al alcance, camino libre
+    uint32_t echo_start = __HAL_TIM_GET_COUNTER(dev->timer);
+    while (HAL_GPIO_ReadPin(dev->echo_port, dev->echo_pin) == GPIO_PIN_SET) {
+        if ((__HAL_TIM_GET_COUNTER(dev->timer) - echo_start) > HCSR04_MAX_ECHO_US) {
+            dev->last_distance_mm = 0;
+            return ULTRASOUND_STATUS_FAR;
+        }
+    }
+    uint32_t pulse_duration_us = __HAL_TIM_GET_COUNTER(dev->timer) - echo_start;
+    uint32_t distance_mm = (pulse_duration_us * 343) / 2000;
+
+    if (out_mm) {
+        *out_mm = distance_mm;
+    }
+    if (distance_mm < HCSR04_MIN_DIST_MM) {
+        dev->last_distance_mm = 0;
+        return ULTRASOUND_STATUS_TOO_CLOSE;
+    }
+    if (distance_mm > HCSR04_MAX_DIST_MM) {
+        dev->last_distance_mm = 0;
+        if (out_mm) {
+            *out_mm = 0;
+        }
+        return ULTRASOUND_STATUS_FAR;
+    }
+
+    dev->last_distance_mm = distance_mm;
+    return ULTRASOUND_STATUS_OK;
+}
+
+UltrasoundStatus_t Ultrasound_ReadStatusIndex(UltrasoundIndex_t index, uint32_t* out_mm) {
+    if (index >= ULTRASOUND_COUNT) {
+        if (out_mm) {
+            *out_mm = 0;
+        }
+        return ULTRASOUND_STATUS_NO_ECHO;
+    }
+    return Ultrasound_ReadStatus(&g_ultrasound_sensors[index], out_mm);
+}

@@ -1,0 +1,169 @@
+/*
+ * task_nav.c
+ *
+ *  Created on: Nov 2, 2026
+ *      Author: Grupo 2
+ */
+
+#include "task_nav.h"
+#include "task_sensors.h"
+#include "mid_kinematics.h"
+#include "drv_motor.h"
+#include "main.h"
+#include "cmsis_os.h"
+#include "FreeRTOS.h"
+#include "queue.h"
+
+#define NAV_CMD_QUEUE_LEN   4
+#define NAV_EVT_QUEUE_LEN   8
+
+static osThreadId_t nav_task_handle;
+static const osThreadAttr_t nav_task_attributes = {
+    .name = "nav",
+    .stack_size = 1024,
+    .priority = (osPriority_t) osPriorityAboveNormal,
+};
+
+static QueueHandle_t cmd_queue;
+static QueueHandle_t evt_queue;
+static volatile NavStatus_t nav_status = { NAV_STATE_IDLE, 0, 0 };
+
+static void NavTask(void* argument);
+
+void TaskNav_Create(void)
+{
+    cmd_queue = xQueueCreate(NAV_CMD_QUEUE_LEN, sizeof(NavCommand_t));
+    evt_queue = xQueueCreate(NAV_EVT_QUEUE_LEN, sizeof(NavEventMsg_t));
+    if (cmd_queue == NULL || evt_queue == NULL) {
+        Error_Handler();
+    }
+
+    nav_task_handle = osThreadNew(NavTask, NULL, &nav_task_attributes);
+    if (nav_task_handle == NULL) {
+        Error_Handler();
+    }
+}
+
+bool TaskNav_SendCommand(NavCommand_t cmd)
+{
+    if (!cmd_queue) return false;
+    return xQueueSend(cmd_queue, &cmd, 0) == pdTRUE;
+}
+
+bool TaskNav_GetEvent(NavEventMsg_t* out)
+{
+    if (!evt_queue || !out) return false;
+    return xQueueReceive(evt_queue, out, 0) == pdTRUE;
+}
+
+NavStatus_t TaskNav_GetStatus(void)
+{
+    NavStatus_t s;
+    taskENTER_CRITICAL();
+    s.state = nav_status.state;
+    s.pwm_left = nav_status.pwm_left;
+    s.pwm_right = nav_status.pwm_right;
+    taskEXIT_CRITICAL();
+    return s;
+}
+
+static NavRange_t to_range(UltrasoundStatus_t st)
+{
+    switch (st) {
+        case ULTRASOUND_STATUS_OK:        return NAV_RANGE_OK;
+        case ULTRASOUND_STATUS_FAR:       return NAV_RANGE_FAR;
+        case ULTRASOUND_STATUS_TOO_CLOSE: return NAV_RANGE_TOO_CLOSE;
+        default:                          return NAV_RANGE_NO_ECHO;
+    }
+}
+
+static int16_t ramp(int16_t current, int16_t target)
+{
+    int32_t diff = (int32_t)target - (int32_t)current;
+    if (diff > TASK_NAV_RAMP_STEP_PWM)  diff = TASK_NAV_RAMP_STEP_PWM;
+    if (diff < -TASK_NAV_RAMP_STEP_PWM) diff = -TASK_NAV_RAMP_STEP_PWM;
+    return (int16_t)(current + diff);
+}
+
+static void NavTask(void* argument)
+{
+    (void) argument;
+
+    NavContext_t ctx;
+    Nav_Init(&ctx);
+
+    int16_t pwm_l = 0;
+    int16_t pwm_r = 0;
+    SensorSnapshot_t snap;
+    TickType_t last_wake = xTaskGetTickCount();
+
+    Motors_StopAll();
+
+    for (;;)
+    {
+        NavInput_t in = {0};
+        const uint32_t now = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+        in.now_ms = now;
+
+        /* Un comando por periodo; los demas quedan para el proximo */
+        NavCommand_t cmd;
+        in.command = (xQueueReceive(cmd_queue, &cmd, 0) == pdTRUE) ? cmd : NAV_CMD_NONE;
+
+        if (TaskSensors_GetSnapshot(&snap)) {
+            in.snapshot_stale = (now - snap.timestamp_ms) > TASK_NAV_STALE_MS;
+            in.front = to_range(snap.us_status[ULTRASOUND_FRONT]);
+            in.front_mm = snap.dist_mm[ULTRASOUND_FRONT];
+            in.left = to_range(snap.us_status[ULTRASOUND_LEFT]);
+            in.left_mm = snap.dist_mm[ULTRASOUND_LEFT];
+            in.right = to_range(snap.us_status[ULTRASOUND_RIGHT]);
+            in.right_mm = snap.dist_mm[ULTRASOUND_RIGHT];
+            in.front_no_echo_count = snap.front_no_echo_count;
+            in.cliff_left = snap.cliff_left;
+            in.cliff_right = snap.cliff_right;
+            in.gyro_z_dps = snap.gyro_z_dps;
+            in.imu_ok = snap.imu_ok;
+        } else {
+            in.snapshot_stale = true;
+            in.front = NAV_RANGE_NO_ECHO;
+        }
+
+        NavOutput_t out = Nav_Step(&ctx, &in);
+
+        /* Seguridad: con la foto vieja los motores se frenan siempre */
+        if (in.snapshot_stale && out.state != NAV_STATE_IDLE) {
+            out.brake = true;
+        }
+
+        if (out.brake) {
+            pwm_l = 0;
+            pwm_r = 0;
+            Motor_Brake(Motor_GetLeft());
+            Motor_Brake(Motor_GetRight());
+        } else if (out.state == NAV_STATE_IDLE) {
+            pwm_l = 0;
+            pwm_r = 0;
+            Motors_StopAll();
+        } else {
+            RobotCommand_t rc = { out.linear_mms, out.angular_rads };
+            int16_t target_l = 0;
+            int16_t target_r = 0;
+            Kinematics_Compute(rc, &target_l, &target_r);
+            pwm_l = ramp(pwm_l, target_l);
+            pwm_r = ramp(pwm_r, target_r);
+            Motors_SetSpeeds(pwm_l, pwm_r);
+        }
+
+        taskENTER_CRITICAL();
+        nav_status.state = out.state;
+        nav_status.pwm_left = pwm_l;
+        nav_status.pwm_right = pwm_r;
+        taskEXIT_CRITICAL();
+
+        if (out.events != 0u) {
+            NavEventMsg_t ev = { now, out.events };
+            (void) xQueueSend(evt_queue, &ev, 0);   // Cola llena: se descarta
+        }
+
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(TASK_NAV_PERIOD_MS));
+    }
+}

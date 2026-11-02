@@ -16,9 +16,18 @@
 
 #define FILTER_SIZE 10
 
+/* Umbrales a calibrar con el piso y el borde reales (etapa 1 del plan de
+ * navegacion). Se pueden redefinir desde el Makefile con -D sin tocar este
+ * archivo. */
+#ifndef TCRT_THRESHOLD_LINE
 #define TCRT_THRESHOLD_LINE    800
+#endif
+#ifndef TCRT_THRESHOLD_CLIFF
 #define TCRT_THRESHOLD_CLIFF   2000
+#endif
+#ifndef TCRT_MARGIN
 #define TCRT_MARGIN            50
+#endif
 
 /* ================= TIPOS INTERNOS ================= */
 

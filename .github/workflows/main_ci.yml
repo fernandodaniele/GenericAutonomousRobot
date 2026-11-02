@@ -2,9 +2,9 @@ name: GAR Build ESP32 and STM32 Firmware
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, Pruebas_Grupo2 ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, Pruebas_Grupo2 ]
 
 jobs:
   build-esp32:

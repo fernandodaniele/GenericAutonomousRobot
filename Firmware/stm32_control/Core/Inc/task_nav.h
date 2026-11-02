@@ -1,0 +1,64 @@
+/*
+ * task_nav.h
+ *
+ *  Created on: Nov 2, 2026
+ *      Author: Grupo 2
+ *
+ *  Tarea de navegacion: cada 20 ms lee la foto de sensores, ejecuta mid_nav y
+ *  aplica las velocidades a los motores con rampa y freno activo.
+ *  Se comunica con el resto solo por colas y nunca se bloquea.
+ */
+
+#ifndef CORE_INC_TASK_NAV_H_
+#define CORE_INC_TASK_NAV_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdint.h>
+#include <stdbool.h>
+#include "mid_nav.h"
+
+#define TASK_NAV_PERIOD_MS        20
+#define TASK_NAV_STALE_MS         300   // Foto mas vieja que esto: motores detenidos
+#define TASK_NAV_RAMP_STEP_PWM    600   // Cambio maximo de PWM por periodo
+
+typedef struct {
+    uint32_t timestamp_ms;
+    uint32_t events;   // Mascara NAV_EVT_*
+} NavEventMsg_t;
+
+typedef struct {
+    NavState_t state;
+    int16_t pwm_left;
+    int16_t pwm_right;
+} NavStatus_t;
+
+/**
+ * @brief Crea la tarea de navegacion y sus colas. Llamar antes de osKernelStart().
+ */
+void TaskNav_Create(void);
+
+/**
+ * @brief Encola un comando START/STOP (no bloquea; si la cola esta llena se descarta).
+ * @return true si se encolo.
+ */
+bool TaskNav_SendCommand(NavCommand_t cmd);
+
+/**
+ * @brief Saca un evento pendiente (no bloquea).
+ * @return true si habia un evento.
+ */
+bool TaskNav_GetEvent(NavEventMsg_t* out);
+
+/**
+ * @brief Ultimo estado y velocidades aplicadas (para telemetria).
+ */
+NavStatus_t TaskNav_GetStatus(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CORE_INC_TASK_NAV_H_ */

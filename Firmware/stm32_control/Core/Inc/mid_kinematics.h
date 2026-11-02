@@ -10,12 +10,18 @@
 
 #include <stdint.h>
 
-// Physical configuration of the robot (in mm or arbitrary scale units)
+// Physical configuration of the robot
 #define ROBOT_WHEEL_BASE 200.0f  // Distance between wheels in mm
 
+// Velocidad de rueda (mm/s) que se obtiene con PWM maximo (MOTOR_MAX_SPEED).
+// Valor provisorio: MEDIRLO en el robot y ajustarlo.
+#ifndef ROBOT_MAX_WHEEL_SPEED_MMS
+#define ROBOT_MAX_WHEEL_SPEED_MMS 500.0f
+#endif
+
 typedef struct {
-    float linear_vel;   // Desired linear velocity
-    float angular_vel;  // Desired angular velocity
+    float linear_vel;   // Desired linear velocity in mm/s
+    float angular_vel;  // Desired angular velocity in rad/s (+ = turn left)
 } RobotCommand_t;
 
 /**

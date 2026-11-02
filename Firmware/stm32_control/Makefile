@@ -59,6 +59,9 @@ Core/Src/ds1302.c \
 Core/Src/mid_kinematics.c \
 Core/Src/mid_log.c \
 Core/Src/task_example.c \
+Core/Src/task_sensors.c \
+Core/Src/task_nav.c \
+Core/Src/mid_nav.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc.c \
 Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_rcc_ex.c \

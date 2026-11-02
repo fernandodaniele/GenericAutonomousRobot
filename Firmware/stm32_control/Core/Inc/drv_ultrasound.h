@@ -28,6 +28,18 @@ typedef enum {
 } UltrasoundIndex_t;
 
 /**
+ * @brief Motivo de una lectura de ultrasonido.
+ *        Permite distinguir "sin obstaculo" de "obstaculo pegado", que con
+ *        Ultrasound_Read_mm() devuelven ambos 0.
+ */
+typedef enum {
+    ULTRASOUND_STATUS_OK = 0,     // Distancia valida (20 mm a 4000 mm)
+    ULTRASOUND_STATUS_NO_ECHO,    // El ECHO nunca subio: sensor desconectado o falla
+    ULTRASOUND_STATUS_FAR,        // Eco largo o fuera de rango: camino libre
+    ULTRASOUND_STATUS_TOO_CLOSE   // Menos de 20 mm: obstaculo pegado
+} UltrasoundStatus_t;
+
+/**
  * @brief Estructura de control para un sensor HC-SR04.
  */
 typedef struct {
@@ -73,6 +85,21 @@ Ultrasound_t* Ultrasound_GetDev(UltrasoundIndex_t index);
  * @return Distancia en mm. Retorna 0 en caso de error o fuera de rango.
  */
 uint32_t Ultrasound_ReadIndex_mm(UltrasoundIndex_t index);
+
+/**
+ * @brief Realiza una lectura e informa el motivo del resultado.
+ *        No modifica el comportamiento de Ultrasound_Read_mm().
+ * @param dev Puntero a la estructura del sensor.
+ * @param out_mm Distancia medida en mm (solo valida si el estado es OK;
+ *               con TOO_CLOSE devuelve la medicion cruda). Puede ser NULL.
+ * @return Motivo de la lectura.
+ */
+UltrasoundStatus_t Ultrasound_ReadStatus(Ultrasound_t* dev, uint32_t* out_mm);
+
+/**
+ * @brief Igual que Ultrasound_ReadStatus() pero por indice de sensor.
+ */
+UltrasoundStatus_t Ultrasound_ReadStatusIndex(UltrasoundIndex_t index, uint32_t* out_mm);
 
 #ifdef __cplusplus
 }

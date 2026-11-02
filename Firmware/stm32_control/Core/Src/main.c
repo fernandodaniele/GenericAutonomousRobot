@@ -183,6 +183,19 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
         DrvUart_RxCallback(&esp_uart);
     }
 }
+
+/**
+ * @brief Callback de error UART (overrun, ruido, framing).
+ *        Una rafaga de lineas desde el ESP32 puede provocar un overrun que
+ *        aborta la recepcion por interrupcion; se rearma para que el enlace
+ *        no quede muerto. El protocolo con el ESP32 no cambia.
+ * @param huart Puntero al handle UART que genero el error.
+ */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART2) {
+        DrvUart_StartReceive(&esp_uart);
+    }
+}
 /* USER CODE END 4 */
 
 /**

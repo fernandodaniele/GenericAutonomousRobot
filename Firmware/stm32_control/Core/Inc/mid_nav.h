@@ -30,13 +30,13 @@ extern "C" {
 #define NAV_CLEAR_MM           80    // Sale de AVOID_OBSTACLE con este margen
 #endif
 #ifndef NAV_FWD_SPEED_MMS
-#define NAV_FWD_SPEED_MMS      300.0f   // ~60 % de PWM con 500 mm/s maximo
+#define NAV_FWD_SPEED_MMS      500.0f   // 100 % de PWM (ROBOT_MAX_WHEEL_SPEED_MMS)
 #endif
 #ifndef NAV_BACK_SPEED_MMS
-#define NAV_BACK_SPEED_MMS     (-275.0f)
+#define NAV_BACK_SPEED_MMS     (-500.0f)
 #endif
 #ifndef NAV_TURN_RAD_S
-#define NAV_TURN_RAD_S         3.0f     // 300 mm/s por rueda en el giro
+#define NAV_TURN_RAD_S         5.0f     // 500 mm/s por rueda en el giro (100 %)
 #endif
 #ifndef NAV_BRAKE_MS
 #define NAV_BRAKE_MS           150

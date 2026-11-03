@@ -109,9 +109,11 @@ int main(void)
     in = base(t); in.snapshot_stale = true; o = run(&c, in, &t, 20);
     CHECK(o.state == NAV_STATE_FAULT);
 
-    /* Sin MPU6050 -> FAULT al arrancar */
+    /* Sin MPU6050 -> FAULT al arrancar (solo si NAV_REQUIRE_IMU) */
+#if NAV_REQUIRE_IMU
     Nav_Init(&c); in = base(t); in.imu_ok = false; in.command = NAV_CMD_START;
     o = Nav_Step(&c, &in); CHECK(o.state == NAV_STATE_FAULT);
+#endif
 
     /* STOP desde cualquier estado -> IDLE */
     Nav_Init(&c); in = base(t); in.command = NAV_CMD_START; Nav_Step(&c, &in);

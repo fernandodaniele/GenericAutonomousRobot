@@ -104,7 +104,7 @@ static void status_led(NavState_t state, const NavInput_t* in, uint32_t now)
             on = ((now / 100u) % 2u) ? GPIO_PIN_SET : GPIO_PIN_RESET;
             break;
         case NAV_STATE_FAULT: {
-            uint32_t code = !in->imu_ok ? 1u
+            uint32_t code = (NAV_REQUIRE_IMU && !in->imu_ok) ? 1u
                           : (in->front_no_echo_count >= NAV_FRONT_NO_ECHO_MAX) ? 2u : 3u;
             uint32_t slot = (now % 2400u) / 200u;          /* 12 ranuras de 200 ms */
             on = (slot < code * 2u && (slot % 2u) == 0u) ? GPIO_PIN_SET : GPIO_PIN_RESET;

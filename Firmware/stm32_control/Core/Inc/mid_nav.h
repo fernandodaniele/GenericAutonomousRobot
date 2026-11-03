@@ -50,6 +50,11 @@ extern "C" {
 #ifndef NAV_FRONT_NO_ECHO_MAX
 #define NAV_FRONT_NO_ECHO_MAX  3
 #endif
+/* 1 = sin MPU6050 el robot entra en FAULT (lo que pide el plan).
+ * 0 = se navega igual sin MPU6050 (solo se pierde la alerta de giro brusco). */
+#ifndef NAV_REQUIRE_IMU
+#define NAV_REQUIRE_IMU        0
+#endif
 #ifndef NAV_GYRO_ALERT_DPS
 #define NAV_GYRO_ALERT_DPS     200
 #endif

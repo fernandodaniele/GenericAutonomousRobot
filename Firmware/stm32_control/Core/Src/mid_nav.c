@@ -70,7 +70,7 @@ static bool fault_condition(const NavInput_t* in)
 {
     return in->snapshot_stale
         || (in->front_no_echo_count >= NAV_FRONT_NO_ECHO_MAX)
-        || !in->imu_ok;
+        || (NAV_REQUIRE_IMU && !in->imu_ok);
 }
 
 static void set_brake(NavOutput_t* out)

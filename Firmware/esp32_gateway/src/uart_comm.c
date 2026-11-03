@@ -44,6 +44,42 @@ void Uart_SendPing(void) {
     ESP_LOGI(TAG, "Enviado a STM32: PING");
 }
 
+void Uart_SendStatus(void)
+{
+    const char *message = "STATUS\n";
+
+    uart_write_bytes(UART_PORT, message, strlen(message));
+
+    ESP_LOGI(TAG, "Enviado a STM32: STATUS");
+}
+
+void Uart_SendReset(void)
+{
+    const char *message = "RESET\n";
+
+    uart_write_bytes(UART_PORT, message, strlen(message));
+
+    ESP_LOGI(TAG, "Enviado a STM32: RESET");
+}
+
+void Uart_SendStop(void)
+{
+    const char *message = "STOP\n";
+
+    uart_write_bytes(UART_PORT, message, strlen(message));
+
+    ESP_LOGI(TAG, "Enviado a STM32: STOP");
+}
+
+void Uart_SendManual(void)
+{
+    const char *message = "MANUAL\n";
+
+    uart_write_bytes(UART_PORT, message, strlen(message));
+
+    ESP_LOGI(TAG, "Enviado a STM32: MANUAL");
+}
+
 void Uart_ReadResponse(void) {
     uint8_t rx_buffer[UART_RX_BUFFER_SIZE];
 

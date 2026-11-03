@@ -36,22 +36,37 @@ void DrvUart_StartReceive(DrvUart_t *uart) {
  * @param uart Puntero a la estructura del driver.
  */
 void DrvUart_RxCallback(DrvUart_t *uart) {
-    if (uart->message_ready == 0) {
+
+    if (uart->message_ready == 0U) {
+
         if (uart->rx_byte == '\n') {
-            uart->rx_buffer[uart->rx_index] = '\0';
-            uart->rx_index = 0;
-            uart->message_ready = 1;
+
+            // Ignorar mensajes vacios.
+            if (uart->rx_index > 0U) {
+
+                uart->rx_buffer[uart->rx_index] = '\0';
+                uart->rx_index = 0U;
+                uart->message_ready = 1U;
+            }
+
         } else {
-            if (uart->rx_index < (UART_RX_BUFFER_SIZE - 1)) {
+
+            // Ignorar bytes NUL antes del inicio de una trama.
+            if (uart->rx_byte == 0U && uart->rx_index == 0U) {
+                // No almacenar ni avanzar el indice.
+
+            } else if (uart->rx_index < (UART_RX_BUFFER_SIZE - 1U)) {
                 uart->rx_buffer[uart->rx_index] = (char)uart->rx_byte;
                 uart->rx_index++;
+
             } else {
-                uart->rx_index = 0;
+                uart->rx_index = 0U;
                 memset(uart->rx_buffer, 0, UART_RX_BUFFER_SIZE);
             }
         }
     }
 
+    // Rearmar la recepcion del siguiente byte.
     HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1);
 }
 

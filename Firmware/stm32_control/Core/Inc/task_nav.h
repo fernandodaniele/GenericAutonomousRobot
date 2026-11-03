@@ -24,6 +24,13 @@ extern "C" {
 #define TASK_NAV_STALE_MS         300   // Foto mas vieja que esto: motores detenidos
 #define TASK_NAV_RAMP_STEP_PWM    600   // Cambio maximo de PWM por periodo
 
+/* Arranque automatico: 1 = el robot arranca solo al encenderse, sin esperar
+ * START del ESP32 (STOP por UART sigue funcionando). 0 = espera START. */
+#ifndef TASK_NAV_AUTOSTART
+#define TASK_NAV_AUTOSTART        1
+#endif
+#define TASK_NAV_AUTOSTART_DELAY_MS 3000  // Espera para alejar las manos del robot
+
 typedef struct {
     uint32_t timestamp_ms;
     uint32_t events;   // Mascara NAV_EVT_*

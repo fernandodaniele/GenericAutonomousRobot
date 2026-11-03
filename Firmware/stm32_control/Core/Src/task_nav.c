@@ -109,6 +109,17 @@ static void NavTask(void* argument)
         NavCommand_t cmd;
         in.command = (xQueueReceive(cmd_queue, &cmd, 0) == pdTRUE) ? cmd : NAV_CMD_NONE;
 
+#if TASK_NAV_AUTOSTART
+        /* START automatico, una sola vez, a los 3 s de encender */
+        static bool autostart_done = false;
+        if (!autostart_done && now >= TASK_NAV_AUTOSTART_DELAY_MS) {
+            autostart_done = true;
+            if (in.command == NAV_CMD_NONE) {
+                in.command = NAV_CMD_START;
+            }
+        }
+#endif
+
         if (TaskSensors_GetSnapshot(&snap)) {
             in.snapshot_stale = (now - snap.timestamp_ms) > TASK_NAV_STALE_MS;
             in.front = to_range(snap.us_status[ULTRASOUND_FRONT]);

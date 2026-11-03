@@ -19,7 +19,12 @@
 #include "drv_gyro.h"
 #include <string.h>
 
-#define SENSORS_IMU_I2C          (&hi2c3)   // I2C3: PA8 SCL / PC9 SDA
+/* El MPU6050 no se usa por ahora: 0 = no se inicializa ni se lee.
+ * Poner en 1 para volver a usarlo (I2C3: PA8 SCL / PC9 SDA). */
+#ifndef SENSORS_USE_IMU
+#define SENSORS_USE_IMU          0
+#endif
+#define SENSORS_IMU_I2C          (&hi2c3)
 #define SENSORS_IMU_INIT_RETRIES 3
 
 static osThreadId_t sensors_task_handle;
@@ -54,6 +59,7 @@ bool TaskSensors_GetSnapshot(SensorSnapshot_t* out)
     return xQueuePeek(snapshot_queue, out, 0) == pdTRUE;
 }
 
+#if SENSORS_USE_IMU
 static bool imu_init(void)
 {
     for (uint8_t i = 0; i < SENSORS_IMU_INIT_RETRIES; i++) {
@@ -64,6 +70,7 @@ static bool imu_init(void)
     }
     return false;
 }
+#endif
 
 static void SensorsTask(void* argument)
 {
@@ -75,11 +82,17 @@ static void SensorsTask(void* argument)
         snap.us_status[i] = ULTRASOUND_STATUS_NO_ECHO;
     }
 
+#if SENSORS_USE_IMU
     MPU6050_t imu;
     memset(&imu, 0, sizeof(imu));
+#endif
 
     drv_tcrt5000_init();
+#if SENSORS_USE_IMU
     snap.imu_ok = imu_init();
+#else
+    snap.imu_ok = false;
+#endif
 
     UltrasoundIndex_t turn = ULTRASOUND_FRONT;
     TickType_t last_wake = xTaskGetTickCount();
@@ -112,10 +125,12 @@ static void SensorsTask(void* argument)
         snap.cliff_right = (r.state == TCRT_STATE_CLIFF);
 
         /* MPU6050: solo el giro, no hace falta el angulo */
+#if SENSORS_USE_IMU
         if (snap.imu_ok) {
             MPU6050_Read_Gyro(SENSORS_IMU_I2C, &imu);
             snap.gyro_z_dps = (int16_t)imu.Gz;
         }
+#endif
 
         snap.timestamp_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
         xQueueOverwrite(snapshot_queue, &snap);

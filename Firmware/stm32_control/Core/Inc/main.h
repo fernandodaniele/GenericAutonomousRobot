@@ -93,6 +93,8 @@ void Error_Handler(void);
 #define SPI1_MOSI_GPIO_Port GPIOA
 #define SD_CS_Pin GPIO_PIN_4
 #define SD_CS_GPIO_Port GPIOC
+#define HCSR04_REAR_TRIG_Pin GPIO_PIN_5
+#define HCSR04_REAR_TRIG_GPIO_Port GPIOC
 #define BOOT1_Pin GPIO_PIN_2
 #define BOOT1_GPIO_Port GPIOB
 #define Sensor_Del_Izq_Pin GPIO_PIN_7
@@ -119,6 +121,8 @@ void Error_Handler(void);
 #define HCSR04_ECHO_GPIO_Port GPIOC
 #define I2S3_MCK_Pin GPIO_PIN_7
 #define I2S3_MCK_GPIO_Port GPIOC
+#define HCSR04_REAR_ECHO_Pin GPIO_PIN_8
+#define HCSR04_REAR_ECHO_GPIO_Port GPIOC
 #define HCSR04_TRIG_Pin GPIO_PIN_9
 #define HCSR04_TRIG_GPIO_Port GPIOC
 #define ENC_LEFT_A_Pin GPIO_PIN_8

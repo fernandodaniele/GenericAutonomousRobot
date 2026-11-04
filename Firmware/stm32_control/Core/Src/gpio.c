@@ -166,6 +166,23 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(MEMS_INT2_GPIO_Port, &GPIO_InitStruct);
 
+    /* HC-SR04 trasero: TRIG PC5, salida inicialmente en LOW */
+  HAL_GPIO_WritePin(HCSR04_REAR_TRIG_GPIO_Port,
+                    HCSR04_REAR_TRIG_Pin,
+                    GPIO_PIN_RESET);
+
+  GPIO_InitStruct.Pin = HCSR04_REAR_TRIG_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(HCSR04_REAR_TRIG_GPIO_Port, &GPIO_InitStruct);
+
+  /* HC-SR04 trasero: ECHO PC8, entrada digital */
+  GPIO_InitStruct.Pin = HCSR04_REAR_ECHO_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(HCSR04_REAR_ECHO_GPIO_Port, &GPIO_InitStruct);
+
 }
 
 /* USER CODE BEGIN 2 */

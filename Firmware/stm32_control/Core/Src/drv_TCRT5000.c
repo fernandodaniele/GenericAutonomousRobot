@@ -25,6 +25,11 @@
 #ifndef TCRT_THRESHOLD_CLIFF
 #define TCRT_THRESHOLD_CLIFF   2000
 #endif
+/* 1 = el precipicio es un valor BAJO: el LED del modulo se enciende al llegar
+ * al borde y su salida va a nivel bajo. 0 = precipicio con valor alto. */
+#ifndef TCRT_CLIFF_WHEN_LOW
+#define TCRT_CLIFF_WHEN_LOW    0
+#endif
 #ifndef TCRT_MARGIN
 #define TCRT_MARGIN            50
 #endif
@@ -160,6 +165,10 @@ static uint16_t filter_average(uint16_t *buffer)
 
 static tcrt_state_t classify(uint16_t val)
 {
+#if TCRT_CLIFF_WHEN_LOW
+    return (val < TCRT_THRESHOLD_CLIFF) ? TCRT_STATE_CLIFF : TCRT_STATE_FLOOR;
+#endif
+
     if (val < TCRT_THRESHOLD_LINE)
         return TCRT_STATE_LINE;
 

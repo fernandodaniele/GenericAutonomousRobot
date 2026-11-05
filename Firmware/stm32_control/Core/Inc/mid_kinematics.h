@@ -14,9 +14,15 @@
 #define ROBOT_WHEEL_BASE 200.0f  // Distance between wheels in mm
 
 // Velocidad de rueda (mm/s) que se obtiene con PWM maximo (MOTOR_MAX_SPEED).
-// Valor provisorio: MEDIRLO en el robot y ajustarlo.
+// Medido a ojo por el grupo: a lo sumo 50 mm/s. Ajustar si se mide mejor.
 #ifndef ROBOT_MAX_WHEEL_SPEED_MMS
-#define ROBOT_MAX_WHEEL_SPEED_MMS 500.0f
+#define ROBOT_MAX_WHEEL_SPEED_MMS 50.0f
+#endif
+
+// Los motores trabajan todo/nada: cada rueda va al 100 % o queda parada.
+// Una rueda con un pedido menor a este PWM se detiene (asi el robot puede girar).
+#ifndef ROBOT_WHEEL_ON_PWM
+#define ROBOT_WHEEL_ON_PWM 6720   // 80 % de MOTOR_MAX_SPEED
 #endif
 
 typedef struct {

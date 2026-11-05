@@ -108,7 +108,7 @@ void Motors_InitAll(void) {
     g_motor_left.channel   = TIM_CHANNEL_2;
     g_motor_left.dir_port  = MOTOR_L_DIR_GPIO_Port;
     g_motor_left.dir_pin   = MOTOR_L_DIR_Pin;
-    g_motor_left.inverted  = 0;
+    g_motor_left.inverted  = 1;
     Motor_Init(&g_motor_left);
 
     // Motor Derecho: PWM en PB8 (TIM4_CH3), DIR en PD2

@@ -24,6 +24,14 @@
 #ifndef SENSORS_USE_IMU
 #define SENSORS_USE_IMU          0
 #endif
+/* TCRT5000 habilitados: 0 = ese sensor nunca informa precipicio.
+ * El derecho (PC2) esta anulado porque falla; poner en 1 cuando se repare. */
+#ifndef SENSORS_USE_TCRT_LEFT
+#define SENSORS_USE_TCRT_LEFT    1
+#endif
+#ifndef SENSORS_USE_TCRT_RIGHT
+#define SENSORS_USE_TCRT_RIGHT   0
+#endif
 #define SENSORS_IMU_I2C          (&hi2c3)
 #define SENSORS_IMU_INIT_RETRIES 3
 
@@ -121,8 +129,8 @@ static void SensorsTask(void* argument)
         tcrt_reading_t r = drv_tcrt5000_get_right();
         snap.tcrt_left = l.value;
         snap.tcrt_right = r.value;
-        snap.cliff_left = (l.state == TCRT_STATE_CLIFF);
-        snap.cliff_right = (r.state == TCRT_STATE_CLIFF);
+        snap.cliff_left = SENSORS_USE_TCRT_LEFT && (l.state == TCRT_STATE_CLIFF);
+        snap.cliff_right = SENSORS_USE_TCRT_RIGHT && (r.state == TCRT_STATE_CLIFF);
 
         /* MPU6050: solo el giro, no hace falta el angulo */
 #if SENSORS_USE_IMU

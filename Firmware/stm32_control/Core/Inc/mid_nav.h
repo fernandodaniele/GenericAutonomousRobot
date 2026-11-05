@@ -8,7 +8,9 @@
  *  SIN dependencias de HAL ni de FreeRTOS: se puede compilar y probar en la PC
  *  (ver Test/test_mid_nav.c).
  *
- *  Reglas: avanzar mientras no haya nada a menos de 5 cm, esquivar el
+ *  Reglas: recorrer la habitacion a velocidad suave siguiendo la pared a
+ *  NAV_WALL_MM; en las esquinas girar en el lugar. A menos de NAV_OBSTACLE_MM
+ *  de frente: maniobra evasiva (frenar, retroceder y girar). Esquivar el
  *  precipicio y emitir una alerta ante un giro brusco.
  */
 
@@ -24,28 +26,57 @@ extern "C" {
 
 /* ===== Parametros (ajustar con la distancia de frenado medida) ===== */
 #ifndef NAV_OBSTACLE_MM
-#define NAV_OBSTACLE_MM        50    // Entra en AVOID_OBSTACLE por debajo de esto
+#define NAV_OBSTACLE_MM        50    // De frente: maniobra evasiva por debajo de esto
 #endif
 #ifndef NAV_CLEAR_MM
-#define NAV_CLEAR_MM           80    // Sale de AVOID_OBSTACLE con este margen
+#define NAV_CLEAR_MM           150   // Frente libre: termina el giro o la evasiva
+#endif
+#ifndef NAV_WALL_MM
+#define NAV_WALL_MM            100   // Distancia a mantener con la pared
+#endif
+#ifndef NAV_WALL_ACQUIRE_MM
+#define NAV_WALL_ACQUIRE_MM    300   // Toma como pared lo que vea a menos de esto
+#endif
+#ifndef NAV_WALL_DEADBAND_MM
+#define NAV_WALL_DEADBAND_MM   20     // Dentro de +/- esto va recto
+#endif
+#ifndef NAV_WALL_MAX_RAD_S
+#define NAV_WALL_MAX_RAD_S     0.2f   // Correccion al seguir la pared (frena la rueda interna)
+#endif
+#ifndef NAV_CORNER_RAD_S
+#define NAV_CORNER_RAD_S       0.5f   // Giro en esquinas (50 mm/s por rueda, 100 %)
+#endif
+#ifndef NAV_EVADE_BACK_MS
+#define NAV_EVADE_BACK_MS      800   // Retroceso de la evasiva (unos 3 cm)
+#endif
+#ifndef NAV_EVADE_TURN_MIN_MS
+#define NAV_EVADE_TURN_MIN_MS  1000  // Giro minimo antes de volver a avanzar
+#endif
+#ifndef NAV_EVADE_TURN_MAX_MS
+#define NAV_EVADE_TURN_MAX_MS  6000  // Si sigue bloqueado: retrocede otra vez
 #endif
 #ifndef NAV_FWD_SPEED_MMS
-#define NAV_FWD_SPEED_MMS      500.0f   // 100 % de PWM (ROBOT_MAX_WHEEL_SPEED_MMS)
+#define NAV_FWD_SPEED_MMS      50.0f    // 100 % de PWM
 #endif
 #ifndef NAV_BACK_SPEED_MMS
-#define NAV_BACK_SPEED_MMS     (-500.0f)
+#define NAV_BACK_SPEED_MMS     (-50.0f)
 #endif
 #ifndef NAV_TURN_RAD_S
-#define NAV_TURN_RAD_S         5.0f     // 500 mm/s por rueda en el giro (100 %)
+#define NAV_TURN_RAD_S         0.5f     // 50 mm/s por rueda en el giro (100 %)
 #endif
 #ifndef NAV_BRAKE_MS
 #define NAV_BRAKE_MS           150
 #endif
 #ifndef NAV_BACKUP_MS
-#define NAV_BACKUP_MS          400
+#define NAV_BACKUP_MS          1500
 #endif
 #ifndef NAV_CLIFF_TURN_MS
-#define NAV_CLIFF_TURN_MS      500
+#define NAV_CLIFF_TURN_MS      3000
+#endif
+/* 0 = sin eco del frontal sigue andando (a ciegas de frente) en vez de frenar.
+ * 1 = se detiene hasta que el sensor vuelva a responder. */
+#ifndef NAV_STOP_ON_NO_ECHO
+#define NAV_STOP_ON_NO_ECHO    0
 #endif
 #ifndef NAV_FRONT_NO_ECHO_MAX
 #define NAV_FRONT_NO_ECHO_MAX  3
@@ -122,6 +153,8 @@ typedef struct {
     int8_t turn_dir;               // +1 izquierda, -1 derecha
     uint32_t last_alert_ms;
     bool alert_armed;
+    int8_t wall_side;              // Pared seguida: +1 izquierda, -1 derecha, 0 ninguna
+    bool corner;                   // Girando en una esquina
 } NavContext_t;
 
 void Nav_Init(NavContext_t* ctx);

@@ -13,6 +13,7 @@
 #include "cmsis_os.h"
 #include "FreeRTOS.h"
 #include "queue.h"
+#include <math.h>
 
 #define NAV_CMD_QUEUE_LEN   4
 #define NAV_EVT_QUEUE_LEN   8
@@ -63,6 +64,9 @@ NavStatus_t TaskNav_GetStatus(void)
     s.state = nav_status.state;
     s.pwm_left = nav_status.pwm_left;
     s.pwm_right = nav_status.pwm_right;
+    s.x_mm = nav_status.x_mm;
+    s.y_mm = nav_status.y_mm;
+    s.theta_mrad = nav_status.theta_mrad;
     taskEXIT_CRITICAL();
     return s;
 }
@@ -125,6 +129,8 @@ static void NavTask(void* argument)
 
     int16_t pwm_l = 0;
     int16_t pwm_r = 0;
+    float x_mm = 0.0f, y_mm = 0.0f, theta = 0.0f;
+    NavState_t prev_state = NAV_STATE_IDLE;
     SensorSnapshot_t snap;
     TickType_t last_wake = xTaskGetTickCount();
 
@@ -195,12 +201,31 @@ static void NavTask(void* argument)
             Motors_SetSpeeds(pwm_l, pwm_r);
         }
 
+        /* Odometria estimada a partir del PWM aplicado (no hay encoders) */
+        if (prev_state == NAV_STATE_IDLE && out.state != NAV_STATE_IDLE) {
+            x_mm = y_mm = theta = 0.0f;
+        }
+        prev_state = out.state;
+        {
+            const float k = ROBOT_MAX_WHEEL_SPEED_MMS / (float)MOTOR_MAX_SPEED;
+            const float dt = (float)TASK_NAV_PERIOD_MS / 1000.0f;
+            float v_l = (float)pwm_l * k;
+            float v_r = (float)pwm_r * k;
+            float v = (v_l + v_r) / 2.0f;
+            x_mm += v * cosf(theta) * dt;
+            y_mm += v * sinf(theta) * dt;
+            theta += ((v_r - v_l) / ROBOT_WHEEL_BASE) * dt;
+        }
+
         status_led(out.state, &in, now);
 
         taskENTER_CRITICAL();
         nav_status.state = out.state;
         nav_status.pwm_left = pwm_l;
         nav_status.pwm_right = pwm_r;
+        nav_status.x_mm = (int32_t)x_mm;
+        nav_status.y_mm = (int32_t)y_mm;
+        nav_status.theta_mrad = (int32_t)(theta * 1000.0f);
         taskEXIT_CRITICAL();
 
         if (out.events != 0u) {

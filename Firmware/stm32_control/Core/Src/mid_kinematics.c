@@ -12,6 +12,13 @@
 #include "mid_kinematics.h"
 #include "drv_motor.h"
 
+static float on_off_pwm(float pwm)
+{
+    if (pwm >= (float)ROBOT_WHEEL_ON_PWM) return (float)MOTOR_MAX_SPEED;
+    if (pwm <= -(float)ROBOT_WHEEL_ON_PWM) return (float)MOTOR_MIN_SPEED;
+    return 0.0f;
+}
+
 void Kinematics_Compute(RobotCommand_t cmd, int16_t* out_l_pwm, int16_t* out_r_pwm) {
     if (!out_l_pwm || !out_r_pwm) return;
 
@@ -26,6 +33,8 @@ void Kinematics_Compute(RobotCommand_t cmd, int16_t* out_l_pwm, int16_t* out_r_p
     const float mms_to_pwm = (float)MOTOR_MAX_SPEED / ROBOT_MAX_WHEEL_SPEED_MMS;
     v_l *= mms_to_pwm;
     v_r *= mms_to_pwm;
+    v_l = on_off_pwm(v_l);
+    v_r = on_off_pwm(v_r);
 
     // Saturacion de limites PWM (-8399 a 8399)
     if (v_l > (float)MOTOR_MAX_SPEED) v_l = (float)MOTOR_MAX_SPEED;

@@ -40,6 +40,9 @@ typedef struct {
     NavState_t state;
     int16_t pwm_left;
     int16_t pwm_right;
+    int32_t x_mm;         // Pose estimada desde el arranque (sin encoders: aproximada)
+    int32_t y_mm;
+    int32_t theta_mrad;
 } NavStatus_t;
 
 /**

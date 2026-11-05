@@ -61,6 +61,7 @@ const osThreadAttr_t defaultTask_attributes = {
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 static void send_nav_event(DrvUart_t *uart, const NavEventMsg_t *ev);
+static void send_map_line(DrvUart_t *uart, uint32_t ms);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -148,6 +149,14 @@ void StartDefaultTask(void *argument)
     while (TaskNav_GetEvent(&ev)) {
         send_nav_event(&esp_uart, &ev);
     }
+
+    /* Datos para armar el mapa en la PC, cada 200 ms mientras se mueve */
+    static uint32_t last_map_ms = 0;
+    uint32_t now_ms = (uint32_t)osKernelGetTickCount();
+    if (now_ms - last_map_ms >= 200u) {
+        last_map_ms = now_ms;
+        send_map_line(&esp_uart, now_ms);
+    }
     osDelay(10);
   }
   /* USER CODE END StartDefaultTask */
@@ -173,6 +182,44 @@ static void send_one_event(DrvUart_t *uart, uint32_t ms, const char *text)
   DrvUart_SendString(uart, u32_to_str(ms, &num[sizeof(num) - 1]));
   DrvUart_SendString(uart, ",");
   DrvUart_SendString(uart, text);
+  DrvUart_SendString(uart, "\n");
+}
+
+static void send_int(DrvUart_t *uart, int32_t v)
+{
+  char num[11];
+  DrvUart_SendString(uart, ",");
+  if (v < 0) {
+    DrvUart_SendString(uart, "-");
+    v = -v;
+  }
+  DrvUart_SendString(uart, u32_to_str((uint32_t)v, &num[sizeof(num) - 1]));
+}
+
+/* 9999 = nada al alcance; 0 = sin lectura */
+static int32_t map_range(const SensorSnapshot_t *s, UltrasoundIndex_t i)
+{
+  if (s->us_status[i] == ULTRASOUND_STATUS_FAR) return 9999;
+  if (s->us_status[i] == ULTRASOUND_STATUS_NO_ECHO) return 0;
+  return (int32_t)s->dist_mm[i];
+}
+
+/* MAP,<ms>,<x_mm>,<y_mm>,<theta_mrad>,<frente_mm>,<izq_mm>,<der_mm> */
+static void send_map_line(DrvUart_t *uart, uint32_t ms)
+{
+  NavStatus_t st = TaskNav_GetStatus();
+  SensorSnapshot_t snap;
+  if (st.state == NAV_STATE_IDLE || st.state == NAV_STATE_FAULT || !TaskSensors_GetSnapshot(&snap)) {
+    return;
+  }
+  DrvUart_SendString(uart, "MAP");
+  send_int(uart, (int32_t)ms);
+  send_int(uart, st.x_mm);
+  send_int(uart, st.y_mm);
+  send_int(uart, st.theta_mrad);
+  send_int(uart, map_range(&snap, ULTRASOUND_FRONT));
+  send_int(uart, map_range(&snap, ULTRASOUND_LEFT));
+  send_int(uart, map_range(&snap, ULTRASOUND_RIGHT));
   DrvUart_SendString(uart, "\n");
 }
 

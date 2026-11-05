@@ -40,4 +40,19 @@ uint8_t HCSR04_IsReady(void);
  */
 float HCSR04_GetDistance(void);
 
+/*
+ * HC-SR04 trasero
+ * TRIG: PC5
+ * ECHO: PC8 - TIM3 CH3 + DMA1 Stream7
+ */
+
+/* Inicia una medicion del sensor trasero. */
+void HCSR04_Rear_Trigger(void);
+
+/* Indica si finalizo la captura DMA trasera. */
+uint8_t HCSR04_Rear_IsReady(void);
+
+/* Obtiene la distancia trasera en metros. */
+float HCSR04_Rear_GetDistance(void);
+
 #endif /* DRV_ULTRASOUND_H_ */

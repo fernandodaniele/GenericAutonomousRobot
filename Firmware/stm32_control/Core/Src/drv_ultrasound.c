@@ -14,9 +14,14 @@ static void Delay_Us(uint32_t us) {
  */
 static TIM_HandleTypeDef htim3_echo;
 static DMA_HandleTypeDef hdma_tim3_ic;
+static DMA_HandleTypeDef hdma_tim3_ic_rear;
 
 static volatile uint16_t captures[2] = {0, 0};
 static volatile uint8_t  capture_done = 0;
+
+/* Capturas DMA independientes del HC-SR04 trasero */
+static volatile uint16_t rear_captures[2] = {0, 0};
+static volatile uint8_t rear_capture_done = 0;
 
 /* ── API pública ─────────────────────────────────────────────────────────────
  */
@@ -52,7 +57,11 @@ void HCSR04_Init(void) {
     ic.ICSelection = TIM_ICSELECTION_DIRECTTI;
     ic.ICPrescaler = TIM_ICPSC_DIV1;
     ic.ICFilter    = 4;
+
     HAL_TIM_IC_ConfigChannel(&htim3_echo, &ic, TIM_CHANNEL_1);
+
+    /* HC-SR04 trasero: configurar TIM3 Channel 3 */
+    HAL_TIM_IC_ConfigChannel(&htim3_echo, &ic, TIM_CHANNEL_3);
 }
 
 void HCSR04_Trigger(void) {
@@ -72,7 +81,47 @@ void HCSR04_Trigger(void) {
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
 }
 
+/**
+ * @brief Inicia una medicion del HC-SR04 trasero.
+ *
+ * ECHO: TIM3 CH3 + DMA1 Stream7.
+ * TRIG: PC5.
+ */
+void HCSR04_Rear_Trigger(void)
+{
+    /* Detener una posible captura trasera anterior */
+    HAL_TIM_IC_Stop_DMA(&htim3_echo, TIM_CHANNEL_3);
+
+    /* Reiniciar estado y buffer del sensor trasero */
+    rear_capture_done = 0U;
+    rear_captures[0] = 0U;
+    rear_captures[1] = 0U;
+
+    /* Preparar DMA para capturar ambos flancos de ECHO */
+    if (HAL_TIM_IC_Start_DMA(&htim3_echo,
+                             TIM_CHANNEL_3,
+                             (uint32_t *)rear_captures,
+                             2U) != HAL_OK)
+    {
+        return;
+    }
+
+    /* Generar pulso TRIG de 10 us en PC5 */
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
+    Delay_Us(10);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_RESET);
+}
+
 uint8_t HCSR04_IsReady(void) { return capture_done; }
+
+/**
+ * @brief Indica si finalizo la captura DMA del HC-SR04 trasero.
+ * @return 1 si la captura termino, 0 en caso contrario.
+ */
+uint8_t HCSR04_Rear_IsReady(void)
+{
+    return rear_capture_done;
+}
 
 float HCSR04_GetDistance(void) {
     capture_done = 0;
@@ -86,18 +135,60 @@ float HCSR04_GetDistance(void) {
     return (float)diff * 1e-6f * 340.0f / 2.0f;
 }
 
+/**
+ * @brief Obtiene la distancia medida por el HC-SR04 trasero.
+ * @return Distancia en metros.
+ *
+ * Debe llamarse unicamente cuando
+ * HCSR04_Rear_IsReady() devuelve 1.
+ */
+float HCSR04_Rear_GetDistance(void)
+{
+    rear_capture_done = 0U;
+
+    /* Capturas de subida y bajada del ECHO trasero */
+    uint16_t rise = rear_captures[0];
+    uint16_t fall = rear_captures[1];
+
+    /* Manejar desbordamiento del contador TIM3 de 16 bits */
+    uint16_t diff = (fall >= rise)
+                  ? (fall - rise)
+                  : (uint16_t)(0xFFFFU - rise + fall + 1U);
+
+    /* TIM3: 1 tick = 1 us
+     * Distancia = tiempo * velocidad_sonido / 2
+     */
+    return (float)diff * 1e-6f * 340.0f / 2.0f;
+}
+
 /* ── Manejadores de interrupción ─────────────────────────────────────────────
  */
 
 void DMA1_Stream4_IRQHandler(void) { HAL_DMA_IRQHandler(&hdma_tim3_ic); }
+void DMA1_Stream7_IRQHandler(void) { HAL_DMA_IRQHandler(&hdma_tim3_ic_rear); }
 void TIM3_IRQHandler(void)         { HAL_TIM_IRQHandler(&htim3_echo); }
 
 /* ── Callbacks HAL ───────────────────────────────────────────────────────────
  */
 
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM3 && htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance != TIM3)
+    {
+        return;
+    }
+
+    /* HC-SR04 frontal: TIM3 CH1 */
+    if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
+    {
         capture_done = 1;
+    }
+
+    /* HC-SR04 trasero: TIM3 CH3 */
+    else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_3)
+    {
+        rear_capture_done = 1;
+    }
 }
 
 /* ── MSP Init ────────────────────────────────────────────────────────────────
@@ -118,6 +209,10 @@ void HAL_TIM_IC_MspInit(TIM_HandleTypeDef *htim) {
     echo.Alternate = GPIO_AF2_TIM3;
     HAL_GPIO_Init(GPIOC, &echo);
 
+    /* HC-SR04 trasero: PC8 como TIM3 CH3 (AF2) */
+    echo.Pin = GPIO_PIN_8;
+    HAL_GPIO_Init(GPIOC, &echo);
+
     /* DMA1 Stream4 Channel5 ← TIM3 CH1 */
     hdma_tim3_ic.Instance                 = DMA1_Stream4;
     hdma_tim3_ic.Init.Channel             = DMA_CHANNEL_5;
@@ -133,6 +228,26 @@ void HAL_TIM_IC_MspInit(TIM_HandleTypeDef *htim) {
 
     __HAL_LINKDMA(htim, hdma[TIM_DMA_ID_CC1], hdma_tim3_ic);
 
+    /* DMA1 Stream7 Channel5: TIM3 CH3 - HC-SR04 trasero */
+    hdma_tim3_ic_rear.Instance                 = DMA1_Stream7;
+    hdma_tim3_ic_rear.Init.Channel             = DMA_CHANNEL_5;
+    hdma_tim3_ic_rear.Init.Direction           = DMA_PERIPH_TO_MEMORY;
+    hdma_tim3_ic_rear.Init.PeriphInc           = DMA_PINC_DISABLE;
+    hdma_tim3_ic_rear.Init.MemInc              = DMA_MINC_ENABLE;
+    hdma_tim3_ic_rear.Init.PeriphDataAlignment = DMA_PDATAALIGN_HALFWORD;
+    hdma_tim3_ic_rear.Init.MemDataAlignment    = DMA_MDATAALIGN_HALFWORD;
+    hdma_tim3_ic_rear.Init.Mode                = DMA_NORMAL;
+    hdma_tim3_ic_rear.Init.Priority            = DMA_PRIORITY_HIGH;
+    hdma_tim3_ic_rear.Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
+
+    HAL_DMA_Init(&hdma_tim3_ic_rear);
+
+    __HAL_LINKDMA(htim, hdma[TIM_DMA_ID_CC3], hdma_tim3_ic_rear);
+
     HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+
+    /* Interrupcion DMA del HC-SR04 trasero */
+    HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
 }

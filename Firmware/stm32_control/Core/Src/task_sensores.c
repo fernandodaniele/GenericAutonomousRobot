@@ -21,6 +21,7 @@ static void vTaskSensores(void *pvParameters)
 
     SensoresDatos_t datos = {0};
     TickType_t ultimo_despertar = xTaskGetTickCount();
+    TickType_t ultimo_disparo_frontal = 0U;
     uint8_t paso = 0U;
     uint8_t ultrasonido_pendiente = 0U;
 
@@ -49,6 +50,7 @@ static void vTaskSensores(void *pvParameters)
             {
                 datos.distancia_m = distancia;
                 datos.ultrasonido_valido = 1U;
+                datos.timestamp_ultrasonido_frontal = ultimo_disparo_frontal;
             }
             else
             {
@@ -67,6 +69,7 @@ static void vTaskSensores(void *pvParameters)
                 datos.ultrasonido_valido = 0U;
             }
 
+            ultimo_disparo_frontal = xTaskGetTickCount();
             HCSR04_Trigger();
             ultrasonido_pendiente = 1U;
         }

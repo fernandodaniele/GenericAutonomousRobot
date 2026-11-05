@@ -65,20 +65,65 @@ void HCSR04_Init(void) {
 }
 
 void HCSR04_Trigger(void) {
-    capture_done = 0;
-    captures[0]  = 0;
-    captures[1]  = 0;
+    uint32_t dma_irq_enabled = NVIC_GetEnableIRQ(DMA1_Stream4_IRQn);
 
-    /* Cancela cualquier captura pendiente de un disparo anterior sin respuesta */
-    HAL_TIM_IC_Stop_DMA(&htim3_echo, TIM_CHANNEL_1);
+    /* Aisla el callback frontal sin bloquear SysTick ni la IRQ trasera. */
+    HAL_NVIC_DisableIRQ(DMA1_Stream4_IRQn);
 
-    /* Arma el DMA para capturar los timestamps de subida y bajada */
-    HAL_TIM_IC_Start_DMA(&htim3_echo, TIM_CHANNEL_1, (uint32_t *)captures, 2);
+    /* Solo la CPU modifica este indicador; su IRQ ya esta inhibida. */
+    capture_done = 0U;
+
+    if (HAL_DMA_GetState(&hdma_tim3_ic) == HAL_DMA_STATE_BUSY) {
+        if ((HAL_DMA_Abort(&hdma_tim3_ic) != HAL_OK) &&
+            (HAL_DMA_GetState(&hdma_tim3_ic) != HAL_DMA_STATE_READY)) {
+            goto stop_capture;
+        }
+    }
+
+    /* No tocar el buffer si el DMA no esta listo y efectivamente detenido. */
+    if ((HAL_DMA_GetState(&hdma_tim3_ic) != HAL_DMA_STATE_READY) ||
+        ((hdma_tim3_ic.Instance->CR & DMA_SxCR_EN) != 0U)) {
+        goto stop_capture;
+    }
+
+    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC1);
+    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_1);
+
+    captures[0] = 0U;
+    captures[1] = 0U;
+    __HAL_TIM_CLEAR_FLAG(&htim3_echo, TIM_FLAG_CC1 | TIM_FLAG_CC1OF);
+    __HAL_DMA_CLEAR_FLAG(&hdma_tim3_ic,
+                         DMA_FLAG_TCIF0_4 | DMA_FLAG_HTIF0_4 |
+                         DMA_FLAG_TEIF0_4 | DMA_FLAG_DMEIF0_4 |
+                         DMA_FLAG_FEIF0_4);
+    NVIC_ClearPendingIRQ(DMA1_Stream4_IRQn);
+
+    if (HAL_TIM_IC_Start_DMA(&htim3_echo, TIM_CHANNEL_1,
+                             (uint32_t *)captures, 2U) != HAL_OK) {
+        goto stop_capture;
+    }
+
+    if (dma_irq_enabled != 0U) {
+        HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+    }
 
     /* Pulso de 10 µs en PC9 */
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
     Delay_Us(10);
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+    return;
+
+stop_capture:
+    /* Inhibe solo CH1 y sus interrupciones DMA; no inicia otro aborto. */
+    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC1);
+    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_1);
+    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic, DMA_IT_TC | DMA_IT_HT |
+                                      DMA_IT_TE | DMA_IT_DME);
+    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic, DMA_IT_FE);
+
+    if (dma_irq_enabled != 0U) {
+        HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+    }
 }
 
 /**

@@ -12,6 +12,14 @@ typedef struct
     float distancia_m;           // Ultima distancia ultrasonica valida, en metros
     uint8_t ultrasonido_valido;  // 1 si la ultima medicion fue valida
     TickType_t timestamp;        // Tick de la ultima publicacion
+
+    // Campos nuevos: pendientes de actualizacion por TaskSensores.
+    // Disparo de la ultima captura frontal valida, en ticks FreeRTOS.
+    TickType_t timestamp_ultrasonido_frontal;
+    float distancia_trasera_m;   // Distancia trasera en metros; usar solo si es valida
+    uint8_t ultrasonido_trasero_valido; // 1 si la ultima medicion trasera fue valida
+    // Disparo de la ultima captura trasera valida, en ticks FreeRTOS.
+    TickType_t timestamp_ultrasonido_trasero;
 } SensoresDatos_t;
 
 void TaskSensores_Create(void);

@@ -19,10 +19,17 @@
 #define ROBOT_MAX_WHEEL_SPEED_MMS 50.0f
 #endif
 
-// Los motores trabajan todo/nada: cada rueda va al 100 % o queda parada.
-// Una rueda con un pedido menor a este PWM se detiene (asi el robot puede girar).
-#ifndef ROBOT_WHEEL_ON_PWM
-#define ROBOT_WHEEL_ON_PWM 6720   // 80 % de MOTOR_MAX_SPEED
+// PWM proporcional a la velocidad pedida, con un piso de arranque: una rueda
+// recibe 0 o un PWM de al menos este valor (en modulo), porque por debajo los
+// motores no arrancan desde parado.
+// Valor inicial 4200 (50 %): CALIBRAR en el granito como el menor PWM con el
+// que ambas ruedas arrancan desde parado.
+#ifndef ROBOT_WHEEL_MIN_PWM
+#define ROBOT_WHEEL_MIN_PWM 4200
+#endif
+// Pedidos por debajo de esto (en cuentas de PWM) se toman como 0: rueda parada.
+#ifndef ROBOT_WHEEL_ZERO_PWM
+#define ROBOT_WHEEL_ZERO_PWM 1.0f
 #endif
 
 typedef struct {

@@ -64,184 +64,165 @@ void HCSR04_Init(void) {
     HAL_TIM_IC_ConfigChannel(&htim3_echo, &ic, TIM_CHANNEL_3);
 }
 
-void HCSR04_Trigger(void) {
-    uint32_t dma_irq_enabled = NVIC_GetEnableIRQ(DMA1_Stream4_IRQn);
+/*
+ * Cierra solo el canal solicitado. HAL_OK confirma EN=0, aunque un estado
+ * excepcional del handle pueda impedir un armado posterior. No reinicializa DMA.
+ * Todas las API de adquisicion deben utilizarse desde una unica tarea, no ISR.
+ */
+static HAL_StatusTypeDef HCSR04_StopCapture(uint32_t channel,
+                                           DMA_HandleTypeDef *dma,
+                                           IRQn_Type irq,
+                                           volatile uint8_t *ready) {
+    uint32_t irq_enabled = NVIC_GetEnableIRQ(irq);
+    HAL_StatusTypeDef status = HAL_OK;
 
-    /* Aisla el callback frontal sin bloquear SysTick ni la IRQ trasera. */
-    HAL_NVIC_DisableIRQ(DMA1_Stream4_IRQn);
+    HAL_NVIC_DisableIRQ(irq);
+    *ready = 0U;
 
-    /* Solo la CPU modifica este indicador; su IRQ ya esta inhibida. */
-    capture_done = 0U;
-
-    if (HAL_DMA_GetState(&hdma_tim3_ic) == HAL_DMA_STATE_BUSY) {
-        if ((HAL_DMA_Abort(&hdma_tim3_ic) != HAL_OK) &&
-            (HAL_DMA_GetState(&hdma_tim3_ic) != HAL_DMA_STATE_READY)) {
-            goto stop_capture;
+    if (HAL_DMA_GetState(dma) == HAL_DMA_STATE_BUSY) {
+        status = HAL_DMA_Abort(dma);
+        if ((status != HAL_OK) &&
+            (HAL_DMA_GetState(dma) == HAL_DMA_STATE_READY)) {
+            status = HAL_OK;
         }
     }
 
-    /* No tocar el buffer si el DMA no esta listo y efectivamente detenido. */
-    if ((HAL_DMA_GetState(&hdma_tim3_ic) != HAL_DMA_STATE_READY) ||
-        ((hdma_tim3_ic.Instance->CR & DMA_SxCR_EN) != 0U)) {
-        goto stop_capture;
+    __HAL_TIM_DISABLE_DMA(&htim3_echo,
+                         (channel == TIM_CHANNEL_1) ? TIM_DMA_CC1 : TIM_DMA_CC3);
+    (void)HAL_TIM_IC_Stop(&htim3_echo, channel);
+    __HAL_DMA_DISABLE_IT(dma, DMA_IT_TC | DMA_IT_HT | DMA_IT_TE | DMA_IT_DME);
+    __HAL_DMA_DISABLE_IT(dma, DMA_IT_FE);
+
+    if ((dma->Instance->CR & DMA_SxCR_EN) == 0U) {
+        __HAL_TIM_CLEAR_FLAG(&htim3_echo,
+                            (channel == TIM_CHANNEL_1)
+                            ? (TIM_FLAG_CC1 | TIM_FLAG_CC1OF)
+                            : (TIM_FLAG_CC3 | TIM_FLAG_CC3OF));
+        __HAL_DMA_CLEAR_FLAG(dma, __HAL_DMA_GET_TC_FLAG_INDEX(dma) |
+                                 __HAL_DMA_GET_HT_FLAG_INDEX(dma) |
+                                 __HAL_DMA_GET_TE_FLAG_INDEX(dma) |
+                                 __HAL_DMA_GET_DME_FLAG_INDEX(dma) |
+                                 __HAL_DMA_GET_FE_FLAG_INDEX(dma));
+        NVIC_ClearPendingIRQ(irq);
+    } else if (status == HAL_OK) {
+        status = HAL_ERROR;
     }
 
-    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC1);
-    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_1);
-
-    captures[0] = 0U;
-    captures[1] = 0U;
-    __HAL_TIM_CLEAR_FLAG(&htim3_echo, TIM_FLAG_CC1 | TIM_FLAG_CC1OF);
-    __HAL_DMA_CLEAR_FLAG(&hdma_tim3_ic,
-                         DMA_FLAG_TCIF0_4 | DMA_FLAG_HTIF0_4 |
-                         DMA_FLAG_TEIF0_4 | DMA_FLAG_DMEIF0_4 |
-                         DMA_FLAG_FEIF0_4);
-    NVIC_ClearPendingIRQ(DMA1_Stream4_IRQn);
-
-    if (HAL_TIM_IC_Start_DMA(&htim3_echo, TIM_CHANNEL_1,
-                             (uint32_t *)captures, 2U) != HAL_OK) {
-        goto stop_capture;
+    if (irq_enabled != 0U) {
+        HAL_NVIC_EnableIRQ(irq);
     }
-
-    if (dma_irq_enabled != 0U) {
-        HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
-    }
-
-    /* Pulso de 10 µs en PC9 */
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
-    Delay_Us(10);
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
-    return;
-
-stop_capture:
-    /* Inhibe solo CH1 y sus interrupciones DMA; no inicia otro aborto. */
-    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC1);
-    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_1);
-    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic, DMA_IT_TC | DMA_IT_HT |
-                                      DMA_IT_TE | DMA_IT_DME);
-    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic, DMA_IT_FE);
-
-    if (dma_irq_enabled != 0U) {
-        HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
-    }
+    return status;
 }
 
-/**
- * @brief Inicia una medicion del HC-SR04 trasero.
- *
- * ECHO: TIM3 CH3 + DMA1 Stream7.
- * TRIG: PC5.
- */
-void HCSR04_Rear_Trigger(void)
-{
-    uint32_t dma_irq_enabled = NVIC_GetEnableIRQ(DMA1_Stream7_IRQn);
+static HAL_StatusTypeDef HCSR04_StartCapture(uint32_t channel,
+                                            DMA_HandleTypeDef *dma,
+                                            IRQn_Type irq,
+                                            volatile uint16_t *buffer,
+                                            volatile uint8_t *ready,
+                                            uint16_t trig_pin,
+                                            uint16_t echo_pin) {
+    HAL_StatusTypeDef status = HCSR04_StopCapture(channel, dma, irq, ready);
+    if (status != HAL_OK) {
+        return status;
+    }
 
-    /* Aisla el callback trasero sin bloquear SysTick ni la IRQ frontal. */
-    HAL_NVIC_DisableIRQ(DMA1_Stream7_IRQn);
+    uint32_t irq_enabled = NVIC_GetEnableIRQ(irq);
+    HAL_NVIC_DisableIRQ(irq);
 
-    /* Solo la CPU modifica este indicador; su IRQ ya esta inhibida. */
-    rear_capture_done = 0U;
-
-    if (HAL_DMA_GetState(&hdma_tim3_ic_rear) == HAL_DMA_STATE_BUSY) {
-        if ((HAL_DMA_Abort(&hdma_tim3_ic_rear) != HAL_OK) &&
-            (HAL_DMA_GetState(&hdma_tim3_ic_rear) != HAL_DMA_STATE_READY)) {
-            goto stop_capture;
+    /* Un ECHO aun alto no puede iniciar una pareja subida/bajada nueva. */
+    if ((HAL_DMA_GetState(dma) != HAL_DMA_STATE_READY) ||
+        ((dma->Instance->CR & DMA_SxCR_EN) != 0U) ||
+        (HAL_GPIO_ReadPin(GPIOC, echo_pin) != GPIO_PIN_RESET)) {
+        status = HAL_BUSY;
+    } else {
+        buffer[0] = 0U;
+        buffer[1] = 0U;
+        status = HAL_TIM_IC_Start_DMA(&htim3_echo, channel,
+                                      (uint32_t *)buffer, 2U);
+        if (status == HAL_OK) {
+            HAL_GPIO_WritePin(GPIOC, trig_pin, GPIO_PIN_SET);
+            Delay_Us(10);
+            HAL_GPIO_WritePin(GPIOC, trig_pin, GPIO_PIN_RESET);
+        } else {
+            /* El arranque HAL puede dejar el canal TIM ocupado al fallar. */
+            (void)HCSR04_StopCapture(channel, dma, irq, ready);
         }
     }
 
-    /* No tocar el buffer si el DMA no esta listo y efectivamente detenido. */
-    if ((HAL_DMA_GetState(&hdma_tim3_ic_rear) != HAL_DMA_STATE_READY) ||
-        ((hdma_tim3_ic_rear.Instance->CR & DMA_SxCR_EN) != 0U)) {
-        goto stop_capture;
+    if (irq_enabled != 0U) {
+        HAL_NVIC_EnableIRQ(irq);
     }
-
-    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC3);
-    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_3);
-
-    rear_captures[0] = 0U;
-    rear_captures[1] = 0U;
-    __HAL_TIM_CLEAR_FLAG(&htim3_echo, TIM_FLAG_CC3 | TIM_FLAG_CC3OF);
-    __HAL_DMA_CLEAR_FLAG(&hdma_tim3_ic_rear,
-                         DMA_FLAG_TCIF3_7 | DMA_FLAG_HTIF3_7 |
-                         DMA_FLAG_TEIF3_7 | DMA_FLAG_DMEIF3_7 |
-                         DMA_FLAG_FEIF3_7);
-    NVIC_ClearPendingIRQ(DMA1_Stream7_IRQn);
-
-    if (HAL_TIM_IC_Start_DMA(&htim3_echo, TIM_CHANNEL_3,
-                             (uint32_t *)rear_captures, 2U) != HAL_OK) {
-        goto stop_capture;
-    }
-
-    if (dma_irq_enabled != 0U) {
-        HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
-    }
-
-    /* Generar pulso TRIG de 10 us en PC5 */
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
-    Delay_Us(10);
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_RESET);
-    return;
-
-stop_capture:
-    /* Inhibe solo CH3 y sus interrupciones DMA; no inicia otro aborto. */
-    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC3);
-    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_3);
-    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic_rear, DMA_IT_TC | DMA_IT_HT |
-                                           DMA_IT_TE | DMA_IT_DME);
-    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic_rear, DMA_IT_FE);
-
-    if (dma_irq_enabled != 0U) {
-        HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
-    }
+    return status;
 }
 
-uint8_t HCSR04_IsReady(void) { return capture_done; }
+/* Leer una pareja completa con su IRQ aislada; 0 m indica resultado inutilizable. */
+static float HCSR04_ReadCapture(DMA_HandleTypeDef *dma, IRQn_Type irq,
+                                volatile uint16_t *buffer,
+                                volatile uint8_t *ready) {
+    uint32_t irq_enabled = NVIC_GetEnableIRQ(irq);
+    float distance = 0.0f;
 
-/**
- * @brief Indica si finalizo la captura DMA del HC-SR04 trasero.
- * @return 1 si la captura termino, 0 en caso contrario.
- */
-uint8_t HCSR04_Rear_IsReady(void)
-{
-    return rear_capture_done;
+    HAL_NVIC_DisableIRQ(irq);
+    uint32_t error_flags = __HAL_DMA_GET_TE_FLAG_INDEX(dma) |
+                           __HAL_DMA_GET_DME_FLAG_INDEX(dma) |
+                           __HAL_DMA_GET_FE_FLAG_INDEX(dma);
+    if ((*ready != 0U) && (HAL_DMA_GetState(dma) == HAL_DMA_STATE_READY) &&
+        ((dma->Instance->CR & DMA_SxCR_EN) == 0U) &&
+        (HAL_DMA_GetError(dma) == HAL_DMA_ERROR_NONE) &&
+        (__HAL_DMA_GET_FLAG(dma, error_flags) == 0U)) {
+        uint16_t rise = buffer[0];
+        uint16_t fall = buffer[1];
+        uint16_t width = (uint16_t)(fall - rise);
+        distance = (float)width * 1e-6f * 340.0f / 2.0f;
+    }
+    *ready = 0U;
+
+    if (irq_enabled != 0U) {
+        HAL_NVIC_EnableIRQ(irq);
+    }
+    return distance;
+}
+
+HAL_StatusTypeDef HCSR04_Trigger(void) {
+    return HCSR04_StartCapture(TIM_CHANNEL_1, &hdma_tim3_ic,
+                               DMA1_Stream4_IRQn, captures, &capture_done,
+                               GPIO_PIN_9, GPIO_PIN_6);
+}
+
+HAL_StatusTypeDef HCSR04_Rear_Trigger(void) {
+    return HCSR04_StartCapture(TIM_CHANNEL_3, &hdma_tim3_ic_rear,
+                               DMA1_Stream7_IRQn, rear_captures, &rear_capture_done,
+                               GPIO_PIN_5, GPIO_PIN_8);
+}
+
+HAL_StatusTypeDef HCSR04_Cancel(void) {
+    return HCSR04_StopCapture(TIM_CHANNEL_1, &hdma_tim3_ic,
+                              DMA1_Stream4_IRQn, &capture_done);
+}
+
+HAL_StatusTypeDef HCSR04_Rear_Cancel(void) {
+    return HCSR04_StopCapture(TIM_CHANNEL_3, &hdma_tim3_ic_rear,
+                              DMA1_Stream7_IRQn, &rear_capture_done);
+}
+
+uint8_t HCSR04_IsReady(void) {
+    return (capture_done != 0U) &&
+           (HAL_DMA_GetError(&hdma_tim3_ic) == HAL_DMA_ERROR_NONE);
+}
+
+uint8_t HCSR04_Rear_IsReady(void) {
+    return (rear_capture_done != 0U) &&
+           (HAL_DMA_GetError(&hdma_tim3_ic_rear) == HAL_DMA_ERROR_NONE);
 }
 
 float HCSR04_GetDistance(void) {
-    capture_done = 0;
-
-    /* Maneja el desbordamiento del contador de 16 bits */
-    uint16_t diff = (captures[1] >= captures[0])
-                  ? (captures[1] - captures[0])
-                  : (uint16_t)(0xFFFFU - captures[0] + captures[1] + 1U);
-
-    /* diff en µs (tick de 1 MHz); distancia = diff_us × 340 m/s / 2 */
-    return (float)diff * 1e-6f * 340.0f / 2.0f;
+    return HCSR04_ReadCapture(&hdma_tim3_ic, DMA1_Stream4_IRQn,
+                              captures, &capture_done);
 }
 
-/**
- * @brief Obtiene la distancia medida por el HC-SR04 trasero.
- * @return Distancia en metros.
- *
- * Debe llamarse unicamente cuando
- * HCSR04_Rear_IsReady() devuelve 1.
- */
-float HCSR04_Rear_GetDistance(void)
-{
-    rear_capture_done = 0U;
-
-    /* Capturas de subida y bajada del ECHO trasero */
-    uint16_t rise = rear_captures[0];
-    uint16_t fall = rear_captures[1];
-
-    /* Manejar desbordamiento del contador TIM3 de 16 bits */
-    uint16_t diff = (fall >= rise)
-                  ? (fall - rise)
-                  : (uint16_t)(0xFFFFU - rise + fall + 1U);
-
-    /* TIM3: 1 tick = 1 us
-     * Distancia = tiempo * velocidad_sonido / 2
-     */
-    return (float)diff * 1e-6f * 340.0f / 2.0f;
+float HCSR04_Rear_GetDistance(void) {
+    return HCSR04_ReadCapture(&hdma_tim3_ic_rear, DMA1_Stream7_IRQn,
+                              rear_captures, &rear_capture_done);
 }
 
 /* ── Manejadores de interrupción ─────────────────────────────────────────────

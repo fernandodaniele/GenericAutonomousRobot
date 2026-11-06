@@ -8,12 +8,44 @@
 
 #define SENSORES_PERIODO_BASE_MS  10U
 #define SENSORES_PERIODO_IR_MS    20U
-#define SENSORES_PERIODO_US_MS    50U
-#define SENSORES_CICLO_PASOS     10U /* 100 ms: multiplo de 20 y 50 */
+#define SENSORES_SEPARACION_US_MS 70U
+#define SENSORES_TIMEOUT_US_MS   50U
+#define SENSORES_CICLO_PASOS     10U /* 100 ms para el contador de lecturas IR */
 #define SENSORES_PRIORIDAD        (tskIDLE_PRIORITY + 4U)
 #define SENSORES_STACK_WORDS      320U
 
+typedef enum {
+    ULTRASOUND_FRONT = 0,
+    ULTRASOUND_REAR
+} UltrasoundSensor_t;
+
+typedef enum {
+    ULTRASOUND_IDLE = 0,
+    ULTRASOUND_WAITING,
+    ULTRASOUND_STOPPING
+} UltrasoundState_t;
+
 static QueueHandle_t sensores_queue = NULL;
+
+static void TaskSensores_SetUltrasoundResult(SensoresDatos_t *data,
+                                             UltrasoundSensor_t sensor,
+                                             float distance,
+                                             TickType_t trigger_tick,
+                                             uint8_t valid) {
+    float *published_distance = (sensor == ULTRASOUND_FRONT)
+                                ? &data->distancia_m : &data->distancia_trasera_m;
+    uint8_t *published_valid = (sensor == ULTRASOUND_FRONT)
+                              ? &data->ultrasonido_valido : &data->ultrasonido_trasero_valido;
+    TickType_t *published_tick = (sensor == ULTRASOUND_FRONT)
+                                ? &data->timestamp_ultrasonido_frontal
+                                : &data->timestamp_ultrasonido_trasero;
+
+    *published_distance = valid ? distance : 0.0f;
+    *published_valid = valid;
+    if (valid != 0U) {
+        *published_tick = trigger_tick;
+    }
+}
 
 static void vTaskSensores(void *pvParameters)
 {
@@ -21,9 +53,13 @@ static void vTaskSensores(void *pvParameters)
 
     SensoresDatos_t datos = {0};
     TickType_t ultimo_despertar = xTaskGetTickCount();
-    TickType_t ultimo_disparo_frontal = 0U;
+    TickType_t acquisition_tick = 0U;
+    TickType_t last_attempt_end = 0U;
+    UltrasoundSensor_t active_sensor = ULTRASOUND_FRONT;
+    UltrasoundSensor_t next_sensor = ULTRASOUND_FRONT;
+    UltrasoundState_t acquisition_state = ULTRASOUND_IDLE;
+    uint8_t has_attempt = 0U;
     uint8_t paso = 0U;
-    uint8_t ultrasonido_pendiente = 0U;
 
     TCRT_Init();
 
@@ -40,39 +76,62 @@ static void vTaskSensores(void *pvParameters)
             (datos.ir.tras_der == TCRT_NO_DETECTA);
         }
 
-        /* Captura por DMA: consultar sin detener la tarea. */
-        if (ultrasonido_pendiente && HCSR04_IsReady())
-        {
-            float distancia = HCSR04_GetDistance();
-            ultrasonido_pendiente = 0U;
+        if (acquisition_state == ULTRASOUND_WAITING) {
+            TickType_t elapsed = (TickType_t)(xTaskGetTickCount() - acquisition_tick);
+            uint8_t ready = (active_sensor == ULTRASOUND_FRONT)
+                            ? HCSR04_IsReady() : HCSR04_Rear_IsReady();
 
-            if ((distancia >= 0.02f) && (distancia <= 4.0f))
-            {
-                datos.distancia_m = distancia;
-                datos.ultrasonido_valido = 1U;
-                datos.timestamp_ultrasonido_frontal = ultimo_disparo_frontal;
+            /* Una captura observada despues del limite no rejuvenece el dato. */
+            if ((ready != 0U) ||
+                (elapsed >= pdMS_TO_TICKS(SENSORES_TIMEOUT_US_MS))) {
+                float distance = 0.0f;
+                if ((ready != 0U) &&
+                    (elapsed <= pdMS_TO_TICKS(SENSORES_TIMEOUT_US_MS))) {
+                    distance = (active_sensor == ULTRASOUND_FRONT)
+                               ? HCSR04_GetDistance() : HCSR04_Rear_GetDistance();
+                }
+
+                HAL_StatusTypeDef stopped = (active_sensor == ULTRASOUND_FRONT)
+                                            ? HCSR04_Cancel() : HCSR04_Rear_Cancel();
+                uint8_t valid = (stopped == HAL_OK) &&
+                                (distance >= 0.02f) && (distance <= 4.0f);
+                TaskSensores_SetUltrasoundResult(&datos, active_sensor,
+                                                 distance, acquisition_tick, valid);
+                acquisition_state = (stopped == HAL_OK)
+                                    ? ULTRASOUND_IDLE : ULTRASOUND_STOPPING;
             }
-            else
-            {
-                datos.distancia_m = 0.0f;
-                datos.ultrasonido_valido = 0U;
+        } else if (acquisition_state == ULTRASOUND_STOPPING) {
+            /* No habilitar el otro sensor mientras el stream siga sin cerrarse. */
+            HAL_StatusTypeDef stopped = (active_sensor == ULTRASOUND_FRONT)
+                                        ? HCSR04_Cancel() : HCSR04_Rear_Cancel();
+            if (stopped == HAL_OK) {
+                acquisition_state = ULTRASOUND_IDLE;
             }
         }
 
-        /* Disparar una medicion a los 0, 50, 100, ... ms. */
-        if ((paso % (SENSORES_PERIODO_US_MS / SENSORES_PERIODO_BASE_MS)) == 0U)
-        {
-            if (ultrasonido_pendiente)
-            {
-                /* El eco anterior no llego en el intervalo esperado. */
-                datos.distancia_m = 0.0f;
-                datos.ultrasonido_valido = 0U;
-            }
+        if ((acquisition_state == ULTRASOUND_IDLE) &&
+            ((has_attempt == 0U) ||
+             ((TickType_t)(xTaskGetTickCount() - last_attempt_end) >=
+              pdMS_TO_TICKS(SENSORES_SEPARACION_US_MS)))) {
+            active_sensor = next_sensor;
+            acquisition_tick = xTaskGetTickCount();
+            HAL_StatusTypeDef started = (active_sensor == ULTRASOUND_FRONT)
+                                        ? HCSR04_Trigger() : HCSR04_Rear_Trigger();
 
-            ultimo_disparo_frontal = xTaskGetTickCount();
-            HCSR04_Trigger();
-            ultrasonido_pendiente = 1U;
+            /* Referencia posterior al TRIG: nunca recuperar slots atrasados. */
+            last_attempt_end = xTaskGetTickCount();
+            has_attempt = 1U;
+            next_sensor = (active_sensor == ULTRASOUND_FRONT)
+                          ? ULTRASOUND_REAR : ULTRASOUND_FRONT;
+            if (started == HAL_OK) {
+                acquisition_state = ULTRASOUND_WAITING;
+            } else {
+                TaskSensores_SetUltrasoundResult(&datos, active_sensor,
+                                                 0.0f, acquisition_tick, 0U);
+                acquisition_state = ULTRASOUND_STOPPING;
+            }
         }
+
         /* Publicar una copia consistente para el resto de las tareas. */
         datos.timestamp = xTaskGetTickCount();
         (void)xQueueOverwrite(sensores_queue, &datos);

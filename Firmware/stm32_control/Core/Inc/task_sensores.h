@@ -13,7 +13,8 @@ typedef struct
     uint8_t ultrasonido_valido;  // 1 si la ultima medicion fue valida
     TickType_t timestamp;        // Tick de la ultima publicacion
 
-    // Campos nuevos: pendientes de actualizacion por TaskSensores.
+    // Timestamps independientes: solo cambian al aceptar una captura valida.
+    // La validez no garantiza frescura: consultar tambien su antiguedad.
     // Disparo de la ultima captura frontal valida, en ticks FreeRTOS.
     TickType_t timestamp_ultrasonido_frontal;
     float distancia_trasera_m;   // Distancia trasera en metros; usar solo si es valida

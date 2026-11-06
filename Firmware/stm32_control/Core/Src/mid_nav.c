@@ -9,7 +9,7 @@
  *  IDLE           -> FORWARD         : comando START
  *  FORWARD        -> AVOID_OBSTACLE  : menos de 5 cm de frente o "demasiado cerca"
  *  FORWARD/AVOID  -> CLIFF_RECOVER   : algun TCRT5000 ve precipicio
- *  AVOID_OBSTACLE -> FORWARD         : tras frenar, retroceder y girar, camino libre
+ *  AVOID_OBSTACLE -> FORWARD         : tras frenar, retroceder y girar (con pausas), camino libre
  *  CLIFF_RECOVER  -> FORWARD         : ambos TCRT5000 ven suelo tras la maniobra
  *  activo         -> FAULT           : frontal sin eco N veces, foto vieja o sin MPU6050
  *  cualquiera     -> IDLE            : comando STOP
@@ -18,8 +18,16 @@
 #include "mid_nav.h"
 #include <stddef.h>
 
-enum { PHASE_BRAKE = 0, PHASE_BACKUP = 1, PHASE_TURN = 2 };   // AVOID_OBSTACLE
-enum { CPHASE_BRAKE = 0, CPHASE_BACKUP = 1, CPHASE_TURN = 2 }; // CLIFF_RECOVER
+/* Sub-fases de las maniobras (AVOID_OBSTACLE y CLIFF_RECOVER):
+ * frenar -> pausa -> retroceder -> pausa -> girar -> pausa -> FORWARD */
+enum {
+    MPHASE_BRAKE = 0,
+    MPHASE_SETTLE_BACK,   // pausa antes de retroceder
+    MPHASE_BACKUP,
+    MPHASE_SETTLE_TURN,   // pausa antes de girar
+    MPHASE_TURN,
+    MPHASE_SETTLE_FWD     // pausa antes de volver a avanzar
+};
 
 static void enter_state(NavContext_t* ctx, NavState_t s, uint32_t now)
 {
@@ -91,32 +99,112 @@ static void set_brake(NavOutput_t* out)
     out->angular_rads = 0.0f;
 }
 
-/* Rutina evasiva: frenar -> retroceder -> girar al lado mas libre -> seguir.
- * Si al girar no se libera el camino, vuelve a retroceder. */
+/* Repite el retroceso del borde */
+static void cliff_repeat(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
+{
+    (void) out;
+    enter_phase(ctx, MPHASE_SETTLE_BACK, now);
+}
+
+/* Rutina evasiva: frenar -> pausa -> retroceder -> pausa -> girar al lado mas
+ * libre -> pausa -> seguir. Si al girar no se libera el camino, vuelve a
+ * retroceder (con pausa previa). */
 static void evade_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out)
 {
     const uint32_t now = in->now_ms;
     const uint32_t t = elapsed(now, ctx->phase_enter_ms);
 
-    if (ctx->phase == PHASE_BRAKE) {
-        set_brake(out);
-        if (t >= NAV_BRAKE_MS) {
-            enter_phase(ctx, PHASE_BACKUP, now);
-        }
-    } else if (ctx->phase == PHASE_BACKUP) {
-        out->linear_mms = NAV_BACK_SPEED_MMS;
-        if (t >= NAV_EVADE_BACK_MS) {
-            ctx->turn_dir = evade_dir(ctx, in);
-            enter_phase(ctx, PHASE_TURN, now);
-        }
-    } else if (t >= NAV_EVADE_TURN_MIN_MS && front_clear(in)) {
-        enter_state(ctx, NAV_STATE_FORWARD, now);
-        out->linear_mms = NAV_FWD_SPEED_MMS;
-    } else if (t >= NAV_EVADE_TURN_MAX_MS) {
-        enter_phase(ctx, PHASE_BACKUP, now);
-        out->linear_mms = NAV_BACK_SPEED_MMS;
-    } else {
-        out->angular_rads = (float)ctx->turn_dir * NAV_TURN_RAD_S;
+    switch (ctx->phase) {
+        case MPHASE_BRAKE:
+            set_brake(out);
+            if (t >= NAV_BRAKE_MS) enter_phase(ctx, MPHASE_SETTLE_BACK, now);
+            break;
+        case MPHASE_SETTLE_BACK:
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) enter_phase(ctx, MPHASE_BACKUP, now);
+            break;
+        case MPHASE_BACKUP:
+            out->linear_mms = NAV_BACK_SPEED_MMS;
+            if (t >= NAV_EVADE_BACK_MS) enter_phase(ctx, MPHASE_SETTLE_TURN, now);
+            break;
+        case MPHASE_SETTLE_TURN:
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) {
+                /* Decide el lado con el robot quieto y lecturas estables */
+                ctx->turn_dir = evade_dir(ctx, in);
+                enter_phase(ctx, MPHASE_TURN, now);
+            }
+            break;
+        case MPHASE_TURN:
+            if (t >= NAV_EVADE_TURN_MIN_MS && front_clear(in)) {
+                enter_phase(ctx, MPHASE_SETTLE_FWD, now);
+                set_brake(out);
+            } else if (t >= NAV_EVADE_TURN_MAX_MS) {
+                enter_phase(ctx, MPHASE_SETTLE_BACK, now);
+                set_brake(out);
+            } else {
+                out->angular_rads = (float)ctx->turn_dir * NAV_TURN_RAD_S;
+            }
+            break;
+        case MPHASE_SETTLE_FWD:
+        default:
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) {
+                enter_state(ctx, NAV_STATE_FORWARD, now);
+                out->brake = false;
+                out->linear_mms = NAV_FWD_SPEED_MMS;
+            }
+            break;
+    }
+}
+
+/* Recuperacion del borde: frenar -> pausa -> retroceder -> pausa -> girar
+ * alejandose -> pausa -> FORWARD. Si al terminar el giro sigue viendo borde,
+ * vuelve a retroceder (con pausa previa). */
+static void cliff_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out)
+{
+    const uint32_t now = in->now_ms;
+    const uint32_t t = elapsed(now, ctx->phase_enter_ms);
+
+    switch (ctx->phase) {
+        case MPHASE_BRAKE:
+            set_brake(out);
+            if (t >= NAV_BRAKE_MS) enter_phase(ctx, MPHASE_SETTLE_BACK, now);
+            break;
+        case MPHASE_SETTLE_BACK:
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) enter_phase(ctx, MPHASE_BACKUP, now);
+            break;
+        case MPHASE_BACKUP:
+            out->linear_mms = NAV_BACK_SPEED_MMS;
+            if (t >= NAV_BACKUP_MS) enter_phase(ctx, MPHASE_SETTLE_TURN, now);
+            break;
+        case MPHASE_SETTLE_TURN:
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) enter_phase(ctx, MPHASE_TURN, now);
+            break;
+        case MPHASE_TURN:
+            if (t >= NAV_CLIFF_TURN_MS) {
+                set_brake(out);
+                if (!in->cliff_left && !in->cliff_right) {
+                    enter_phase(ctx, MPHASE_SETTLE_FWD, now);
+                } else {
+                    /* Sigue viendo borde: retroceder otra vez */
+                    cliff_repeat(ctx, out, now);
+                }
+            } else {
+                out->angular_rads = (float)ctx->turn_dir * NAV_TURN_RAD_S;
+            }
+            break;
+        case MPHASE_SETTLE_FWD:
+        default:
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) {
+                enter_state(ctx, NAV_STATE_FORWARD, now);
+                out->brake = false;
+                out->linear_mms = NAV_FWD_SPEED_MMS;
+            }
+            break;
     }
 }
 
@@ -254,31 +342,7 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
             break;
 
         case NAV_STATE_CLIFF_RECOVER:
-            if (ctx->phase == CPHASE_BRAKE) {
-                set_brake(&out);
-                if (elapsed(now, ctx->phase_enter_ms) >= NAV_BRAKE_MS) {
-                    enter_phase(ctx, CPHASE_BACKUP, now);
-                }
-            } else if (ctx->phase == CPHASE_BACKUP) {
-                out.linear_mms = NAV_BACK_SPEED_MMS;
-                if (elapsed(now, ctx->phase_enter_ms) >= NAV_BACKUP_MS) {
-                    enter_phase(ctx, CPHASE_TURN, now);
-                }
-            } else {
-                out.angular_rads = (float)ctx->turn_dir * NAV_TURN_RAD_S;
-                if (elapsed(now, ctx->phase_enter_ms) >= NAV_CLIFF_TURN_MS) {
-                    if (!in->cliff_left && !in->cliff_right) {
-                        enter_state(ctx, NAV_STATE_FORWARD, now);
-                        out.angular_rads = 0.0f;
-                        out.linear_mms = NAV_FWD_SPEED_MMS;
-                    } else {
-                        /* Sigue viendo borde: retroceder otra vez */
-                        enter_phase(ctx, CPHASE_BACKUP, now);
-                        out.angular_rads = 0.0f;
-                        out.linear_mms = NAV_BACK_SPEED_MMS;
-                    }
-                }
-            }
+            cliff_step(ctx, in, &out);
             break;
 
         case NAV_STATE_FAULT:

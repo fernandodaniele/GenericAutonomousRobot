@@ -41,37 +41,43 @@ extern "C" {
 #define NAV_WALL_DEADBAND_MM   20     // Dentro de +/- esto va recto
 #endif
 #ifndef NAV_WALL_MAX_RAD_S
-#define NAV_WALL_MAX_RAD_S     0.2f   // Correccion al seguir la pared (frena la rueda interna)
+#define NAV_WALL_MAX_RAD_S     0.1f   // Correccion al seguir la pared: frena la rueda interna (25 mm/s, sobre el piso de PWM)
 #endif
 #ifndef NAV_CORNER_RAD_S
-#define NAV_CORNER_RAD_S       0.5f   // Giro en esquinas (50 mm/s por rueda, 100 %)
+#define NAV_CORNER_RAD_S       0.35f  // Giro en esquinas (35 mm/s por rueda)
 #endif
 #ifndef NAV_EVADE_BACK_MS
-#define NAV_EVADE_BACK_MS      800   // Retroceso de la evasiva (unos 3 cm)
+#define NAV_EVADE_BACK_MS      1150  // Retroceso de la evasiva (misma distancia a 35 mm/s)
 #endif
 #ifndef NAV_EVADE_TURN_MIN_MS
-#define NAV_EVADE_TURN_MIN_MS  1000  // Giro minimo antes de volver a avanzar
+#define NAV_EVADE_TURN_MIN_MS  1450  // Giro minimo antes de volver a avanzar (mismo angulo a 0,35 rad/s)
 #endif
 #ifndef NAV_EVADE_TURN_MAX_MS
-#define NAV_EVADE_TURN_MAX_MS  6000  // Si sigue bloqueado: retrocede otra vez
+#define NAV_EVADE_TURN_MAX_MS  8600  // Si sigue bloqueado: retrocede otra vez
 #endif
 #ifndef NAV_FWD_SPEED_MMS
-#define NAV_FWD_SPEED_MMS      50.0f    // 100 % de PWM
+#define NAV_FWD_SPEED_MMS      35.0f    // ~70 % de PWM (proporcional, ver mid_kinematics.h)
 #endif
 #ifndef NAV_BACK_SPEED_MMS
-#define NAV_BACK_SPEED_MMS     (-50.0f)
+#define NAV_BACK_SPEED_MMS     (-35.0f)
 #endif
 #ifndef NAV_TURN_RAD_S
-#define NAV_TURN_RAD_S         0.5f     // 50 mm/s por rueda en el giro (100 %)
+#define NAV_TURN_RAD_S         0.35f    // 35 mm/s por rueda en el giro
 #endif
 #ifndef NAV_BRAKE_MS
-#define NAV_BRAKE_MS           150
+#define NAV_BRAKE_MS           400
 #endif
 #ifndef NAV_BACKUP_MS
-#define NAV_BACKUP_MS          1500
+#define NAV_BACKUP_MS          2150
 #endif
 #ifndef NAV_CLIFF_TURN_MS
-#define NAV_CLIFF_TURN_MS      3000
+#define NAV_CLIFF_TURN_MS      4300
+#endif
+/* Pausa con freno entre frenar y retroceder, entre retroceder y girar y
+ * entre girar y avanzar: el robot queda quieto y los ultrasonidos leen
+ * estable antes de decidir. */
+#ifndef NAV_SETTLE_MS
+#define NAV_SETTLE_MS          300
 #endif
 /* 0 = sin eco del frontal sigue andando (a ciegas de frente) en vez de frenar.
  * 1 = se detiene hasta que el sensor vuelva a responder. */
@@ -148,7 +154,7 @@ typedef struct {
 typedef struct {
     NavState_t state;
     uint32_t state_enter_ms;
-    uint8_t phase;                 // Sub-fase dentro de AVOID/CLIFF
+    uint8_t phase;                 // Sub-fase dentro de AVOID/CLIFF (MPHASE_*)
     uint32_t phase_enter_ms;
     int8_t turn_dir;               // +1 izquierda, -1 derecha
     uint32_t last_alert_ms;

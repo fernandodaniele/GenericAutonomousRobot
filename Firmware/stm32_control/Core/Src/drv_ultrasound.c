@@ -134,27 +134,65 @@ stop_capture:
  */
 void HCSR04_Rear_Trigger(void)
 {
-    /* Detener una posible captura trasera anterior */
-    HAL_TIM_IC_Stop_DMA(&htim3_echo, TIM_CHANNEL_3);
+    uint32_t dma_irq_enabled = NVIC_GetEnableIRQ(DMA1_Stream7_IRQn);
 
-    /* Reiniciar estado y buffer del sensor trasero */
+    /* Aisla el callback trasero sin bloquear SysTick ni la IRQ frontal. */
+    HAL_NVIC_DisableIRQ(DMA1_Stream7_IRQn);
+
+    /* Solo la CPU modifica este indicador; su IRQ ya esta inhibida. */
     rear_capture_done = 0U;
+
+    if (HAL_DMA_GetState(&hdma_tim3_ic_rear) == HAL_DMA_STATE_BUSY) {
+        if ((HAL_DMA_Abort(&hdma_tim3_ic_rear) != HAL_OK) &&
+            (HAL_DMA_GetState(&hdma_tim3_ic_rear) != HAL_DMA_STATE_READY)) {
+            goto stop_capture;
+        }
+    }
+
+    /* No tocar el buffer si el DMA no esta listo y efectivamente detenido. */
+    if ((HAL_DMA_GetState(&hdma_tim3_ic_rear) != HAL_DMA_STATE_READY) ||
+        ((hdma_tim3_ic_rear.Instance->CR & DMA_SxCR_EN) != 0U)) {
+        goto stop_capture;
+    }
+
+    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC3);
+    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_3);
+
     rear_captures[0] = 0U;
     rear_captures[1] = 0U;
+    __HAL_TIM_CLEAR_FLAG(&htim3_echo, TIM_FLAG_CC3 | TIM_FLAG_CC3OF);
+    __HAL_DMA_CLEAR_FLAG(&hdma_tim3_ic_rear,
+                         DMA_FLAG_TCIF3_7 | DMA_FLAG_HTIF3_7 |
+                         DMA_FLAG_TEIF3_7 | DMA_FLAG_DMEIF3_7 |
+                         DMA_FLAG_FEIF3_7);
+    NVIC_ClearPendingIRQ(DMA1_Stream7_IRQn);
 
-    /* Preparar DMA para capturar ambos flancos de ECHO */
-    if (HAL_TIM_IC_Start_DMA(&htim3_echo,
-                             TIM_CHANNEL_3,
-                             (uint32_t *)rear_captures,
-                             2U) != HAL_OK)
-    {
-        return;
+    if (HAL_TIM_IC_Start_DMA(&htim3_echo, TIM_CHANNEL_3,
+                             (uint32_t *)rear_captures, 2U) != HAL_OK) {
+        goto stop_capture;
+    }
+
+    if (dma_irq_enabled != 0U) {
+        HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
     }
 
     /* Generar pulso TRIG de 10 us en PC5 */
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_SET);
     Delay_Us(10);
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5, GPIO_PIN_RESET);
+    return;
+
+stop_capture:
+    /* Inhibe solo CH3 y sus interrupciones DMA; no inicia otro aborto. */
+    __HAL_TIM_DISABLE_DMA(&htim3_echo, TIM_DMA_CC3);
+    (void)HAL_TIM_IC_Stop(&htim3_echo, TIM_CHANNEL_3);
+    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic_rear, DMA_IT_TC | DMA_IT_HT |
+                                           DMA_IT_TE | DMA_IT_DME);
+    __HAL_DMA_DISABLE_IT(&hdma_tim3_ic_rear, DMA_IT_FE);
+
+    if (dma_irq_enabled != 0U) {
+        HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+    }
 }
 
 uint8_t HCSR04_IsReady(void) { return capture_done; }

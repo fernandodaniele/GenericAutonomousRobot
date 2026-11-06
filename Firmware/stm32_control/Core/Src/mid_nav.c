@@ -8,7 +8,9 @@
  *
  *  IDLE           -> FORWARD         : comando START
  *  FORWARD        -> AVOID_OBSTACLE  : menos de 5 cm de frente o "demasiado cerca"
- *  FORWARD/AVOID  -> CLIFF_RECOVER   : algun TCRT5000 ve precipicio
+ *  FORWARD/AVOID  -> CLIFF_RECOVER   : algun TCRT5000 ve precipicio en NAV_CLIFF_CONFIRM lecturas seguidas
+ *  CLIFF_RECOVER  -> FAULT           : NAV_CLIFF_LOOP_MAX retrocesos seguidos sin avanzar 2 s (bucle)
+ *  FORWARD (esquina) -> AVOID        : giro de esquina mas largo que NAV_CORNER_MAX_MS
  *  AVOID_OBSTACLE -> FORWARD         : tras frenar, retroceder y girar (con pausas), camino libre
  *  CLIFF_RECOVER  -> FORWARD         : ambos TCRT5000 ven suelo tras la maniobra
  *  activo         -> FAULT           : frontal sin eco N veces, foto vieja o sin MPU6050
@@ -64,13 +66,15 @@ static bool front_clear(const NavInput_t* in)
     return (in->front == NAV_RANGE_OK) && (in->front_mm >= NAV_CLEAR_MM);
 }
 
-/* Distancia "libre" para elegir el lado de giro. Sin eco cuenta como 0. */
+/* Distancia "libre" para elegir el lado de giro. Sin eco cuenta como 0, o
+ * como "desconocido" (NAV_CLEAR_MM) con NAV_NO_ECHO_AS_UNKNOWN. */
 static uint32_t free_space(NavRange_t r, uint32_t mm)
 {
     switch (r) {
-        case NAV_RANGE_FAR: return 4000u;
-        case NAV_RANGE_OK:  return mm;
-        default:            return 0u;
+        case NAV_RANGE_FAR:     return 4000u;
+        case NAV_RANGE_OK:      return mm;
+        case NAV_RANGE_NO_ECHO: return NAV_NO_ECHO_AS_UNKNOWN ? (uint32_t)NAV_CLEAR_MM : 0u;
+        default:                return 0u;   /* TOO_CLOSE */
     }
 }
 
@@ -99,11 +103,28 @@ static void set_brake(NavOutput_t* out)
     out->angular_rads = 0.0f;
 }
 
-/* Repite el retroceso del borde */
+/* Cuenta un retroceso del borde. Con NAV_CLIFF_LOOP_MAX seguidos sin haber
+ * avanzado, el robot esta atrapado: FAULT frenado en vez de seguir.
+ * Devuelve true si entro en FAULT. */
+static bool cliff_count(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
+{
+    if (ctx->cliff_streak < UINT8_MAX) ctx->cliff_streak++;
+    if (ctx->cliff_streak >= NAV_CLIFF_LOOP_MAX) {
+        enter_state(ctx, NAV_STATE_FAULT, now);
+        ctx->fault_latched = true;
+        out->events |= NAV_EVT_FAULT;
+        set_brake(out);
+        return true;
+    }
+    return false;
+}
+
+/* Repite el retroceso del borde (si no es un bucle) */
 static void cliff_repeat(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
 {
-    (void) out;
-    enter_phase(ctx, MPHASE_SETTLE_BACK, now);
+    if (!cliff_count(ctx, out, now)) {
+        enter_phase(ctx, MPHASE_SETTLE_BACK, now);
+    }
 }
 
 /* Rutina evasiva: frenar -> pausa -> retroceder -> pausa -> girar al lado mas
@@ -234,6 +255,7 @@ static void follow_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* ou
             ctx->wall_side = (int8_t)(-freer_side(in));
         }
         ctx->corner = true;
+        ctx->corner_enter_ms = in->now_ms;
     }
     if (ctx->corner) {
         out->angular_rads = (float)(-ctx->wall_side) * NAV_CORNER_RAD_S;
@@ -269,11 +291,16 @@ void Nav_Init(NavContext_t* ctx)
     ctx->alert_armed = false;
     ctx->wall_side = 0;
     ctx->corner = false;
+    ctx->corner_enter_ms = 0;
+    ctx->last_sensor_ms = 0;
+    ctx->cliff_hits = 0;
+    ctx->cliff_streak = 0;
+    ctx->fault_latched = false;
 }
 
 NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
 {
-    NavOutput_t out = { NAV_STATE_IDLE, 0.0f, 0.0f, false, 0u };
+    NavOutput_t out = { NAV_STATE_IDLE, 0.0f, 0.0f, false, 0u, false };
     if (!ctx || !in) {
         out.brake = true;
         return out;
@@ -291,15 +318,27 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
         }
     }
 
+    /* --- Confirmacion del borde: cuenta lecturas nuevas seguidas --- */
+    if (in->sensor_ms != ctx->last_sensor_ms) {
+        ctx->last_sensor_ms = in->sensor_ms;
+        if (in->cliff_left || in->cliff_right) {
+            if (ctx->cliff_hits < UINT8_MAX) ctx->cliff_hits++;
+        } else {
+            ctx->cliff_hits = 0;
+        }
+    }
+
     /* --- Comandos --- */
     if (in->command == NAV_CMD_STOP) {
         enter_state(ctx, NAV_STATE_IDLE, now);
+        ctx->fault_latched = false;
+        ctx->cliff_streak = 0;
     } else if (in->command == NAV_CMD_START && ctx->state == NAV_STATE_IDLE) {
         enter_state(ctx, NAV_STATE_FORWARD, now);
     }
 
-    /* --- Falla resuelta: vuelve a andar solo --- */
-    if (ctx->state == NAV_STATE_FAULT && !fault_condition(in)) {
+    /* --- Falla resuelta: vuelve a andar solo (salvo el bucle de retroceso) --- */
+    if (ctx->state == NAV_STATE_FAULT && !ctx->fault_latched && !fault_condition(in)) {
         enter_state(ctx, NAV_STATE_FORWARD, now);
     }
 
@@ -311,7 +350,8 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
 
     /* --- Precipicio: prioridad sobre el obstaculo --- */
     if ((ctx->state == NAV_STATE_FORWARD || ctx->state == NAV_STATE_AVOID_OBSTACLE)
-        && (in->cliff_left || in->cliff_right)) {
+        && (in->cliff_left || in->cliff_right) && ctx->cliff_hits >= NAV_CLIFF_CONFIRM
+        && !cliff_count(ctx, &out, now)) {
         enter_state(ctx, NAV_STATE_CLIFF_RECOVER, now);
         /* Girar alejandose del lado que vio el borde */
         ctx->turn_dir = in->cliff_left ? -1 : 1;
@@ -327,7 +367,16 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
             break;
 
         case NAV_STATE_FORWARD:
-            if (front_blocked(in)) {
+            /* Avanzo lo suficiente: ya no es un bucle de retroceso */
+            if (elapsed(now, ctx->state_enter_ms) >= NAV_CLIFF_LOOP_RESET_MS) {
+                ctx->cliff_streak = 0;
+            }
+            if (ctx->corner && elapsed(now, ctx->corner_enter_ms) >= NAV_CORNER_MAX_MS) {
+                /* Esquina que no termina: rutina evasiva */
+                enter_state(ctx, NAV_STATE_AVOID_OBSTACLE, now);
+                ctx->corner = false;
+                set_brake(&out);
+            } else if (front_blocked(in)) {
                 enter_state(ctx, NAV_STATE_AVOID_OBSTACLE, now);
                 ctx->turn_dir = evade_dir(ctx, in);
                 ctx->corner = false;
@@ -352,6 +401,7 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
     }
 
     out.state = ctx->state;
+    out.fault_latched = ctx->fault_latched;
     return out;
 }
 

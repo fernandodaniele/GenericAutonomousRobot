@@ -27,7 +27,7 @@ static NavInput_t base(uint32_t t)
 /* Un paso de 20 ms con la entrada dada (sin comando) */
 static NavOutput_t step(NavContext_t *c, NavInput_t *in, uint32_t *t)
 {
-    *t += STEP_MS; in->now_ms = *t; in->command = NAV_CMD_NONE;
+    *t += STEP_MS; in->now_ms = *t; in->sensor_ms = *t; in->command = NAV_CMD_NONE;
     return Nav_Step(c, in);
 }
 
@@ -201,6 +201,98 @@ int main(void)
     start(&c, t);
     in = base(t); in.command = NAV_CMD_STOP; o = Nav_Step(&c, &in);
     CHECK(o.state == NAV_STATE_IDLE && o.linear_mms == 0.0f);
+
+    /* ===== Tarea 4a: el borde se confirma con NAV_CLIFF_CONFIRM lecturas ===== */
+    start(&c, t);
+    in = base(t); in.cliff_left = true;
+    for (int i = 0; i < NAV_CLIFF_CONFIRM - 1; i++) {
+        o = step(&c, &in, &t);
+        CHECK(o.state == NAV_STATE_FORWARD && !(o.events & NAV_EVT_CLIFF));
+    }
+    o = step(&c, &in, &t);
+    CHECK(o.state == NAV_STATE_CLIFF_RECOVER && (o.events & NAV_EVT_CLIFF));
+
+    /* Falso positivo aislado (una o dos lecturas) no dispara la maniobra */
+    start(&c, t);
+    for (int k = 0; k < 5; k++) {
+        in = base(t); in.cliff_left = true; o = step(&c, &in, &t); o = step(&c, &in, &t);
+        in.cliff_left = false; o = step(&c, &in, &t);
+        CHECK(o.state == NAV_STATE_FORWARD);
+    }
+
+    /* La misma foto repetida (task_nav corre mas rapido que task_sensors)
+     * no cuenta como lecturas nuevas */
+    start(&c, t);
+    in = base(t); in.cliff_left = true; in.sensor_ms = 12345;
+    for (int i = 0; i < 10; i++) { t += STEP_MS; in.now_ms = t; o = Nav_Step(&c, &in); }
+    CHECK(o.state == NAV_STATE_FORWARD);
+
+    /* ===== Tarea 4b: bucle de retroceso -> FAULT frenado ===== */
+    start(&c, t);
+    in = base(t); in.cliff_left = true;
+    o = run_until(&c, in, &t, NAV_STATE_CLIFF_RECOVER, 500, NULL);
+    CHECK(o.state == NAV_STATE_CLIFF_RECOVER);
+    /* Sigue viendo borde al terminar cada giro: repite el retroceso */
+    o = run(&c, in, &t, CLIFF_TOTAL_MS - NAV_SETTLE_MS + 40);
+    CHECK(o.state == NAV_STATE_CLIFF_RECOVER);                         /* 2.a vez */
+    uint32_t evt = 0;
+    for (uint32_t e = 0; e < 2 * CLIFF_TOTAL_MS && o.state != NAV_STATE_FAULT; e += STEP_MS) {
+        o = step(&c, &in, &t); evt |= o.events;
+    }
+    CHECK(o.state == NAV_STATE_FAULT && o.brake && o.fault_latched && (evt & NAV_EVT_FAULT));
+    /* No se recupera solo aunque desaparezca el borde */
+    in = base(t); o = run(&c, in, &t, 1000);
+    CHECK(o.state == NAV_STATE_FAULT && o.brake);
+    /* START solo no alcanza; STOP + START si */
+    in.command = NAV_CMD_START; t += STEP_MS; in.now_ms = t; o = Nav_Step(&c, &in);
+    CHECK(o.state == NAV_STATE_FAULT);
+    in.command = NAV_CMD_STOP; o = Nav_Step(&c, &in); CHECK(o.state == NAV_STATE_IDLE && !o.fault_latched);
+    in.command = NAV_CMD_START; o = Nav_Step(&c, &in); CHECK(o.state == NAV_STATE_FORWARD);
+
+    /* Bordes separados por mas de 2 s de avance no cuentan como bucle */
+    start(&c, t);
+    for (int k = 0; k < NAV_CLIFF_LOOP_MAX + 1; k++) {
+        in = base(t); in.cliff_left = true;
+        o = run_until(&c, in, &t, NAV_STATE_CLIFF_RECOVER, 500, NULL);
+        CHECK(o.state == NAV_STATE_CLIFF_RECOVER);
+        in = base(t); o = run_until(&c, in, &t, NAV_STATE_FORWARD, CLIFF_TOTAL_MS + 200, NULL);
+        o = run(&c, in, &t, NAV_CLIFF_LOOP_RESET_MS + 100);
+        CHECK(o.state == NAV_STATE_FORWARD);
+    }
+
+    /* Bordes seguidos con poco avance entre medio si son un bucle */
+    start(&c, t);
+    for (int k = 0; k < NAV_CLIFF_LOOP_MAX; k++) {
+        in = base(t); in.cliff_left = true;
+        o = run_until(&c, in, &t, (k < NAV_CLIFF_LOOP_MAX - 1) ? NAV_STATE_CLIFF_RECOVER : NAV_STATE_FAULT, 500, NULL);
+        if (k < NAV_CLIFF_LOOP_MAX - 1) {
+            in = base(t); o = run_until(&c, in, &t, NAV_STATE_FORWARD, CLIFF_TOTAL_MS + 200, NULL);
+            o = run(&c, in, &t, 500);                 /* avanza menos de 2 s */
+        }
+    }
+    CHECK(o.state == NAV_STATE_FAULT && o.fault_latched);
+
+    /* ===== Tarea 4c: esquina que no termina -> evasiva ===== */
+    start(&c, t);
+    in = base(t); in.left = NAV_RANGE_OK; in.left_mm = NAV_WALL_MM;
+    in.front = NAV_RANGE_OK; in.front_mm = NAV_WALL_MM - 10;
+    o = step(&c, &in, &t);
+    CHECK(o.state == NAV_STATE_FORWARD && o.angular_rads < 0.0f);    /* gira en la esquina */
+    o = run(&c, in, &t, NAV_CORNER_MAX_MS - 100);
+    CHECK(o.state == NAV_STATE_FORWARD && o.angular_rads < 0.0f);
+    o = run_until(&c, in, &t, NAV_STATE_AVOID_OBSTACLE, 400, NULL);
+    CHECK(o.state == NAV_STATE_AVOID_OBSTACLE && o.brake);
+
+    /* ===== Tarea 4d: derecho sin eco ===== */
+    start(&c, t);
+    in = base(t); in.front = NAV_RANGE_OK; in.front_mm = NAV_OBSTACLE_MM - 10;
+    in.left = NAV_RANGE_OK; in.left_mm = 80; in.right = NAV_RANGE_NO_ECHO;
+    o = run(&c, in, &t, NAV_BRAKE_MS + 2 * NAV_SETTLE_MS + NAV_EVADE_BACK_MS + 60);
+#if NAV_NO_ECHO_AS_UNKNOWN
+    CHECK(o.angular_rads < 0.0f);   /* izquierda a 8 cm < desconocido: gira a la derecha */
+#else
+    CHECK(o.angular_rads > 0.0f);   /* sin eco = 0: gira siempre a la izquierda */
+#endif
 
     printf(fails ? "%d pruebas fallaron\n" : "Todas las pruebas de mid_nav pasaron\n", fails);
     return fails ? 1 : 0;

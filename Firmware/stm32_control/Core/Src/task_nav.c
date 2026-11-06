@@ -95,8 +95,9 @@ static int16_t ramp(int16_t current, int16_t target)
  *   parpadeo rapido    -> esquivando obstaculo o precipicio
  *   N destellos + pausa -> FAULT: 1 = MPU6050 no responde,
  *                         2 = ultrasonido frontal sin eco,
- *                         3 = sensores sin actualizar */
-static void status_led(NavState_t state, const NavInput_t* in, uint32_t now)
+ *                         3 = sensores sin actualizar,
+ *                         4 = bucle de retroceso en el borde (salir con STOP y START) */
+static void status_led(NavState_t state, bool fault_latched, const NavInput_t* in, uint32_t now)
 {
     GPIO_PinState on = GPIO_PIN_RESET;
     switch (state) {
@@ -108,7 +109,8 @@ static void status_led(NavState_t state, const NavInput_t* in, uint32_t now)
             on = ((now / 100u) % 2u) ? GPIO_PIN_SET : GPIO_PIN_RESET;
             break;
         case NAV_STATE_FAULT: {
-            uint32_t code = (NAV_REQUIRE_IMU && !in->imu_ok) ? 1u
+            uint32_t code = fault_latched ? 4u
+                          : (NAV_REQUIRE_IMU && !in->imu_ok) ? 1u
                           : (in->front_no_echo_count >= NAV_FRONT_NO_ECHO_MAX) ? 2u : 3u;
             uint32_t slot = (now % 2400u) / 200u;          /* 12 ranuras de 200 ms */
             on = (slot < code * 2u && (slot % 2u) == 0u) ? GPIO_PIN_SET : GPIO_PIN_RESET;
@@ -166,6 +168,7 @@ static void NavTask(void* argument)
             in.right = to_range(snap.us_status[ULTRASOUND_RIGHT]);
             in.right_mm = snap.dist_mm[ULTRASOUND_RIGHT];
             in.front_no_echo_count = snap.front_no_echo_count;
+            in.sensor_ms = snap.timestamp_ms;
             in.cliff_left = snap.cliff_left;
             in.cliff_right = snap.cliff_right;
             in.gyro_z_dps = snap.gyro_z_dps;
@@ -217,7 +220,7 @@ static void NavTask(void* argument)
             theta += ((v_r - v_l) / ROBOT_WHEEL_BASE) * dt;
         }
 
-        status_led(out.state, &in, now);
+        status_led(out.state, out.fault_latched, &in, now);
 
         taskENTER_CRITICAL();
         nav_status.state = out.state;

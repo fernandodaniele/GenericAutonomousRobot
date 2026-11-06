@@ -79,6 +79,32 @@ extern "C" {
 #ifndef NAV_SETTLE_MS
 #define NAV_SETTLE_MS          300
 #endif
+/* Precipicio confirmado: lecturas de sensores seguidas con borde antes de
+ * entrar en CLIFF_RECOVER (evita falsos positivos del granito). */
+#ifndef NAV_CLIFF_CONFIRM
+#define NAV_CLIFF_CONFIRM      3
+#endif
+/* Bucle de retroceso: tras este numero de CLIFF_RECOVER seguidos sin haber
+ * avanzado NAV_CLIFF_LOOP_RESET_MS en FORWARD, pasa a FAULT (frenado, se
+ * sale con STOP y START). */
+#ifndef NAV_CLIFF_LOOP_MAX
+#define NAV_CLIFF_LOOP_MAX     3
+#endif
+#ifndef NAV_CLIFF_LOOP_RESET_MS
+#define NAV_CLIFF_LOOP_RESET_MS 2000
+#endif
+/* Giro de esquina mas largo que esto: pasa a la rutina evasiva */
+#ifndef NAV_CORNER_MAX_MS
+#define NAV_CORNER_MAX_MS      8000
+#endif
+/* Lado sin eco al elegir hacia donde girar:
+ * 0 = cuenta como espacio libre 0 (actual: con el derecho sin eco gira
+ *     siempre a la izquierda, el lado que tiene el unico TCRT activo).
+ * 1 = cuenta como "desconocido" (NAV_CLEAR_MM): solo gana el lado medido si
+ *     tiene mas que eso. Puede girar hacia el lado sin TCRT ni ultrasonido. */
+#ifndef NAV_NO_ECHO_AS_UNKNOWN
+#define NAV_NO_ECHO_AS_UNKNOWN 0
+#endif
 /* 0 = sin eco del frontal sigue andando (a ciegas de frente) en vez de frenar.
  * 1 = se detiene hasta que el sensor vuelva a responder. */
 #ifndef NAV_STOP_ON_NO_ECHO
@@ -137,6 +163,7 @@ typedef struct {
     NavRange_t right;
     uint32_t right_mm;
     uint8_t front_no_echo_count;
+    uint32_t sensor_ms;            // Marca de tiempo de la foto de sensores (una lectura nueva la cambia)
     bool cliff_left;
     bool cliff_right;
     int16_t gyro_z_dps;
@@ -149,6 +176,7 @@ typedef struct {
     float angular_rads;            // Velocidad angular pedida (rad/s, + = izquierda)
     bool brake;                    // true: freno activo, ignorar velocidades
     uint32_t events;               // NAV_EVT_* ocurridos en este paso
+    bool fault_latched;            // FAULT por bucle de retroceso (requiere STOP)
 } NavOutput_t;
 
 typedef struct {
@@ -161,6 +189,11 @@ typedef struct {
     bool alert_armed;
     int8_t wall_side;              // Pared seguida: +1 izquierda, -1 derecha, 0 ninguna
     bool corner;                   // Girando en una esquina
+    uint32_t corner_enter_ms;      // Inicio del giro de esquina
+    uint32_t last_sensor_ms;       // Ultima foto contada para el borde
+    uint8_t cliff_hits;            // Lecturas seguidas con borde
+    uint8_t cliff_streak;          // CLIFF_RECOVER seguidos sin avanzar
+    bool fault_latched;            // FAULT que no se recupera solo
 } NavContext_t;
 
 void Nav_Init(NavContext_t* ctx);

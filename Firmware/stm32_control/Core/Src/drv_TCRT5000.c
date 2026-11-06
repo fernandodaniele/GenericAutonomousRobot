@@ -19,6 +19,13 @@
 /* Umbrales a calibrar con el piso y el borde reales (etapa 1 del plan de
  * navegacion). Se pueden redefinir desde el Makefile con -D sin tocar este
  * archivo. */
+/* Valores provisorios: FALTA medir en el granito del aula.
+ *   Referencia medida en melamina blanca, TCRT izquierdo:
+ *     suelo ~= 209, vacio ~= 1247 (valor ALTO = borde).
+ *   Granito, TCRT izquierdo: suelo min/max = sin medir, vacio min/max = sin medir.
+ *   Regla para fijarlos: CLIFF = punto medio entre el maximo del suelo y el
+ *   minimo del vacio; LINE por debajo del minimo del suelo. Si los rangos se
+ *   solapan, no hay umbral confiable. */
 #ifndef TCRT_THRESHOLD_LINE
 #define TCRT_THRESHOLD_LINE    800
 #endif

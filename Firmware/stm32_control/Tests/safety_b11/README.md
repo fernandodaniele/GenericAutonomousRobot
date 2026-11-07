@@ -1,6 +1,6 @@
-# Control de motores y seguridad: B5 y comandos B6
+# Control de motores y seguridad: B5, B6 y habilitacion AUTO B7.2
 
-Base B6: rama G1-add/ComandosMovimiento, HEAD feda552.
+Base B7.2: rama G1-add/NavegacionAutonoma, HEAD 0e2c4b7.
 Este README describe el comportamiento permanente y las pruebas actuales.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
@@ -16,7 +16,9 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
 - Edad <500 ms desde emision se admite; edad >=500 ms se rechaza o vence.
   El consumo o reenqueued no rejuvenece el mensaje. El plazo de 200 ms era
   exclusivo de los ensayos retirados: NO es el timeout permanente de consignas.
-- Solo MANUAL/AUTONOMOUS y Safety sin bloqueo admiten consignas y actuacion.
+- En B7.2 solo MANUAL y Safety sin bloqueo admiten consignas y actuacion.
+  AUTONOMOUS se habilita como estado sin movimiento: el backend rechaza
+  emisiones y consumo de consignas durante AUTO.
   Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
 - No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas
   ni registros historicos de ensayo en RAM.
@@ -25,6 +27,70 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
   la publicacion y consumo, con barreras de STOP/entrada al modo.
   Protocolo, arquitectura, compilacion B6 y ensayo fisico propuesto:
   [B6_MOVIMIENTO.md](../../../../Docs/B6_MOVIMIENTO.md).
+
+## B7.2: AUTO sin movimiento
+
+La consola ESP32 agrega n, que envia AUTO seguido de LF. La STM32 responde
+AUTO_QUEUED si pudo admitir y encolar la solicitud, o AUTO_REJECTED si el modo,
+Safety, STOP pendiente, antiguedad o disponibilidad de la cola lo impiden.
+La respuesta de encolado no garantiza la transicion: confirmar mediante STATUS.
+Solo IDLE permite entrar en AUTONOMOUS (STATE=1). No se cambia directamente
+entre MANUAL y AUTO. RESET conserva su semantica: solo rearma SAFETY_STOP hacia
+IDLE; en AUTO sano no cambia el modo ni genera objetivos.
+
+| Tecla | Trama | Funcion |
+|---|---|---|
+| p | PING | PONG existente |
+| s | STATUS | STATE, FAULTS y STOP existentes |
+| r | RESET | Rearme explicito; nunca activa AUTO |
+| m | MANUAL | Solicitud MANUAL desde IDLE |
+| t | STOP | Anulacion y salida a IDLE si Safety lo permite |
+| n | AUTO | Solicitud AUTO desde IDLE, sin movimiento |
+| w | AVANZAR | Movimiento manual; rechazado en AUTO |
+| x | RETROCEDER | Movimiento manual; rechazado en AUTO |
+| a | GIRAR_IZQUIERDA | Movimiento manual; rechazado en AUTO |
+| d | GIRAR_DERECHA | Movimiento manual; rechazado en AUTO |
+| e | DETENER | Parada manual; rechazada en AUTO, usar STOP |
+
+Se conserva la misma cola de ocho eventos. Su mensaje privado agrega fecha de
+origen y epoca de solicitudes AUTO; no se agrega otra cola ni tarea. La fecha
+del primer byte UART no se rejuvenece al consumir. Se exige edad <500 ms y
+origen estrictamente posterior a STOP/RESET y entrada al modo actual, usando
+resta modular de ticks. Igual tick se rechaza conservadoramente.
+
+STOP/RESET invalidan AUTO al solicitarse y al procesarse, incluso si la cola
+esta llena. La epoca tambien protege un encolado tardio despues de la barrera.
+La transicion revalida dentro de una seccion critica breve; las operaciones de
+cola quedan fuera. RESET/STOP mantienen sus efectos B1 y las IRQ siguen activas.
+
+Entrar en AUTO invalida objetivos anteriores mediante TaskMotorControl_Stop.
+El backend admite y ejecuta objetivos solo en MANUAL en esta etapa; por eso ni
+la API clasica ni la fechada pueden accionar motores en AUTO. No hay navegador,
+mid_navigation, renovacion periodica, cambios de PI, PWM, drivers ni sensores.
+La ventana de 500 ms limita la solicitud de entrada, no la permanencia en AUTO.
+
+Regresion actual: 215 casos, base de 172 (B6/B6.5) mas 43 de B7.2. Se ajustaron
+dos expectativas antiguas a la autorizacion actual: AUTO no admite movimiento,
+y START_AUTO se rechaza durante STOP pendiente. El resto de regresiones se
+conserva. Las pruebas ejercitan UART, cola, FSM y backend reales, con HAL/RTOS
+sustituidos: mismo tick, wrap, cola llena, eventos antiguos, carreras de
+STOP/RESET/Safety, rearme, persistencia sin objetivos/PWM y rechazo manual.
+Los 19 casos ultrasonicos permanecen sin cambios.
+
+Compilar STM32 desde Firmware/stm32_control, creando primero build/b72/firmware:
+mingw32-make -B -o build/b72/firmware -j4 BUILD_DIR=build/b72/firmware.
+Compilar ESP32 desde la raiz: pio run -d Firmware/esp32_gateway -e esp32.
+ELF STM32: Firmware/stm32_control/build/b72/firmware/stm32_control.elf.
+ELF ESP32: Firmware/esp32_gateway/.pio/build/esp32/firmware.elf.
+run.bat ejecuta las 215 pruebas sin variantes ni bancos temporales.
+
+Validacion posterior propuesta, inicialmente sin potencia: RESET y confirmar
+STATE=0 FAULTS=0 STOP=0; pulsar n y confirmar STATE=1. Ambos objetivos y CCR2/CCR3
+deben permanecer cero, incluso al esperar mas de 500 ms. w/x/a/d/e deben responder
+MOVE_REJECTED. Pulsar t: IDLE, sin fallas nuevas. Desde MANUAL, n debe rechazarse.
+Con una falla Safety, STOP no debe borrar el enclavamiento; al recuperar sensores
+y hacer RESET debe quedar IDLE sin restaurar AUTO. Cualquier programacion o
+prueba fisica requiere autorizacion; no pausar CPU con potencia conectada.
 
 ## Limite PWM y controlador PI
 

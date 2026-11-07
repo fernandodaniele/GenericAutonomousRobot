@@ -37,6 +37,12 @@ void TaskControlRobot_Create(void);
  */
 bool TaskControlRobot_SendEvent(RobotControlEvent_t event);
 
+/* AUTO desde tarea: fecha real de origen (primer byte UART), edad <500 ms y
+ * posterior estricta a STOP/RESET y entrada a IDLE. Revalida al consumir.
+ * true confirma encolado, no transicion. B7.2 mantiene AUTO sin actuacion.
+ */
+bool TaskControlRobot_RequestAutoAt(TickType_t issued_tick);
+
 /**
  * @brief Obtiene el estado actual del robot.
  * @return Estado de la máquina de estados.

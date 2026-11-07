@@ -80,6 +80,13 @@ void Uart_SendManual(void)
     ESP_LOGI(TAG, "Enviado a STM32: MANUAL");
 }
 
+void Uart_SendAuto(void)
+{
+    const char *message = "AUTO\n";
+    uart_write_bytes(UART_PORT, message, strlen(message));
+    ESP_LOGI(TAG, "Enviado a STM32: AUTO (sin movimiento en B7.2)");
+}
+
 /* Una pulsacion explicita = una trama; sin temporizador de renovacion. */
 static void Uart_SendMotion(const char *message) {
     uart_write_bytes(UART_PORT, message, strlen(message));

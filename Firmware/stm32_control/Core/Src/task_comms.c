@@ -52,6 +52,10 @@ static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickT
             DrvUart_SendString(uart, "MANUAL_QUEUE_ERROR\n");
         }
 
+    } else if (strcmp(message, "AUTO") == 0) {
+        DrvUart_SendString(uart, TaskControlRobot_RequestAutoAt(issued_tick) ?
+            "AUTO_QUEUED\n" : "AUTO_REJECTED\n");
+
     } else if (strcmp(message, "STOP") == 0) {
 
         if (TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)) {

@@ -23,12 +23,12 @@ static int queue_available, refresh_snapshot;
 static int critical_depth, scheduler_depth, cycles, delay_calls;
 static int peek_calls, suspended_peeks, suspend_calls, resume_calls;
 static int peek_action, suspend_action, overwrite_action, receive_action;
+static int event_send_action;
 static int fault_at_inner_exit, fault_at_next_outer_exit, pending_fault;
 static int mode_at_second_delay;
 static TickType_t advance_tick_on_motor_receive;
 static unsigned tests, unsafe_pwm_writes, transaction_writes, max_transaction_writes;
 static unsigned event_count;
-static RobotControlEvent_t events[8];
 static jmp_buf finish;
 
 #include "../../Core/Src/task_safety.c"
@@ -38,6 +38,7 @@ static jmp_buf finish;
 #include "../../Core/Src/mid_motion.c"
 #include "../../Core/Src/drv_uart.c"
 #include "../../Core/Src/task_comms.c"
+static TaskControlRobotEventMessage_t events[8];
 
 /* Real encoder driver under distinct host-only names; task injection remains
  * available for deterministic PI/race tests. No copied delta algorithm. */
@@ -172,12 +173,19 @@ BaseType_t TaskSensores_GetData(SensoresDatos_t *out) {
 QueueHandle_t xQueueCreate(UBaseType_t count, UBaseType_t size) {
     CHECK(critical_depth == 0);
     if (count == 1U) { CHECK(size == sizeof(TaskMotorControlTarget_t)); return (void *)2; }
-    CHECK(count == 8U && size == sizeof(RobotControlEvent_t)); return (void *)1;
+    CHECK(count == 8U && size == sizeof(TaskControlRobotEventMessage_t)); return (void *)1;
 }
 BaseType_t xQueueSend(QueueHandle_t queue, const void *item, TickType_t wait) {
     CHECK(critical_depth == 0 && wait == 0U && queue == (void *)1);
+    if (((const TaskControlRobotEventMessage_t *)item)->event == ROBOT_EVENT_START_AUTO &&
+        event_send_action != 0) {
+        int action = event_send_action; event_send_action = 0;
+        if (action == 1) CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP));
+        if (action == 2) CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET));
+        if (action == 3) TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
+    }
     if (event_count == 8U) return pdFALSE;
-    events[event_count++] = *(const RobotControlEvent_t *)item; return pdTRUE;
+    events[event_count++] = *(const TaskControlRobotEventMessage_t *)item; return pdTRUE;
 }
 BaseType_t xQueueReceive(QueueHandle_t queue, void *out, TickType_t wait) {
     CHECK(critical_depth == 0 && scheduler_depth == 0 && wait == 0U);
@@ -195,7 +203,7 @@ BaseType_t xQueueReceive(QueueHandle_t queue, void *out, TickType_t wait) {
     }
     CHECK(queue == (void *)1);
     if (!event_count) return pdFALSE;
-    *(RobotControlEvent_t *)out = events[0];
+    *(TaskControlRobotEventMessage_t *)out = events[0];
     --event_count; memmove(events, events + 1, event_count * sizeof(*events));
     return pdTRUE;
 }
@@ -264,6 +272,7 @@ static void setup(void) {
     queue_available = 1; refresh_snapshot = 0;
     cycles = delay_calls = peek_calls = suspended_peeks = suspend_calls = resume_calls = 0;
     peek_action = suspend_action = overwrite_action = receive_action = 0;
+    event_send_action = 0;
     fault_at_inner_exit = fault_at_next_outer_exit = pending_fault = mode_at_second_delay = 0;
     unsafe_pwm_writes = transaction_writes = max_transaction_writes = event_count = 0U;
     target_pending = 0;
@@ -276,6 +285,7 @@ static void setup(void) {
     command_generation = 0U;
     has_stop = false; last_stop_tick = 0U;
     stop_pending = false; mode_entry_tick = clock_tick - 1U;
+    auto_request_epoch = 0U; auto_barrier_tick = clock_tick - 1U;
     uart_response[0] = '\0'; uart_rearms = 0U;
     memset(&task_context, 0, sizeof(task_context));
     memset(&pwm, 0, sizeof(pwm)); memset(&pins, 0, sizeof(pins));
@@ -598,9 +608,9 @@ static void test_motion_commands(void) {
     clock_tick = 500U; run_motor(1); expect_zero();
     PASS("B6 modular ordering and expiry accept legitimate tick zero across wrap");
     setup(); robot_state = ROBOT_STATE_AUTONOMOUS;
-    CHECK(Motion_Execute(MOTION_TURN_LEFT, ROBOT_STATE_AUTONOMOUS, clock_tick));
-    run_motor(1); CHECK(left_motor.current_speed < 0 && right_motor.current_speed > 0);
-    PASS("B6 reusable API can explicitly require AUTO without creating a producer or changing modes");
+    CHECK(!Motion_Execute(MOTION_TURN_LEFT, ROBOT_STATE_AUTONOMOUS, clock_tick));
+    CHECK(!target_pending); run_motor(1); expect_zero();
+    PASS("B7.2 reusable API remains available but AUTO cannot emit movement yet");
 
     setup(); DrvUart_Init(&uart, &peripheral);
     uart_feed(&uart, "AVANZAR\nSTOP\nRETROCEDER\n"); CHECK(uart_consume(&uart));
@@ -751,6 +761,201 @@ static void test_stop_b65(void) {
         b65_uart_command(&uart, "STOP\n", "STOP_QUEUED\n"); run_fsm(1); expect_zero();
         PASS("B6.5 reset needs new safe captures and MANUAL cannot restore pre-STOP motion");
     }
+}
+
+static void b72_idle(DrvUart_t *uart, UART_HandleTypeDef *peripheral) {
+    setup(); robot_state = ROBOT_STATE_IDLE; DrvUart_Init(uart, peripheral);
+}
+static void test_auto_b72(void) {
+    DrvUart_t uart;
+    UART_HandleTypeDef peripheral = {0};
+    b72_idle(&uart, &peripheral);
+    b65_uart_command(&uart, "AUTO\n", "AUTO_QUEUED\n");
+    CHECK(robot_state == ROBOT_STATE_IDLE); run_fsm(1);
+    b65_uart_command(&uart, "STATUS\n", "STATE=1 FAULTS=0 STOP=0\n"); expect_zero();
+    PASS("B7.2 AUTO UART enters AUTONOMOUS only when its event is consumed");
+
+    const char *manual[] = {"AVANZAR\n", "RETROCEDER\n", "GIRAR_IZQUIERDA\n", "GIRAR_DERECHA\n", "DETENER\n"};
+    for (unsigned i = 0U; i < 5U; ++i) {
+        b65_uart_command(&uart, manual[i], "MOVE_REJECTED\n"); run_motor(1); expect_zero();
+        CHECK(robot_state == ROBOT_STATE_AUTONOMOUS && !target_pending);
+        PASS("B7.2 manual UART command is rejected in AUTO without a target");
+    }
+    uint32_t generation = command_generation;
+    TaskMotorControl_SetTargetSpeeds(1600, -1600);
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_AUTONOMOUS, clock_tick));
+    CHECK(!target_pending); residual_motion(); run_motor(100); run_fsm(50); expect_zero();
+    CHECK(command_generation == generation && pi_calls == 0U);
+    expect_residual_speed();
+    PASS("B7.2 AUTO blocks both motor APIs and never renews or calculates nonzero actuation");
+    b65_uart_command(&uart, "MANUAL\n", "MANUAL_QUEUED\n"); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    b65_uart_command(&uart, "RESET\n", "RESET_QUEUED\n"); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    PASS("B7.2 MANUAL and RESET preserve their existing no-op semantics in healthy AUTO");
+    b65_uart_command(&uart, "STOP\n", "STOP_QUEUED\n"); expect_zero(); run_fsm(1);
+    b65_uart_command(&uart, "STATUS\n", "STATE=0 FAULTS=0 STOP=0\n");
+    PASS("B7.2 AUTO STOP returns to IDLE without inventing a Safety fault");
+
+    setup(); DrvUart_Init(&uart, &peripheral);
+    b65_uart_command(&uart, "AUTO\n", "AUTO_REJECTED\n"); CHECK(event_count == 0U);
+    CHECK(robot_state == ROBOT_STATE_MANUAL); expect_zero();
+    PASS("B7.2 AUTO rejected from MANUAL before enqueuing");
+    TaskMotorControl_SetTargetSpeeds(100, 100); run_motor(1);
+    generation = command_generation;
+    b65_uart_command(&uart, "AUTO\n", "AUTO_REJECTED\n");
+    CHECK(command_generation == generation && task_context.left_target_cps == 100);
+    CHECK(pwm.compare[0] > 0U); TaskMotorControl_Stop();
+    PASS("B7.2 rejected AUTO leaves an existing MANUAL command semantics intact");
+    b72_idle(&uart, &peripheral); safety_stop_active = true; robot_state = ROBOT_STATE_SAFETY_STOP;
+    b65_uart_command(&uart, "AUTO\n", "AUTO_REJECTED\n");
+    CHECK(event_count == 0U && robot_state == ROBOT_STATE_SAFETY_STOP); expect_zero();
+    PASS("B7.2 AUTO rejected from SAFETY_STOP");
+    b72_idle(&uart, &peripheral); safety_stop_active = true;
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick)); CHECK(event_count == 0U);
+    PASS("B7.2 blocked Safety prevents AUTO even if the FSM still says IDLE");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP));
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1); expect_zero();
+    PASS("B7.2 pending STOP prevents AUTO admission");
+
+    b72_idle(&uart, &peripheral); mode_entry_tick = clock_tick;
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick)); ++clock_tick;
+    CHECK(TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    PASS("B7.2 same-tick IDLE entry is ambiguous but a later AUTO is accepted");
+    b72_idle(&uart, &peripheral); TaskControlRobot_ProcessEvent(ROBOT_EVENT_STOP);
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick)); ++clock_tick;
+    CHECK(TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    PASS("B7.2 same-tick STOP AUTO rejected and later fresh AUTO works");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET));
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1); ++clock_tick;
+    CHECK(TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    PASS("B7.2 same-tick RESET AUTO rejected and request after reset processing works");
+
+    b72_idle(&uart, &peripheral); clock_tick += 500U;
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick - 500U)); CHECK(event_count == 0U);
+    PASS("B7.2 AUTO exactly 500 ms old is rejected at admission");
+    b72_idle(&uart, &peripheral);
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick + 1U)); CHECK(event_count == 0U);
+    PASS("B7.2 future timestamp cannot become a fresh AUTO request");
+    b72_idle(&uart, &peripheral); clock_tick += 499U;
+    CHECK(TaskControlRobot_RequestAutoAt(1000U)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 AUTO 499 ms old cannot regain freshness while queued");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    clock_tick = 1480U; run_fsm(1); CHECK(clock_tick == 1500U);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 AUTO exactly 500 ms old is rejected at consumption");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    clock_tick = 1479U; run_fsm(1); CHECK(clock_tick == 1499U);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    PASS("B7.2 AUTO age 499 at consumption is accepted without movement");
+
+    b72_idle(&uart, &peripheral); uart_feed(&uart, "AU");
+    CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)); run_fsm(1); ++clock_tick;
+    uart_feed(&uart, "TO\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response, "AUTO_REJECTED\n") == 0 && event_count == 0U);
+    PASS("B7.2 partial AUTO frame started before STOP cannot activate afterward");
+    b72_idle(&uart, &peripheral); uart_feed(&uart, "AU");
+    CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET)); run_fsm(1); ++clock_tick;
+    uart_feed(&uart, "TO\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response, "AUTO_REJECTED\n") == 0 && event_count == 0U);
+    PASS("B7.2 partial AUTO frame started before RESET cannot activate afterward");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 queued AUTO ahead of STOP invalidated even in the same tick");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 queued AUTO ahead of RESET invalidated even in the same tick");
+    for (int action = 1; action <= 3; ++action) {
+        b72_idle(&uart, &peripheral); event_send_action = action;
+        CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+        if (action == 3) run_safety(1);
+        run_fsm(1); CHECK(robot_state != ROBOT_STATE_AUTONOMOUS); expect_zero();
+        PASS("B7.2 STOP RESET or Safety between AUTO admission and enqueue cancels activation");
+    }
+    b72_idle(&uart, &peripheral);
+    for (unsigned i = 0U; i < 8U; ++i) CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_START_MANUAL));
+    b65_uart_command(&uart, "AUTO\n", "AUTO_REJECTED\n");
+    CHECK(event_count == 8U && robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 full existing event queue rejects AUTO without changing mode or outputs");
+    CHECK(!TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)); expect_zero(); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE && !stop_pending);
+    PASS("B7.2 full queue cannot prevent STOP cancellation or IDLE fallback");
+    b72_idle(&uart, &peripheral);
+    for (unsigned i = 0U; i < 8U; ++i) CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    CHECK(!TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 full queue of old AUTO requests is invalidated by STOP");
+    b72_idle(&uart, &peripheral);
+    for (unsigned i = 0U; i < 8U; ++i) CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    CHECK(!TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 RESET with full queue still invalidates all older AUTO requests");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    fault_at_next_outer_exit = 1; run_fsm(1);
+    CHECK(TaskSafety_IsStopActive()); expect_zero(); run_safety(1); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_SAFETY_STOP); expect_zero();
+    PASS("B7.2 fault made ready during AUTO transition cannot enable PWM");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    TaskControlRobotEventMessage_t old_auto = events[0];
+    TaskSafety_ReportFault(SAFETY_FAULT_SENSOR); run_safety(1); run_fsm(1);
+    clock_tick += 100U; b65_sensor_snapshot(0U);
+    b65_uart_command(&uart, "RESET\n", "RESET_QUEUED\n"); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE);
+    CHECK(xQueueSend(event_queue, &old_auto, 0U) == pdTRUE); run_fsm(1);
+    CHECK((TickType_t)(clock_tick - old_auto.issued_tick) < 500U);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 late AUTO preceding a real fault and reset is rejected before its time deadline");
+
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_START_AUTO)); run_fsm(1);
+    TaskSafety_ReportFault(SAFETY_FAULT_CLIFF); run_safety(1); run_fsm(1);
+    b65_uart_command(&uart, "STOP\n", "STOP_QUEUED\n"); run_fsm(1);
+    b65_uart_command(&uart, "STATUS\n", "STATE=3 FAULTS=1 STOP=1\n"); expect_zero();
+    clock_tick += 100U; b65_sensor_snapshot(0U);
+    b65_uart_command(&uart, "RESET\n", "RESET_QUEUED\n"); run_fsm(1); run_motor(1);
+    b65_uart_command(&uart, "STATUS\n", "STATE=0 FAULTS=0 STOP=0\n"); expect_zero();
+    run_fsm(5); CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 Safety STOP stays latched and explicit reset never restores AUTO");
+    ++clock_tick; b65_uart_command(&uart, "AUTO\n", "AUTO_QUEUED\n"); run_fsm(1); expect_zero();
+    b65_uart_command(&uart, "STOP\n", "STOP_QUEUED\n"); run_fsm(1);
+    b65_uart_command(&uart, "MANUAL\n", "MANUAL_QUEUED\n"); run_fsm(1); ++clock_tick;
+    b65_uart_command(&uart, "AVANZAR\n", "MOVE_ACCEPTED\n"); run_motor(1);
+    CHECK(robot_state == ROBOT_STATE_MANUAL && pwm.compare[0] > 0U);
+    TaskMotorControl_Stop();
+    PASS("B7.2 AUTO STOP MANUAL requires a fresh explicit manual movement command");
+
+    b72_idle(&uart, &peripheral); clock_tick = 0U;
+    mode_entry_tick = UINT32_MAX - 2U; auto_barrier_tick = UINT32_MAX - 1U;
+    CHECK(TaskControlRobot_RequestAutoAt(0U)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    PASS("B7.2 legitimate AUTO tick zero works across tick wrap");
+    b72_idle(&uart, &peripheral); auto_request_epoch = UINT32_MAX;
+    CHECK(TaskControlRobot_RequestAutoAt(clock_tick));
+    CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 epoch wrap cannot revive an AUTO request preceding STOP");
+    b72_idle(&uart, &peripheral); event_queue = NULL;
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick));
+    CHECK(!TaskControlRobot_SendEvent(ROBOT_EVENT_START_AUTO)); expect_zero();
+    PASS("B7.2 absent event queue rejects AUTO safely");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_START_MANUAL));
+    CHECK(TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_MANUAL); expect_zero();
+    PASS("B7.2 mode changed while queued prevents AUTO at consumption");
+    b72_idle(&uart, &peripheral); CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET));
+    ++clock_tick; CHECK(TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B7.2 reset processing invalidates AUTO already waiting behind reset");
+    b72_idle(&uart, &peripheral); event_queue = NULL; TaskControlRobot_Create();
+    CHECK(!TaskControlRobot_RequestAutoAt(clock_tick)); ++clock_tick;
+    CHECK(TaskControlRobot_RequestAutoAt(clock_tick)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_AUTONOMOUS); expect_zero();
+    PASS("B7.2 real task creation keeps one existing eight-entry queue with dated events");
 }
 
 int main(void) {
@@ -989,9 +1194,10 @@ int main(void) {
     TaskMotorControl_SetTargetSpeeds(100, 100); run_fsm(1); run_motor(1);
     expect_zero(); PASS("real FSM queue drains STOP MANUAL without restoring motion");
     setup(); CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP));
-    CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_START_AUTO));
+    CHECK(!TaskControlRobot_SendEvent(ROBOT_EVENT_START_AUTO));
     TaskMotorControl_SetTargetSpeeds(100, 100); run_fsm(1); run_motor(1);
-    expect_zero(); PASS("real FSM queue drains STOP AUTO without restoring motion");
+    expect_zero(); CHECK(robot_state == ROBOT_STATE_IDLE);
+    PASS("real FSM queue STOP rejects AUTO while pending without restoring motion");
     setup(); TaskMotorControl_SetTargetSpeeds(100, 100); run_motor(1);
     for (unsigned i = 0U; i < 8U; ++i)
         CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_START_MANUAL));
@@ -1082,6 +1288,7 @@ int main(void) {
     test_public_velocity_control();
     test_motion_commands();
     test_stop_b65();
+    test_auto_b72();
     printf("RESULT %u tests passed; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
     return 0;

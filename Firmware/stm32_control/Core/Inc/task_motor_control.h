@@ -29,6 +29,7 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
  *       El PI aplica PWM solo en modo habilitado y sin bloqueo de seguridad.
  *       Solo desde tareas; cada llamada aceptada emite una consigna nueva.
  *       Emisiones/paradas se ordenan por generacion, incluso dentro de un tick.
+ *       B7.2: solo MANUAL admite actuacion; AUTO permanece detenido.
  */
 void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
                                       int32_t right_speed_cps);

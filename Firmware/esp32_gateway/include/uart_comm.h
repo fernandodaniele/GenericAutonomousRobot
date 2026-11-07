@@ -23,6 +23,7 @@ void Uart_SendReset(void);
 void Uart_SendStop(void);
 
 void Uart_SendManual(void);
+void Uart_SendAuto(void);
 
 void Uart_SendForward(void);
 void Uart_SendReverse(void);

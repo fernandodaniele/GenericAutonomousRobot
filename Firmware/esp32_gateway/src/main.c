@@ -26,6 +26,9 @@ static void ConsoleInputTask(void *parameters)
         } else if (input == 'm') {
             Uart_SendManual();
 
+        } else if (input == 'n') {
+            Uart_SendAuto();
+
         } else if (input == 'w') {
             Uart_SendForward();
         } else if (input == 'x') {
@@ -48,7 +51,7 @@ void app_main(void)
     Uart_Init();
 
     printf("\n=== ESP32 UART TEST ===\n");
-    printf("Comandos: p=PING, s=STATUS, r=RESET, t=STOP, m=MANUAL\n");
+    printf("Comandos: p=PING, s=STATUS, r=RESET, t=STOP, m=MANUAL, n=AUTO (sin movimiento)\n");
     printf("Movimiento: w=AVANZAR, x=RETROCEDER, a=GIRAR_IZQUIERDA, d=GIRAR_DERECHA, e=DETENER\n");
 
     if (xTaskCreate(

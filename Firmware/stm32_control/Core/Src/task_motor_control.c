@@ -159,7 +159,7 @@ static void TaskMotorControl_Run(void *parameters) {
         RobotControlState_t state = TaskControlRobot_GetState();
         bool enabled = !TaskSafety_IsStopActive() &&
                        !TaskControlRobot_IsStopPending() &&
-                       (state == ROBOT_STATE_MANUAL || state == ROBOT_STATE_AUTONOMOUS);
+                       state == ROBOT_STATE_MANUAL; /* B7.2: AUTO aun sin actuacion. */
         context->left_speed_cps = TaskMotorControl_DeltaToCps(left_delta);
         context->right_speed_cps = TaskMotorControl_DeltaToCps(right_delta);
 
@@ -253,11 +253,10 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
     RobotControlState_t state = TaskControlRobot_GetState();
     TickType_t now = xTaskGetTickCount();
 
-    // Rechaza ordenes si existe una parada de seguridad
-    // o si el robot no esta en un modo de movimiento.
+    // B7.2 admite actuacion exclusivamente en MANUAL. AUTO solo habilita
+    // el estado de la FSM; aun no existe autorizacion de navegacion.
     if (TaskSafety_IsStopActive() || TaskControlRobot_IsStopPending() ||
-        (state != ROBOT_STATE_MANUAL &&
-        state != ROBOT_STATE_AUTONOMOUS) || target_speed_queue == NULL) {
+        state != ROBOT_STATE_MANUAL || target_speed_queue == NULL) {
         taskEXIT_CRITICAL();
         return false;
     }

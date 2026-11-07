@@ -8,6 +8,8 @@
 
 #include "drv_motor.h"
 #include "task_safety.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 void Motor_Init(MotorHandle_t* motor)
 {
@@ -27,9 +29,11 @@ void Motor_Init(MotorHandle_t* motor)
 
 void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed)
 {
-	// Impide aplicar PWM mientras exista una parada de seguridad.
+	// Serializa comprobacion y escrituras con ReportFault/STOP, solo desde tarea.
+	taskENTER_CRITICAL();
 	if (TaskSafety_IsStopActive()) {
 		Motor_Stop(motor);
+		taskEXIT_CRITICAL();
 		return;
 	}
 	int16_t applied_speed = speed;
@@ -47,6 +51,7 @@ void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed)
 		__HAL_TIM_SET_COMPARE(motor->htim, motor->channel, 0);
 
 		motor->current_speed = 0;
+		taskEXIT_CRITICAL();
 		return;
 	}
 
@@ -69,11 +74,13 @@ void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed)
 
 	// Guarda el estado real aplicado (con signo)
 	motor->current_speed = applied_speed;
+	taskEXIT_CRITICAL();
 
 }
 
 void Motor_Stop(MotorHandle_t* motor)
 {
+	taskENTER_CRITICAL();
 	// Activa ambas señales de dirección (freno activo)
     HAL_GPIO_WritePin(motor->port_a, motor->pin_a, GPIO_PIN_SET);
     HAL_GPIO_WritePin(motor->port_b, motor->pin_b, GPIO_PIN_SET);
@@ -81,5 +88,6 @@ void Motor_Stop(MotorHandle_t* motor)
     __HAL_TIM_SET_COMPARE(motor->htim, motor->channel, 0);
 
     motor->current_speed = 0;
+	taskEXIT_CRITICAL();
 }
 

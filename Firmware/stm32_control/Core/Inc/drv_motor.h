@@ -36,12 +36,14 @@ void Motor_Init(MotorHandle_t* motor);
 
 /**
  * @brief Configura la velocidad del motor.
+ * @note Solo desde tareas; comprobacion de bloqueo y PWM serializados.
  * @param speed Valor entre -8399 (hacia atrás) y 8399 (hacia adelante). 0 es libre.
  */
 void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed);
 
 /**
  * @brief Detiene el motor inmediatamente.
+ * @note Solo desde tareas; no espera ni accede a colas.
  */
 void Motor_Stop(MotorHandle_t* motor);
 

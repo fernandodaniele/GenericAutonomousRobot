@@ -5,6 +5,7 @@
 #include "queue.h"
 #include "main.h"
 #include "task_safety.h"
+#include "task_motor_control.h"
 
 #define TASK_CONTROL_PERIOD_MS 20U
 #define TASK_CONTROL_STACK_SIZE 256U
@@ -67,6 +68,7 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
 
         case ROBOT_EVENT_STOP:
             if (robot_state != ROBOT_STATE_SAFETY_STOP) {
+                TaskMotorControl_Stop();
                 robot_state = ROBOT_STATE_IDLE;
             }
             break;
@@ -75,6 +77,9 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
             // Ignorar eventos de parada antiguos,
             // anteriores a un rearme exitoso.
             if (TaskSafety_IsStopActive()) {
+                if (robot_state != ROBOT_STATE_SAFETY_STOP) {
+                    TaskMotorControl_Stop();
+                }
                 robot_state = ROBOT_STATE_SAFETY_STOP;
             }
             break;

@@ -23,12 +23,19 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
  * @param left_speed_cps Velocidad objetivo del motor izquierdo en cps.
  * @param right_speed_cps Velocidad objetivo del motor derecho en cps.
  * @note Las órdenes se reciben mediante una cola de FreeRTOS.
- *       Deben renovarse periódicamente, ya que vencen después de 500 ms.
- * @note La regulación automática del PWM mediante PI/PID está pendiente.
- *       Actualmente los objetivos se almacenan, pero no se aplican
- *       a los motores.
+ *       Vencen a los 500 ms desde su emision en esta llamada, no su consumo.
+ *       El PI aplica PWM solo en modo habilitado y sin bloqueo de seguridad.
+ *       Solo desde tareas; cada llamada aceptada emite una consigna nueva.
+ *       Emisiones/paradas se ordenan por generacion, incluso dentro de un tick.
  */
 void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
                                       int32_t right_speed_cps);
+
+/**
+ * @brief Invalida consignas previas, reinicia PI y pone ambos PWM a cero.
+ * @note Solo desde tareas. Breve, sin colas ni esperas; admite seccion critica
+ *       externa. La epoca invalida incluso un encolado previo que llegue tarde.
+ */
+void TaskMotorControl_Stop(void);
 
 #endif /* TASK_MOTOR_CONTROL_H_ */

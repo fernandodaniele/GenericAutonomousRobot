@@ -23,6 +23,8 @@
 typedef struct {
     int32_t left_speed_cps;
     int32_t right_speed_cps;
+    TickType_t issued_tick;
+    uint32_t generation;
 } TaskMotorControlTarget_t;
 
 typedef struct {
@@ -40,10 +42,40 @@ typedef struct {
 
     int16_t left_pwm_command;
     int16_t right_pwm_command;
+    TickType_t command_tick;
+    uint32_t command_generation;
 } TaskMotorControlContext_t;
 
 static TaskMotorControlContext_t task_context;
 static QueueHandle_t target_speed_queue = NULL;
+// Orden total de emisiones/paradas, incluso si comparten tick o se encolan tarde.
+static uint32_t command_generation = 0U;
+
+/* Con scheduler activo requiere seccion critica. Conserva velocidades medidas. */
+static void TaskMotorControl_ClearTargets(TaskMotorControlContext_t *context) {
+    context->left_target_cps = 0;
+    context->right_target_cps = 0;
+    context->left_integral = 0.0f;
+    context->right_integral = 0.0f;
+    context->left_pwm_command = 0;
+    context->right_pwm_command = 0;
+    context->command_tick = 0U;
+    context->command_generation = command_generation;
+}
+
+void TaskMotorControl_Stop(void) {
+    taskENTER_CRITICAL();
+    ++command_generation;
+    TaskMotorControl_ClearTargets(&task_context);
+    // Los handles se registran antes de iniciar las tareas; tolerar aun no creado.
+    if (task_context.motor_left != NULL) {
+        Motor_Stop(task_context.motor_left);
+    }
+    if (task_context.motor_right != NULL) {
+        Motor_Stop(task_context.motor_right);
+    }
+    taskEXIT_CRITICAL();
+}
 
 static int16_t MotorPI_Calculate(int32_t target_cps,
                                  int32_t measured_cps,
@@ -93,131 +125,68 @@ static int16_t MotorPI_Calculate(int32_t target_cps,
 
 static void TaskMotorControl_Run(void *parameters) {
     TaskMotorControlContext_t *context = (TaskMotorControlContext_t *)parameters;
-
-    // Garantiza que ambos motores comiencen detenidos.
     Motor_Stop(context->motor_left);
     Motor_Stop(context->motor_right);
-
     TickType_t last_wake_time = xTaskGetTickCount();
-    TickType_t last_command_tick = xTaskGetTickCount();
 
-    // Descarta las cuentas acumuladas antes del inicio de la tarea.
     (void)Encoder_ReadDelta(context->encoder_left);
     (void)Encoder_ReadDelta(context->encoder_right);
 
     for (;;) {
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(MOTOR_CONTROL_PERIOD_MS));
 
-        // Recibe la última velocidad objetivo sin bloquear la tarea.
         TaskMotorControlTarget_t target;
-
-        if (xQueueReceive(target_speed_queue, &target, 0U) == pdTRUE) {
-            context->left_target_cps = target.left_speed_cps;
-            context->right_target_cps = target.right_speed_cps;
-            last_command_tick = xTaskGetTickCount();
-        }
-
-        // Invalida los objetivos si no llegan nuevas órdenes.
-        if ((xTaskGetTickCount() - last_command_tick) >=
-            pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS)) {
-            context->left_target_cps = 0;
-            context->right_target_cps = 0;
-        }
-
-        // Solo se permite movimiento en modo manual o autonomo.
-        RobotControlState_t state = TaskControlRobot_GetState();
-
-        if (TaskSafety_IsStopActive() ||
-            (state != ROBOT_STATE_MANUAL &&
-            state != ROBOT_STATE_AUTONOMOUS)) {
-
-            // Descarta los objetivos de velocidad.
-            context->left_target_cps = 0;
-            context->right_target_cps = 0;
-
-            // Elimina cualquier orden pendiente.
-            (void)xQueueReset(target_speed_queue);
-
-            // Detiene ambos motores.
-            Motor_Stop(context->motor_left);
-            Motor_Stop(context->motor_right);
-        }
-
-        // Calcula la velocidad a partir de las cuentas del período.
+        BaseType_t received = xQueueReceive(target_speed_queue, &target, 0U);
         int32_t left_delta = Encoder_ReadDelta(context->encoder_left);
         int32_t right_delta = Encoder_ReadDelta(context->encoder_right);
 
+        /* Serializa objetivos, PI y salida con STOP/ReportFault. Solo calculos
+         * acotados y escrituras GPIO/CCR: sin colas, encoder, esperas ni retardos.
+         */
+        taskENTER_CRITICAL();
+        TickType_t now = xTaskGetTickCount();
+        RobotControlState_t state = TaskControlRobot_GetState();
+        bool enabled = !TaskSafety_IsStopActive() &&
+                       (state == ROBOT_STATE_MANUAL || state == ROBOT_STATE_AUTONOMOUS);
         context->left_speed_cps = left_delta * (int32_t)(1000U / MOTOR_CONTROL_PERIOD_MS);
         context->right_speed_cps = right_delta * (int32_t)(1000U / MOTOR_CONTROL_PERIOD_MS);
 
-        // Calcula los comandos PWM mediante el controlador PI.
-        RobotControlState_t pi_state = TaskControlRobot_GetState();
-
-        if (!TaskSafety_IsStopActive() &&
-            (pi_state == ROBOT_STATE_MANUAL ||
-            pi_state == ROBOT_STATE_AUTONOMOUS)) {
-
-            context->left_pwm_command = MotorPI_Calculate(
-                context->left_target_cps,
-                context->left_speed_cps,
-                &context->left_integral
-            );
-
-            context->right_pwm_command = MotorPI_Calculate(
-                context->right_target_cps,
-                context->right_speed_cps,
-                &context->right_integral
-            );
-
-        } else {
-
-            context->left_integral = 0.0f;
-            context->right_integral = 0.0f;
-
-            context->left_pwm_command = 0;
-            context->right_pwm_command = 0;
+        if (enabled && received == pdTRUE &&
+            target.generation == command_generation &&
+            (TickType_t)(now - target.issued_tick) <
+            pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS)) {
+            context->left_target_cps = target.left_speed_cps;
+            context->right_target_cps = target.right_speed_cps;
+            context->command_tick = target.issued_tick;
+            context->command_generation = target.generation;
         }
 
-        // Verifica nuevamente la habilitacion antes de aplicar PWM.
-        RobotControlState_t output_state = TaskControlRobot_GetState();
+        if (!enabled || context->command_generation != command_generation ||
+            (TickType_t)(now - context->command_tick) >=
+            pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS)) {
+            TaskMotorControl_ClearTargets(context);
+        }
 
-        if (TaskSafety_IsStopActive() ||
-            (output_state != ROBOT_STATE_MANUAL &&
-            output_state != ROBOT_STATE_AUTONOMOUS)) {
-
-            // Reinicia el controlador.
+        // Un motor sin objetivo conserva PI/PWM en cero aunque siga girando.
+        if (context->left_target_cps == 0) {
             context->left_integral = 0.0f;
-            context->right_integral = 0.0f;
-
             context->left_pwm_command = 0;
-            context->right_pwm_command = 0;
-
-            // Detencion de ambos motores.
             Motor_Stop(context->motor_left);
-            Motor_Stop(context->motor_right);
-
         } else {
-
-            // Motor izquierdo.
-            if (context->left_target_cps == 0) {
-                Motor_Stop(context->motor_left);
-            } else {
-                Motor_SetSpeed(
-                    context->motor_left,
-                    context->left_pwm_command
-                );
-            }
-
-            // Motor derecho.
-            if (context->right_target_cps == 0) {
-                Motor_Stop(context->motor_right);
-            } else {
-                Motor_SetSpeed(
-                    context->motor_right,
-                    context->right_pwm_command
-                );
-            }
+            context->left_pwm_command = MotorPI_Calculate(
+                context->left_target_cps, context->left_speed_cps, &context->left_integral);
+            Motor_SetSpeed(context->motor_left, context->left_pwm_command);
         }
+        if (context->right_target_cps == 0) {
+            context->right_integral = 0.0f;
+            context->right_pwm_command = 0;
+            Motor_Stop(context->motor_right);
+        } else {
+            context->right_pwm_command = MotorPI_Calculate(
+                context->right_target_cps, context->right_speed_cps, &context->right_integral);
+            Motor_SetSpeed(context->motor_right, context->right_pwm_command);
+        }
+        taskEXIT_CRITICAL();
     }
 }
 
@@ -231,15 +200,8 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
         Error_Handler();
         return;
     }
-    // Inicializa las velocidades objetivo en cero.
-    task_context.left_target_cps = 0;
-    task_context.right_target_cps = 0;
-
-    task_context.left_integral = 0.0f;
-    task_context.right_integral = 0.0f;
-
-    task_context.left_pwm_command = 0;
-    task_context.right_pwm_command = 0;
+    // Creacion previa al scheduler, sin consignas habilitadas.
+    TaskMotorControl_ClearTargets(&task_context);
 
     // Crea una cola de un elemento para conservar la última orden.
     target_speed_queue = xQueueCreate(1U, sizeof(TaskMotorControlTarget_t));
@@ -269,22 +231,26 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
 
 void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
                                       int32_t right_speed_cps) {
+    TaskMotorControlTarget_t target;
+    // Este es el punto de emision real: no existen productores intermedios.
+    // Tick y epoca se capturan juntos, incluso si STOP ocurre en el mismo tick.
+    taskENTER_CRITICAL();
     RobotControlState_t state = TaskControlRobot_GetState();
 
     // Rechaza ordenes si existe una parada de seguridad
     // o si el robot no esta en un modo de movimiento.
     if (TaskSafety_IsStopActive() ||
         (state != ROBOT_STATE_MANUAL &&
-        state != ROBOT_STATE_AUTONOMOUS)) {
+        state != ROBOT_STATE_AUTONOMOUS) || target_speed_queue == NULL) {
+        taskEXIT_CRITICAL();
         return;
     }
-    TaskMotorControlTarget_t target = {
-        .left_speed_cps = left_speed_cps,
-        .right_speed_cps = right_speed_cps
-    };
+    target.left_speed_cps = left_speed_cps;
+    target.right_speed_cps = right_speed_cps;
+    target.issued_tick = xTaskGetTickCount();
+    target.generation = ++command_generation;
+    taskEXIT_CRITICAL();
 
-    // Reemplaza la orden anterior por la más reciente.
-    if (target_speed_queue != NULL) {
-        (void)xQueueOverwrite(target_speed_queue, &target);
-    }
+    // Sin colas dentro de la seccion critica. Si hubo STOP, se rechazara la epoca.
+    (void)xQueueOverwrite(target_speed_queue, &target);
 }

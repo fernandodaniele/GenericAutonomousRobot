@@ -41,6 +41,9 @@ uint32_t TaskSafety_GetFaults(void);
 
 /**
  * @brief Solicita el rearme del sistema de seguridad.
+ * @note Solo desde tarea, sin seccion critica externa. Exige ambas capturas
+ *       seguras y vigentes; tras una falla, sus disparos deben ser posteriores
+ *       al tick de la ultima falla notificada (igual tick se rechaza).
  * @return true si se cumplen las condiciones para el rearme.
  */
 bool TaskSafety_RequestReset(void);

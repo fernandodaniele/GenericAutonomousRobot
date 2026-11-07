@@ -1,6 +1,7 @@
 #include "task_safety.h"
 #include "task_control_robot.h"
 #include "task_sensores.h"
+#include "task_motor_control.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -11,13 +12,46 @@
 #define TASK_SAFETY_PRIORITY (tskIDLE_PRIORITY + 6U)
 #define TASK_SAFETY_OBSTACLE_DISTANCE_M 0.20f
 #define TASK_SAFETY_SENSOR_TIMEOUT_MS 100U
+// PROVISIONAL: solo desarrollo/validacion sin potencia de motores.
+#define TASK_SAFETY_ULTRASOUND_MAX_AGE_MS 200U
 
 // El sistema comienza con el movimiento bloqueado.
 static volatile bool safety_stop_active = true;
 static volatile uint32_t safety_faults = SAFETY_FAULT_NONE;
 static uint32_t safety_fault_revision = 0U;
+static TickType_t safety_fault_tick = 0U;
+static bool safety_has_fault = false;
 
 static TaskHandle_t safety_task_handle = NULL;
+
+/* Evaluacion unica para supervision y rearme. No accede a colas ni espera. */
+static uint32_t TaskSafety_SnapshotFaults(const SensoresDatos_t *data,
+                                         TickType_t now) {
+    uint32_t faults = SAFETY_FAULT_NONE;
+    if ((TickType_t)(now - data->timestamp) >
+        pdMS_TO_TICKS(TASK_SAFETY_SENSOR_TIMEOUT_MS)) {
+        return SAFETY_FAULT_SENSOR;
+    }
+    if ((data->ultrasonido_valido == 0U) ||
+        (data->ultrasonido_trasero_valido == 0U) ||
+        ((TickType_t)(now - data->timestamp_ultrasonido_frontal) >
+         pdMS_TO_TICKS(TASK_SAFETY_ULTRASOUND_MAX_AGE_MS)) ||
+        ((TickType_t)(now - data->timestamp_ultrasonido_trasero) >
+         pdMS_TO_TICKS(TASK_SAFETY_ULTRASOUND_MAX_AGE_MS))) {
+        faults |= SAFETY_FAULT_SENSOR;
+    }
+    // La negacion de > tambien rechaza NaN, sin aprobar una distancia insegura.
+    if (((data->ultrasonido_valido != 0U) &&
+         !(data->distancia_m > TASK_SAFETY_OBSTACLE_DISTANCE_M)) ||
+        ((data->ultrasonido_trasero_valido != 0U) &&
+         !(data->distancia_trasera_m > TASK_SAFETY_OBSTACLE_DISTANCE_M))) {
+        faults |= SAFETY_FAULT_OBSTACLE;
+    }
+    if (data->hay_caida != 0U) {
+        faults |= SAFETY_FAULT_CLIFF;
+    }
+    return faults;
+}
 
 /**
  * @brief Supervisa el estado de seguridad del robot.
@@ -34,9 +68,10 @@ static void TaskSafety_Run(void *parameters) {
 
         // Consulta la ultima medicion de sensores.
         SensoresDatos_t sensores;
+        BaseType_t available = TaskSensores_GetData(&sensores);
         TickType_t ahora = xTaskGetTickCount();
 
-        if (TaskSensores_GetData(&sensores) != pdTRUE) {
+        if (available != pdTRUE) {
 
             // Permitir que TaskSensores publique su primer estado.
             if ((ahora - startup_tick) >
@@ -45,33 +80,10 @@ static void TaskSafety_Run(void *parameters) {
                 TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
             }
 
-        } else if ((ahora - sensores.timestamp) >
-                pdMS_TO_TICKS(TASK_SAFETY_SENSOR_TIMEOUT_MS)) {
-
-            // La informacion de los sensores dejo de actualizarse.
-            TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
-
         } else {
-
-            // Deteccion de obstaculos.
-            if ((sensores.ultrasonido_valido != 0U) &&
-                (sensores.distancia_m <= TASK_SAFETY_OBSTACLE_DISTANCE_M)) {
-
-                TaskSafety_ReportFault(SAFETY_FAULT_OBSTACLE);
-            }
-
-            // Si el movimiento esta habilitado y se pierde la medicion
-            // ultrasonica, detener el robot por falta de informacion confiable.
-            if (!TaskSafety_IsStopActive() &&
-                sensores.ultrasonido_valido == 0U) {
-
-                TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
-            }
-
-            // Deteccion de caidas mediante los cuatro TCRT5000.
-            if (sensores.hay_caida != 0U) {
-
-                TaskSafety_ReportFault(SAFETY_FAULT_CLIFF);
+            uint32_t faults = TaskSafety_SnapshotFaults(&sensores, ahora);
+            if (faults != SAFETY_FAULT_NONE) {
+                TaskSafety_ReportFault((SafetyFault_t)faults);
             }
         }
 
@@ -98,6 +110,9 @@ void TaskSafety_Create(void) {
 
     safety_faults = SAFETY_FAULT_NONE;
     safety_stop_active = true;
+    safety_fault_revision = 0U;
+    safety_fault_tick = xTaskGetTickCount();
+    safety_has_fault = false;
 
     BaseType_t result = xTaskCreate(
         TaskSafety_Run,
@@ -126,7 +141,11 @@ void TaskSafety_ReportFault(SafetyFault_t fault) {
 
     safety_faults |= (uint32_t)fault;
     safety_fault_revision++;
+    safety_fault_tick = xTaskGetTickCount();
+    safety_has_fault = true;
     safety_stop_active = true;
+    // Misma transaccion que el bloqueo: invalida consignas y pone ambos PWM a 0.
+    TaskMotorControl_Stop();
 
     taskEXIT_CRITICAL();
 }
@@ -175,42 +194,37 @@ bool TaskSafety_RequestReset(void) {
         return false;
     }
 
-    // No aceptar datos desactualizados.
-    TickType_t ahora = xTaskGetTickCount();
-
-    if ((ahora - sensores.timestamp) >
-        pdMS_TO_TICKS(TASK_SAFETY_SENSOR_TIMEOUT_MS)) {
+    if (TaskSafety_SnapshotFaults(&sensores, xTaskGetTickCount()) !=
+        SAFETY_FAULT_NONE) {
         return false;
     }
 
-    // Los cuatro sensores infrarrojos deben detectar superficie.
-    if (sensores.hay_caida != 0U) {
-        return false;
-    }
+    bool reset = false;
+    /* Solo TaskSensores publica, desde tarea. Suspender el scheduler impide
+     * otra publicacion entre esta segunda copia y la decision. Las IRQ siguen
+     * activas; peek es no bloqueante y queda FUERA de la seccion critica.
+     */
+    vTaskSuspendAll();
+    if (TaskSensores_GetData(&sensores) == pdTRUE) {
+        taskENTER_CRITICAL();
+        TickType_t now = xTaskGetTickCount();
+        TickType_t fault_age = (TickType_t)(now - safety_fault_tick);
+        // Igual tick es ambiguo: se rechaza, incluso si la captura fue posterior.
+        bool new_captures = !safety_has_fault ||
+            (((TickType_t)(now - sensores.timestamp_ultrasonido_frontal) < fault_age) &&
+             ((TickType_t)(now - sensores.timestamp_ultrasonido_trasero) < fault_age));
 
-    // Se requiere una medicion ultrasonica valida
-    // y una distancia superior al umbral de seguridad.
-    if ((sensores.ultrasonido_valido == 0U) ||
-        (sensores.distancia_m <= TASK_SAFETY_OBSTACLE_DISTANCE_M)) {
-        return false;
-    }
-
-    taskENTER_CRITICAL();
-
-    // No borrar fallas registradas durante la verificacion.
-    // Tampoco permitir rearme con emergencia registrada.
-    if ((safety_fault_revision != revision_inicial) ||
-        ((safety_faults & SAFETY_FAULT_EMERGENCY) != 0U)) {
-
+        if ((safety_fault_revision == revision_inicial) &&
+            ((safety_faults & SAFETY_FAULT_EMERGENCY) == 0U) &&
+            (TaskSafety_SnapshotFaults(&sensores, now) == SAFETY_FAULT_NONE) &&
+            new_captures) {
+            TaskMotorControl_Stop();
+            safety_faults = SAFETY_FAULT_NONE;
+            safety_stop_active = false;
+            reset = true;
+        }
         taskEXIT_CRITICAL();
-        return false;
     }
-
-    // Todas las condiciones verificadas permiten liberar el bloqueo.
-    safety_faults = SAFETY_FAULT_NONE;
-    safety_stop_active = false;
-
-    taskEXIT_CRITICAL();
-
-    return true;
+    (void)xTaskResumeAll();
+    return reset && !TaskSafety_IsStopActive();
 }

@@ -2,11 +2,19 @@
 #define TEST_HAL_H
 #include <stdint.h>
 typedef enum { HAL_OK = 0, HAL_ERROR, HAL_BUSY, HAL_TIMEOUT } HAL_StatusTypeDef;
-typedef struct { uint32_t compare[4]; } TIM_HandleTypeDef;
+typedef struct {
+    uint32_t compare[4];
+    struct { uint32_t Period; } Init;
+    uint32_t counter;
+} TIM_HandleTypeDef;
 typedef struct { uint16_t pins; } GPIO_TypeDef;
 typedef enum { GPIO_PIN_RESET = 0, GPIO_PIN_SET } GPIO_PinState;
 void HAL_GPIO_WritePin(GPIO_TypeDef *, uint16_t, GPIO_PinState);
 HAL_StatusTypeDef HAL_TIM_PWM_Start(TIM_HandleTypeDef *, uint32_t);
+#define TIM_CHANNEL_ALL 0xFFFFU
+HAL_StatusTypeDef HAL_TIM_Encoder_Start(TIM_HandleTypeDef *, uint32_t);
+HAL_StatusTypeDef HAL_TIM_Encoder_Stop(TIM_HandleTypeDef *, uint32_t);
+#define __HAL_TIM_GET_COUNTER(timer) ((timer)->counter)
 void test_compare(TIM_HandleTypeDef *, uint32_t, uint32_t);
 #define __HAL_TIM_SET_COMPARE(timer, channel, value) test_compare(timer, channel, value)
 #endif

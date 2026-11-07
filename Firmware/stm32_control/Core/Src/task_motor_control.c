@@ -17,9 +17,6 @@
 #define MOTOR_PI_KI 0.10f
 #define MOTOR_PI_DT_S 0.010f
 
-// Limite provisional: aproximadamente 10% del PWM disponible.
-#define MOTOR_PI_PWM_LIMIT 840.0f
-
 typedef struct {
     int32_t left_speed_cps;
     int32_t right_speed_cps;
@@ -79,12 +76,16 @@ void TaskMotorControl_Stop(void) {
 
 static int16_t MotorPI_Calculate(int32_t target_cps,
                                  int32_t measured_cps,
-                                 float *integral)
+                                 float *integral, uint16_t pwm_limit)
 {
-    if (target_cps == 0) {
+    if (target_cps == 0 || pwm_limit == 0U) {
         *integral = 0.0f;
         return 0;
     }
+    float limit = (float)pwm_limit;
+    /* Coherente tambien si el limite se redujo desde el ciclo anterior. */
+    if (*integral > limit) *integral = limit;
+    if (*integral < -limit) *integral = -limit;
 
     float error = (float)target_cps - (float)measured_cps;
 
@@ -92,10 +93,10 @@ static int16_t MotorPI_Calculate(int32_t target_cps,
         *integral + MOTOR_PI_KI * MOTOR_PI_DT_S * error;
 
     // Limita el termino integral.
-    if (proposed_integral > MOTOR_PI_PWM_LIMIT) {
-        proposed_integral = MOTOR_PI_PWM_LIMIT;
-    } else if (proposed_integral < -MOTOR_PI_PWM_LIMIT) {
-        proposed_integral = -MOTOR_PI_PWM_LIMIT;
+    if (proposed_integral > limit) {
+        proposed_integral = limit;
+    } else if (proposed_integral < -limit) {
+        proposed_integral = -limit;
     }
 
     float proposed_output =
@@ -103,10 +104,9 @@ static int16_t MotorPI_Calculate(int32_t target_cps,
 
     // Anti-windup por integracion condicional:
     // evita aumentar la saturacion, pero permite recuperarse.
-    if ((proposed_output <= MOTOR_PI_PWM_LIMIT &&
-         proposed_output >= -MOTOR_PI_PWM_LIMIT) ||
-        (proposed_output > MOTOR_PI_PWM_LIMIT && error < 0.0f) ||
-        (proposed_output < -MOTOR_PI_PWM_LIMIT && error > 0.0f)) {
+    if ((proposed_output <= limit && proposed_output >= -limit) ||
+        (proposed_output > limit && error < 0.0f) ||
+        (proposed_output < -limit && error > 0.0f)) {
 
         *integral = proposed_integral;
     }
@@ -114,13 +114,20 @@ static int16_t MotorPI_Calculate(int32_t target_cps,
     float output = MOTOR_PI_KP * error + *integral;
 
     // Saturacion del PWM.
-    if (output > MOTOR_PI_PWM_LIMIT) {
-        output = MOTOR_PI_PWM_LIMIT;
-    } else if (output < -MOTOR_PI_PWM_LIMIT) {
-        output = -MOTOR_PI_PWM_LIMIT;
+    if (output > limit) {
+        output = limit;
+    } else if (output < -limit) {
+        output = -limit;
     }
 
     return (int16_t)output;
+}
+
+static int32_t TaskMotorControl_DeltaToCps(int32_t delta) {
+    int64_t cps = (int64_t)delta * (1000U / MOTOR_CONTROL_PERIOD_MS);
+    if (cps > INT32_MAX) return INT32_MAX;
+    if (cps < INT32_MIN) return INT32_MIN;
+    return (int32_t)cps;
 }
 
 static void TaskMotorControl_Run(void *parameters) {
@@ -148,8 +155,8 @@ static void TaskMotorControl_Run(void *parameters) {
         RobotControlState_t state = TaskControlRobot_GetState();
         bool enabled = !TaskSafety_IsStopActive() &&
                        (state == ROBOT_STATE_MANUAL || state == ROBOT_STATE_AUTONOMOUS);
-        context->left_speed_cps = left_delta * (int32_t)(1000U / MOTOR_CONTROL_PERIOD_MS);
-        context->right_speed_cps = right_delta * (int32_t)(1000U / MOTOR_CONTROL_PERIOD_MS);
+        context->left_speed_cps = TaskMotorControl_DeltaToCps(left_delta);
+        context->right_speed_cps = TaskMotorControl_DeltaToCps(right_delta);
 
         if (enabled && received == pdTRUE &&
             target.generation == command_generation &&
@@ -174,7 +181,8 @@ static void TaskMotorControl_Run(void *parameters) {
             Motor_Stop(context->motor_left);
         } else {
             context->left_pwm_command = MotorPI_Calculate(
-                context->left_target_cps, context->left_speed_cps, &context->left_integral);
+                context->left_target_cps, context->left_speed_cps, &context->left_integral,
+                Motor_GetPwmLimit(context->motor_left));
             Motor_SetSpeed(context->motor_left, context->left_pwm_command);
         }
         if (context->right_target_cps == 0) {
@@ -183,7 +191,8 @@ static void TaskMotorControl_Run(void *parameters) {
             Motor_Stop(context->motor_right);
         } else {
             context->right_pwm_command = MotorPI_Calculate(
-                context->right_target_cps, context->right_speed_cps, &context->right_integral);
+                context->right_target_cps, context->right_speed_cps, &context->right_integral,
+                Motor_GetPwmLimit(context->motor_right));
             Motor_SetSpeed(context->motor_right, context->right_pwm_command);
         }
         taskEXIT_CRITICAL();

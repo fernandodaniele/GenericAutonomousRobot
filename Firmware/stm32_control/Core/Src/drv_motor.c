@@ -27,6 +27,16 @@ void Motor_Init(MotorHandle_t* motor)
 	HAL_TIM_PWM_Start(motor->htim, motor->channel);
 }
 
+uint16_t Motor_GetPwmLimit(const MotorHandle_t *motor)
+{
+    uint32_t arr = __HAL_TIM_GET_AUTORELOAD(motor->htim);
+    uint64_t limit = (((uint64_t)arr + 1U) * MOTOR_PWM_MAX_PERCENT) / 100U;
+    if (limit > arr) limit = arr;
+    if (limit > MOTOR_MAX_SPEED) limit = MOTOR_MAX_SPEED;
+    if (limit > INT16_MAX) limit = INT16_MAX;
+    return (uint16_t)limit;
+}
+
 void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed)
 {
 	// Serializa comprobacion y escrituras con ReportFault/STOP, solo desde tarea.
@@ -38,9 +48,13 @@ void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed)
 	}
 	int16_t applied_speed = speed;
 
-	//Saturacion de velocidad para asegurar límites válidos
-	if(applied_speed > MOTOR_MAX_SPEED) applied_speed = MOTOR_MAX_SPEED;
-	if(applied_speed < MOTOR_MIN_SPEED) applied_speed = MOTOR_MIN_SPEED;
+	// B4: todas las rutas normales/directas pasan por este techo comun.
+	// Cero y Safety no necesitan calcular el limite para detenerse.
+	if (applied_speed != 0) {
+		int16_t limit = (int16_t)Motor_GetPwmLimit(motor);
+		if (applied_speed > limit) applied_speed = limit;
+		if (applied_speed < -limit) applied_speed = (int16_t)-limit;
+	}
 
 	//Caso especial: velocidad cero (motor en reposo sin movimiento)
 	if(applied_speed == 0)

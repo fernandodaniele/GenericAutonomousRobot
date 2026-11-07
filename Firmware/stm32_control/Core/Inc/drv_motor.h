@@ -11,8 +11,19 @@
 
 #include "tim.h"
 #include "gpio.h"
+#include <stdint.h>
 
-// Definiciones de límites de velocidad (0 a 8399)
+/* B4: techo PROVISIONAL comun. Ajustar solo tras identificar/validar motores.
+ * No compensa VM ni representa una especificacion electrica del motor.
+ */
+#ifndef MOTOR_PWM_MAX_PERCENT
+#define MOTOR_PWM_MAX_PERCENT 10U
+#endif
+#if MOTOR_PWM_MAX_PERCENT > 100 || MOTOR_PWM_MAX_PERCENT < 0
+#error "MOTOR_PWM_MAX_PERCENT must be between 0 and 100"
+#endif
+
+// Capacidad absoluta de compare; el techo de actuacion lo fija el porcentaje.
 #define MOTOR_MAX_SPEED 8399
 #define MOTOR_MIN_SPEED -8399
 
@@ -26,7 +37,7 @@ typedef struct {
     GPIO_TypeDef* port_b;       // Puerto del pin de dirección B
     uint16_t pin_b;             // Pin de dirección B
 
-    int16_t current_speed;      // Velocidad actual (-8399 to 8399)
+    int16_t current_speed;      // PWM aplicado firmado; NO velocidad del encoder.
 } MotorHandle_t;
 
 /**
@@ -34,10 +45,15 @@ typedef struct {
  */
 void Motor_Init(MotorHandle_t* motor);
 
+/* Limite de compare segun ARR real, porcentaje comun y capacidad del driver.
+ * Sin escrituras ni esperas; usar en la misma transaccion que PI/salida.
+ */
+uint16_t Motor_GetPwmLimit(const MotorHandle_t *motor);
+
 /**
  * @brief Configura la velocidad del motor.
  * @note Solo desde tareas; comprobacion de bloqueo y PWM serializados.
- * @param speed Valor entre -8399 (hacia atrás) y 8399 (hacia adelante). 0 es libre.
+ * @param speed PWM firmado; se limita simetricamente a Motor_GetPwmLimit().
  */
 void Motor_SetSpeed(MotorHandle_t* motor, int16_t speed);
 

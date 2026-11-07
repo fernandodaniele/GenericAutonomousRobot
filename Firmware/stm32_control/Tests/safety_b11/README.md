@@ -1,244 +1,204 @@
-# Etapa B1.1 — protecciones y pruebas reproducibles
+# Control de motores y seguridad: version consolidada B5
 
-Base: `c808843`, rama `G1-add/UltrasonidoTrasero`.
-La etapa prepara validacion sobre STM32 con potencia de motores desconectada.
-No autoriza movimiento, navegacion ni considera 200 ms una garantia de frenado.
+Estado de referencia: rama G1-add/ControlMotores, HEAD 83330ea.
+Este README describe el comportamiento permanente y las pruebas actuales.
+Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
-## Archivos y alcance
+## Comportamiento permanente
 
-| Archivo | Cambio |
-|---|---|
-| `Core/Src/task_safety.c` | Evaluacion comun de snapshot, dos ultrasonidos e IR; tick de falla; rearme con copia final estable; parada inmediata de ambos PWM al notificar falla. |
-| `Core/Inc/task_safety.h` | Contrato del rearme y contexto de tarea. |
-| `Core/Src/task_control_robot.c` | STOP invalida consignas y limpia PI/PWM antes de pasar a IDLE. La entrada efectiva a SAFETY_STOP tambien invalida. |
-| `Core/Src/task_motor_control.c` | Metadata de emision y generacion; rechazo de consignas vencidas/anteriores; parada comun; coordinacion atomica de objetivos, PI y salida. |
-| `Core/Inc/task_motor_control.h` | Nueva operacion Stop para FSM/Safety; firma SetTargetSpeeds conservada y documentacion corregida del PI activo. |
-| `Core/Src/drv_motor.c`, `Core/Inc/drv_motor.h` | Comprobacion y escrituras serializadas, contexto exclusivo de tarea, Stop sin colas ni esperas. |
-| `Tests/safety_b11/` | Arnes, cinco headers de sustitucion, ejecutor y este informe. |
+- TaskMotorControl ejecuta el lazo nominal cada 10 ms. Kp=0,50, Ki=0,10,
+  dt=0,010 s, sin nueva sintonizacion ni compensacion de tension.
+- TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps, int32_t right_speed_cps)
+  es la API publica, exclusiva de contexto de tarea. Las unidades son cuentas
+  de encoder por segundo, firmadas, no RPM ni m/s.
+- Cada emision aceptada recibe tick y generacion dentro de la misma seccion
+  critica. Una cola de un elemento conserva el ultimo mensaje.
+- Edad <500 ms desde emision se admite; edad >=500 ms se rechaza o vence.
+  El consumo o reenqueued no rejuvenece el mensaje. El plazo de 200 ms era
+  exclusivo de los ensayos retirados: NO es el timeout permanente de consignas.
+- Solo MANUAL/AUTONOMOUS y Safety sin bloqueo admiten consignas y actuacion.
+  Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
+- No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas,
+  registros historicos de ensayo en RAM ni comandos UART nuevos de velocidad.
+- La aplicacion actual no incorpora un productor permanente de consignas no
+  nulas; la API queda disponible para futuras integraciones autorizadas.
 
-No se modificaron TaskSensores, su estructura/cola, drivers ultrasonicos, IR,
-perifericos, HAL, CubeMX, navegacion, comunicaciones, limites de PWM ni ganancias
-PI. Las tareas mantienen sus periodos. No se agregaron productores de consignas.
+## Limite PWM y controlador PI
 
-## Vigencia y cobertura conservadora
+Unica configuracion: MOTOR_PWM_MAX_PERCENT en Core/Inc/drv_motor.h.
+Valor PROVISIONAL conservado: 10. Configurable en compilacion entre 0 y 100,
+pero cualquier aumento para hardware requiere revision de especificaciones.
 
-`TaskSafety_SnapshotFaults` es la evaluacion compartida por supervision y rearme:
+Motor_GetPwmLimit calcula floor((ARR+1)*porcentaje/100) usando ARR real y
+aritmetica de 64 bits, acotado por ARR y capacidad del driver/int16. Con la
+configuracion actual ARR=8399, el techo es 840 cuentas. No es una especificacion
+definitiva del motor ni permite deducir seguridad para bateria de 7,4 V.
 
-- Snapshot: edad <=100 ms; limite existente conservado.
-- Cada ultrasonido: valido y edad <=200 ms.
-- Cada distancia: estrictamente >0.20 m, independientemente de modo/direccion.
-- Ninguna caida IR.
+Motor_SetSpeed aplica el mismo limite a ambos signos, preservando direccion.
+Todas las rutas habituales no nulas encontradas pasan por este driver. Cero,
+Motor_Stop y bloqueo Safety llegan a cero sin calcular el techo. current_speed
+del handle es PWM aplicado firmado; no es la velocidad del encoder.
 
-Los 200 ms se centralizan exclusivamente en la constante
-`TASK_SAFETY_ULTRASOUND_MAX_AGE_MS` de task_safety.c y estan marcados PROVISIONALES,
-solo para desarrollo/validacion sin potencia. Valores numericos en pruebas son
-expectativas de los requisitos, no otra configuracion del firmware.
+El PI usa el mismo techo efectivo para salida, integral y anti-windup. Una
+integral previa se recorta si se reduce ese techo. La integracion condicional
+no aumenta saturacion y permite recuperarse con error contrario. Objetivo cero
+o techo cero anulan integral/salida. No se integra velocidad residual cuando
+el motor no tiene objetivo. STOP y Safety limpian tambien los objetivos y PI.
 
-Se usa resta modular de TickType_t. El tick cero no invalida una captura. Una
-publicacion nueva no cambia la edad de los ticks individuales. Se conserva el
-enclavamiento: recuperar datos no rearma automaticamente. NaN no satisface la
-comparacion de distancia estrictamente mayor que el umbral.
+## Encoders y sentido de giro
 
-La supervision sigue siendo periodica (20 ms): el limite de aceptacion no es una
-garantia de que el hardware se detenga exactamente al cumplirse 200 ms. La
-latencia de observacion, jitter, escrituras PWM y respuesta mecanica se miden
-aparte. Las restas suponen lapsos menores a una vuelta completa del contador;
-no acreditan recuperacion tras congelar la ejecucion durante una vuelta completa.
+TIM1 izquierdo: 16 bits, ARR=65535. TIM2 derecho: 32 bits, ARR=UINT32_MAX.
+Encoder_ReadDelta lee CNT, resta la referencia y actualiza last_count; NO pone
+CNT a cero. Init/Start y el descarte inicial de TaskMotorControl establecen
+referencias. La resta modular conserva signo para desplazamientos menores que
+medio modulo entre lecturas.
 
-## Rearme con capturas posteriores a la falla
+La conversion nominal es delta*100 en ventanas de 10 ms, con resolucion de
+100 cps por cuenta observada. Se conserva la proteccion de overflow con int64
+y saturacion al rango int32. No hay factor de inversion de signo por software.
+Jitter y pausas largas siguen afectando esta estimacion nominal; no hay
+conversion mecanica a RPM sin resolucion del encoder/reductora conocida.
 
-Cada ReportFault registra el tick actual, incrementa la revision y bloquea.
-La referencia se actualiza con la ultima notificacion, tambien si ya estaba
-bloqueado: es conservador y puede exigir otra ronda de capturas.
+PWM positivo mantiene PD0=1/PD1=0 a izquierda y PD3=1/PD2=0 a derecha.
+La polaridad validada depende tambien del montaje y cableado fisicos.
 
-Con un snapshot vigente, una captura es posterior solo si su edad es estrictamente
-menor que la edad de la falla, calculadas ambas desde el mismo `now` modular.
-Si comparten tick se rechaza, sin intentar adivinar el orden submilisegundo.
-El timestamp sensorial identifica el disparo, no la publicacion ni la finalizacion.
-Una captura iniciada antes de la falla y terminada despues no sirve para rearmar.
+**Cableado derecho confirmado por el usuario, conservado sin cambios:**
 
-Antes de la primera falla notificada se exige igualmente que ambos sensores
-sean seguros y vigentes; no existe un tick de falla ficticio que descarte por si
-solo la primera captura legitima en tick cero. Arranque sigue bloqueado.
+- C1 (B) -> PA15.
+- C2 (A) -> PA1.
 
-Secuencia de RequestReset:
+No modificar CubeMX, fases ni agregar inversion software para volver al esquema
+anterior. Revalidar el signo si se cambia fisicamente el conjunto motor/encoder.
 
-1. Copia la revision bajo seccion critica y hace la comprobacion preliminar.
-2. Suspende brevemente el scheduler y obtiene otra copia mediante GetData/peek
-   con timeout cero, FUERA de una seccion critica externa.
-3. Dentro de una seccion critica breve revalida todo, revision, emergencia y
-   disparos posteriores a la ultima falla. Limpia consignas/PI/PWM antes de
-   liberar el bloqueo.
-4. Reanuda siempre el scheduler; si una tarea de falla pendiente ejecuta al
-   reanudar, se comprueba nuevamente el bloqueo antes de devolver exito.
+## Protecciones B1 preservadas
 
-No hay esperas ni colas dentro de las secciones criticas escritas por esta etapa.
-La HAL/FreeRTOS real fue inspeccionada: xQueuePeek admite scheduler suspendido
-con espera cero (queue.c:1636,1653); la copia interna de la cola mantiene su
-proteccion propia habitual. vTaskSuspendAll no deshabilita las IRQ; FreeRTOS
-puede diferir contabilizacion de ticks hasta xTaskResumeAll.
+- Arranque bloqueado. Safety exige snapshot con edad <=100 ms; ambos
+  ultrasonidos validos con edad individual <=200 ms, distancias >0,20 m y sin
+  caida IR. Los 200 ms sensoriales siguen siendo provisionales.
+- ReportFault activa el bloqueo e invalida objetivos/PI y ambos PWM en la misma
+  transaccion critica, sin depender del procesamiento de eventos de la FSM.
+- El rearme explicito exige condiciones seguras y capturas nuevas estrictamente
+  posteriores a la falla. Igual tick es ambiguo y se rechaza. Revision de fallas
+  y segunda copia estable protegen frente a fallas/publicaciones concurrentes.
+- Un rearme exitoso vuelve a IDLE y no ordena movimiento. Recuperar sensores
+  no rearma automaticamente. EMERGENCY conserva su politica existente.
+- STOP invalida generaciones, limpia objetivos/integrales y pone ambos PWM cero
+  antes de IDLE, incluso si MANUAL/AUTONOMOUS sigue en el mismo ciclo/tick.
+- Mensajes pendientes o encolados tarde anteriores a STOP se descartan por
+  generacion. Solo una emision realmente nueva puede aplicar movimiento.
+- MotorControl y driver serializan comprobacion de bloqueo y escritura GPIO/CCR
+  con la activacion de Stop/Safety. No hay colas, esperas, HAL bloqueante ni
+  lectura de encoder dentro de esas secciones criticas.
+- Vencimiento de consigna limpia PI/PWM, sin convertirlo en un rearme ni una
+  nueva orden. Tick cero es legitimo; las edades se calculan por resta modular.
 
-Solo TaskSensores publica y lo hace desde tarea. La suspension impide que publique
-entre la copia final y la decision. Capturas DMA pueden terminar durante ese
-lapso, pero no escriben SensoresDatos_t ni su cola. No fue necesario alterar la
-interfaz sensorial. La garantia se refiere al snapshot mas reciente al confirmar
-el rearme; no predice cambios fisicos ni publicaciones posteriores a esa decision.
+El guard de signo contrario y cancelacion de pulsos de los ensayos temporales
+fueron retirados. No formaban parte de B1. No se incorpora una nueva politica
+permanente de falla de encoder ni se cambia Safety.
 
-La FSM conserva el retorno a IDLE, vacia sus eventos pendientes y exige una nueva
-orden de modo. No se inicia movimiento como efecto del rearme. EMERGENCY conserva
-su politica existente de no poder borrarse mediante RequestReset.
+## Pruebas permanentes reproducibles
 
-## Emision, STOP y consignas
+Desde la raiz, con GCC nativo/MinGW disponible:
 
-La inspeccion encontro como unico punto de emision SetTargetSpeeds; no hay
-productores intermedios ni llamadas productoras actuales fuera de su definicion
-en Core. Su firma publica se conserva. Cada llamada aceptada toma tick y nueva
-generacion juntos bajo seccion critica antes de encolar. La estructura privada
-de cola agrega `issued_tick` y `generation`; el consumo nunca cambia esos campos.
-
-El plazo permanece en 500 ms: edad <500 se admite, edad >=500 se rechaza/vence.
-Un reenqueued del mismo mensaje conserva su fecha y no reinicia el plazo.
-Reinvocar explicitamente la API constituye una nueva emision; no existe otro
-mensaje externo con fecha que deba propagarse en el firmware actual.
-
-Una generacion comun ordena cada emision aceptada y cada parada. La ultima es
-la unica admisible, aunque varias ocurran en un tick o los encolados se inviertan
-por preempcion. Si un encolado viejo sobrescribe fisicamente uno nuevo, se
-rechaza y se detiene en vez de aplicar la orden vieja; puede perderse esa nueva
-orden y debera emitirse otra. Se prioriza la seguridad ante ese intercalado.
-
-Stop invalida inmediatamente todas las generaciones anteriores, borra objetivos,
-integrales y comandos PWM y escribe cero en ambos canales. No accede a colas:
-el descarte de mensajes pendientes es logico por generacion y su retiro ocurre
-en el siguiente consumo no bloqueante. Esto tambien cubre encolados anteriores
-que terminen despues de STOP y ordenes ya retiradas de la cola pero no aplicadas.
-
-La FSM llama Stop dentro de la transaccion de parada antes de IDLE. STOP y
-MANUAL/AUTONOMOUS en una misma iteracion no restauran objetivos. El rearme tambien
-invalida la generacion. Una orden de modo no equivale a una consigna nueva.
-
-La generacion es uint32_t; su vuelta no debe abarcar la vida de una consigna
-pendiente. El plazo de 500 ms y la frecuencia fisicamente posible de estas
-operaciones evitan esa ambiguedad en la plataforma actual. Se prueba el paso
-UINT32_MAX -> 0 para una parada y las edades de ticks a ambos lados del wrap.
-
-## Concurrencia y PWM
-
-ReportFault actualiza el bloqueo y llama Stop en una sola seccion critica.
-MotorControl serializa aceptacion de consigna, estado PI y ambos outputs con
-esa misma proteccion. Recibir de la cola y leer encoders ocurre antes de entrar.
-Motor_SetSpeed protege tambien su propia comprobacion y las escrituras.
-Motor_Stop protege sus escrituras y admite anidamiento.
-
-Si la salida ya esta en su seccion critica, la tarea que notifica la falla se
-ejecuta al salir y escribe cero. Si la falla ya activo el bloqueo, el driver no
-puede escribir un PWM no nulo con una comprobacion anterior. Al retornar de
-ReportFault, los compare de ambos motores quedaron en cero y las consignas
-anteriores invalidadas; no se espera a la cola FSM ni a la siguiente iteracion.
-
-El puerto Cortex-M4F del repositorio usa BASEPRI y anidamiento; no se agrego
-deshabilitacion global con PRIMASK. Son APIs de tarea, no FromISR. Se revisaron
-los productores: no hay escrituras no nulas a PWM desde ISR. HAL_GPIO_WritePin
-solo valida parametros y escribe BSRR, sin espera. En las secciones criticas hay
-calculos PI acotados y hasta seis escrituras GPIO/CCR; no hay retardos, HAL
-bloqueante, colas, lectura de encoder, mutex ni bucles de espera.
-
-Los seis accesos no son una medicion de duracion. Debe medirse el peor tiempo en
-STM32, incluida carga de IRQ de mayor prioridad. Compare cero tampoco equivale
-a demostrar frenado fisico: precarga del timer, puente y mecanica requieren
-validacion. CPU/scheduler detenidos, perdida de alimentacion, watchdog y corte
-independiente siguen fuera de alcance. No se modificaron handlers fatales.
-
-## Ejecucion y resultados
-
-En Windows con MinGW GCC disponible, desde la raiz del repositorio:
-
-```powershell
+~~~powershell
 & .\Firmware\stm32_control\Tests\safety_b11\run.bat 'C:\MinGW\bin\gcc.exe'
-```
+& .\Firmware\stm32_control\Tests\ultrasound\run.bat 'C:\MinGW\bin\gcc.exe'
+~~~
 
-Puede omitirse el argumento si gcc esta en PATH. Se usa .bat para no requerir
-cambiar la politica local de ejecucion de PowerShell.
+El ejecutor de seguridad compila UNA variante, sin opciones de banco, con C11,
+Wall/Wextra/Werror y conteo de invocaciones PI solo en host. Salidas:
 
-El arnes incluye directamente los cuatro .c de produccion, sin duplicar sus
-algoritmos. Sustituye RTOS, HAL, encoders y publicacion sensorial. Inyecta eventos
-en las rutas reales: despues de copiar el flag dentro del driver, entre emision
-y encolado, entre consumo y aceptacion, entre lecturas del rearme y al reanudar
-el scheduler. Emula el diferimiento de tareas por anidamiento/suspension.
+- Firmware/stm32_control/build/safety_tests/test_safety.exe
+- Firmware/stm32_control/build/safety_tests/results.log
+- Firmware/stm32_control/build/ultrasound_tests/results.log
 
-Resultado B1.1: **88 pruebas aprobadas**, GCC nativo 6.3.0, C11, Wall/Wextra/Werror.
-El log queda en build/etapa_b11/tests/results.log. Cubre todos los grupos pedidos:
+Conjunto de seguridad/control: 123 casos. Se preservaron los 99 de B1/B1.1.1 y
+17 permanentes de limite, anti-windup y encoder. Se migraron 7 comprobaciones
+utiles de los ensayos a llamadas directas de la API publica en el arnes, sin
+productores adicionales en el firmware.
 
-- Arranque, falta de snapshot, limites 100/200, edades independientes, invalidos,
-  distancias <=0.20, IR, tick cero y desbordamiento.
-- Capturas anteriores/posteriores/igual tick de falla, publicaciones peligrosas
-  durante el rearme, fallas concurrentes, emergencia y retorno a IDLE sin movimiento.
-- Emision y plazo 500, reenqueued, colas pendientes, STOP/MANUAL/AUTO, integrales,
-  generaciones y emisiones simultaneas o tardias.
-- Preempcion en driver/control reales, bloqueo con ambos signos de PWM, parada
-  con cola FSM llena, secciones balanceadas y ausencia de colas/esperas dentro.
+La cobertura incluye arranque, validez/antiguedad individual, obstaculos e IR,
+rearme/fallas concurrentes, STOP/consignas pendientes/generaciones/mismo tick,
+499/500 ms, wrap, PI sin objetivo con movimiento residual, limite PWM simetrico,
+reduccion de techo e integral, feedback firmado, conversion sin overflow,
+ambos motores individualmente en ambos sentidos, tick cero consumido/no consumido
+y vencimiento que cruza el limite durante el consumo.
 
-Compilacion del firmware completo: Makefile existente y GNU Arm GCC 10.3.1,
-directorio de objetos separado build/etapa_b11/firmware; salida 0 y sin errores
-ni advertencias en build/etapa_b11/firmware_build.log. Se generaron ELF/HEX/BIN.
-ELF: text=71916, data=900, bss=29684 bytes. No se uso STM32CubeIDE para compilar,
-no se grabo firmware y no se opero hardware.
+El arnes incluye los .c reales de Safety, FSM, MotorControl y driver motor.
+Sustituye RTOS/HAL/sensores/deltas para intercalar eventos en rutas reales.
+Tambien incluye drv_encoder.c real bajo nombres host distintos para probar
+counter/reference/wrap 16/32 bits sin copiar su algoritmo.
 
-Los dobles no emulan completamente FreeRTOS, acustica, DMA, tiempos reales de IRQ,
-timer PWM ni planta mecanica. Las pruebas no acreditan seguridad fisica.
+Se verifican ausencia de colas/esperas en secciones criticas, balance de
+anidamiento/suspension y hasta seis escrituras GPIO/CCR por transaccion.
+Esto no mide tiempos Cortex-M ni sustituye hardware. Los 19 casos ultrasonicos
+permanentes se mantienen separados y sin cambios.
 
-## B1.1.1 — PI durante parada
+## Compilacion limpia y ELF de produccion
 
-Verificado en G2-fix/SeguridadControl, HEAD c808843, sobre los cambios B1.1 pendientes.
+Con GNU Arm Embedded y MinGW make en PATH, desde la raiz:
 
-TaskMotorControl_Run solo llama MotorPI_Calculate para el motor cuyo objetivo
-es distinto de cero. Para objetivo cero limpia explicitamente integral/comando
-PWM y llama Motor_Stop. La lectura de encoders sigue ejecutandose para ambos.
-No cambian ganancias, periodos, consignas, generaciones ni secciones criticas.
-MotorPI_Calculate conserva su retorno defensivo previo para objetivo cero;
-ese retorno ya evitaba integrar en el codigo inspeccionado.
+~~~powershell
+Push-Location Firmware/stm32_control
+New-Item -ItemType Directory -Force -Path build/b5/firmware | Out-Null
+mingw32-make -B -o build/b5/firmware -j4 BUILD_DIR=build/b5/firmware
+Pop-Location
+~~~
 
-La bateria completa ahora tiene **99 casos aprobados**: los 88 originales y 11
-con movimiento residual de +200/-300 cps. Cubren falta de consigna, bloqueo,
-IDLE, STOP, timeout de orden activa o pendiente, objetivos cero y parada
-individual izquierda/derecha. Tambien comprueban que una nueva consigna parte
-de integral cero y que parar un motor no limpia el PI del otro motor activo.
+Se usa un directorio separado y -B para reconstruir todos los objetos. -o
+excluye solo el directorio ya creado, evitando el mkdir del Makefile en Windows.
+No se cambia el Makefile ni se utilizan operaciones Git para limpiar.
 
-El ejecutor agrega -finstrument-functions UNICAMENTE al arnes nativo. Los hooks
-cuentan entradas a la funcion PI real: cero durante parada y una por motor
-activo/ciclo. No hay instrumentacion agregada al firmware STM32. El log de las
-99 pruebas sigue en build/etapa_b11/tests/results.log. La compilacion completa
-B1.1.1 utiliza build/etapa_b111/firmware; salida 0, sin errores ni advertencias.
-Su log esta en build/etapa_b111/firmware_build.log.
+ELF actual: Firmware/stm32_control/build/b5/firmware/stm32_control.elf.
+Log: Firmware/stm32_control/build/b5/firmware_build.log.
 
-## Validacion fisica propuesta — no realizada
+Antes de seleccionar un ELF para una futura sesion autorizada, comprobar exito
+del build y su ruta/fecha. Los ELF anteriores en directorios de ensayos son
+productos obsoletos ignorados por Git; no se enlazan ni se usan en B5.
+No reutilizar esos ELF como firmware de produccion. No modificar Debug.launch
+automaticamente para seleccionarlos. En CubeIDE, reconstruir la configuracion
+normal completa desde el codigo consolidado.
 
-1. Con potencia de motores desconectada, verificar arranque bloqueado y compare
-   cero; rechazar rearme con uno o ambos sensores ausentes/invalidos.
-2. En ejecucion libre, registrar edades de snapshot, ambos disparos y tick de
-   falla. Verificar igualdad 200 frente a >200 y snapshot >100. Usar un mecanismo
-   de inyeccion revisado, sin forzar estados DMA mediante escrituras arbitrarias.
-3. Desconectar ECHO de cada sensor por separado, verificar falla y cero de ambos
-   canales. Reconectar y comprobar que hacen falta las dos capturas posteriores
-   a la ultima notificacion; recuperar datos no debe rearmar por si solo.
-4. Probar obstaculos frontal/trasero <=0.20 e IR sin piso, rearme y publicacion
-   nueva peligrosa durante el rearme. No deducir tiempos de reaccion con F6 o
-   breakpoints: alteran el scheduler y los timers pueden continuar funcionando.
-5. Con un procedimiento de emision de consignas autorizado para banco y sin
-   potencia, verificar 499/500 ms, STOP seguido de MANUAL/AUTO dentro de un ciclo,
-   ausencia de PWM hasta nueva consigna y limpieza de PI. Esta etapa no agrega
-   un productor de pruebas al firmware ni habilita velocidades por UART.
-6. Medir compare/salida PWM y duracion maxima de secciones criticas/suspension
-   bajo carga con instrumentacion aprobada. Verificar cero en ambos canales al
-   notificar falla, con independencia del estado/ocupacion de la cola FSM.
-7. Repetir recuperacion trasera con obstaculo fijo y correlacionar ECHO/TRIG y
-   datos frente a la anomalia de 180.54 mm respecto de ~280-294 mm. No se considera
-   resuelta; con la politica actual, 180.54 mm debe bloquear por obstaculo.
+Verificacion B5: compilacion completa sin errores ni advertencias, 123/123
+pruebas permanentes y 19/19 ultrasonicas. Sin simbolos temporales en objeto ni
+ELF y sin referencias activas en Core, Tests o configuracion de compilacion.
+El BIN conserva el SHA256 de la variante normal B4 anterior. Se comprobaron
+sin cambios los hashes de once archivos protegidos, incluido Debug.launch.
+La API conserva declaracion/definicion y simbolo en su objeto; el enlazador
+puede descartar la funcion del ELF si ninguna tarea la invoca actualmente.
 
-No conectar potencia ni autorizar movimiento por estos resultados. Las pruebas
-con ruedas elevadas requieren una autorizacion posterior; los 200 ms siguen
-siendo provisionales y los parametros PI no constituyen calibracion mecanica.
+## Resultados historicos: NO son funciones disponibles actualmente
 
-No se realizaron operaciones Git de escritura ni commits. Los archivos nuevos
-de pruebas permanecen sin seguimiento hasta que el supervisor autorice el paso
-correspondiente. Los productos de compilacion/logs estan ignorados por Git.
+- B1/B1.1.1: 99 pruebas base de seguridad y limpieza PI.
+- B224/B228: diagnosticos de consignas, tokens y registro retenido de PWM.
+- B3.2: giro fisico informado de ambos motores con PWM directo de 10%,
+  VM=6 V y pulsos nominales de 200 ms, con retorno de CCR a cero.
+- B4: 116 pruebas normales, 251 de banco y 19 ultrasonicas antes de limpieza.
+  El usuario valido fisicamente los cuatro casos PI 21..24: ambos motores,
+  ambos sentidos, realimentacion de signo coherente, maximo 840 con ARR=8399,
+  final PWM cero y cancel_reason=0, VM=6 V/corriente limitada a 0,30 A.
+  La correccion de fase derecha se hizo fisicamente con el cableado arriba.
+- B5: se retiraron todos los bancos, sus estructuras/historiales, productores,
+  tokens, estados, hooks y helpers exclusivos. Las pruebas de diagnostico
+  retiradas no se cuentan como cobertura de produccion. La cobertura util se
+  conserva en el conjunto permanente; no se repitieron pruebas fisicas.
+
+## Riesgos y limites pendientes
+
+Las ganancias, el limite del 10% y las temporizaciones no son una homologacion
+mecanica/electrica. Faltan especificaciones definitivas del motor/reductora/CPR,
+caracterizacion dinamica, corriente, frenado, tiempo critico/pila y jitter.
+No se implementa compensacion para alimentar motores de 6 V desde 7,4 V.
+
+No se agrega deteccion permanente de encoder parado, desconectado, incoherente
+o de signo cambiado. La polaridad debe conservar el montaje validado.
+El PI puede pedir signo opuesto al objetivo al corregir sobrevelocidad; no se
+introduce rampa nueva ni se afirma que esta validada toda la dinamica.
+
+La parada software requiere CPU/scheduler ejecutando: no garantiza parada ante
+CPU bloqueada, interrupciones deshabilitadas indefinidamente, perdida de
+alimentacion o fallo del puente. Watchdog/corte independiente requieren otra
+etapa. No pausar la CPU con potencia conectada suponiendo que el timeout actuara.
+
+No se autoriza movimiento autonomo. Esta limpieza no graba firmware ni opera
+hardware; cualquier prueba posterior requiere revision y autorizacion.

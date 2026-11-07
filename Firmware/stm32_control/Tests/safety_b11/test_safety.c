@@ -11,6 +11,10 @@
 #include "queue.h"
 #include "task_sensores.h"
 #include "task_safety.h"
+
+static uint32_t test_get_autoreload(TIM_HandleTypeDef *timer);
+#define __HAL_TIM_GET_AUTORELOAD(timer) test_get_autoreload(timer)
+
 #include "task_control_robot.h"
 
 static TickType_t clock_tick;
@@ -21,6 +25,7 @@ static int peek_calls, suspended_peeks, suspend_calls, resume_calls;
 static int peek_action, suspend_action, overwrite_action, receive_action;
 static int fault_at_inner_exit, fault_at_next_outer_exit, pending_fault;
 static int mode_at_second_delay;
+static TickType_t advance_tick_on_motor_receive;
 static unsigned tests, unsafe_pwm_writes, transaction_writes, max_transaction_writes;
 static unsigned event_count;
 static RobotControlEvent_t events[8];
@@ -31,6 +36,18 @@ static jmp_buf finish;
 #include "../../Core/Src/drv_motor.c"
 #include "../../Core/Src/task_motor_control.c"
 
+/* Real encoder driver under distinct host-only names; task injection remains
+ * available for deterministic PI/race tests. No copied delta algorithm. */
+#define Encoder_Init ActualEncoder_Init
+#define Encoder_Start ActualEncoder_Start
+#define Encoder_Stop ActualEncoder_Stop
+#define Encoder_ReadDelta ActualEncoder_ReadDelta
+#include "../../Core/Src/drv_encoder.c"
+#undef Encoder_Init
+#undef Encoder_Start
+#undef Encoder_Stop
+#undef Encoder_ReadDelta
+
 static TaskMotorControlTarget_t queued_target;
 static int target_pending;
 static TIM_HandleTypeDef pwm;
@@ -39,6 +56,8 @@ static MotorHandle_t left_motor, right_motor;
 static EncoderHandle_t left_encoder, right_encoder;
 static int32_t left_encoder_delta, right_encoder_delta;
 static unsigned left_encoder_reads, right_encoder_reads, pi_calls;
+static uint32_t mock_pwm_arr;
+static unsigned autoreload_reads;
 
 /* Host-only function-entry instrumentation: counts the real PI, not a wrapper. */
 void __attribute__((no_instrument_function))
@@ -148,6 +167,8 @@ BaseType_t xQueueSend(QueueHandle_t queue, const void *item, TickType_t wait) {
 BaseType_t xQueueReceive(QueueHandle_t queue, void *out, TickType_t wait) {
     CHECK(critical_depth == 0 && scheduler_depth == 0 && wait == 0U);
     if (queue == (void *)2) {
+        clock_tick += advance_tick_on_motor_receive;
+        advance_tick_on_motor_receive = 0U;
         if (!target_pending) return pdFALSE;
         *(TaskMotorControlTarget_t *)out = queued_target; target_pending = 0;
         int action = receive_action; receive_action = 0;
@@ -164,7 +185,8 @@ BaseType_t xQueueReceive(QueueHandle_t queue, void *out, TickType_t wait) {
     return pdTRUE;
 }
 BaseType_t xQueueOverwrite(QueueHandle_t queue, const void *item) {
-    CHECK(critical_depth == 0 && scheduler_depth == 0 && queue == (void *)2);
+    CHECK(critical_depth == 0 && queue == (void *)2);
+    CHECK(scheduler_depth == 0);
     int action = overwrite_action; overwrite_action = 0;
     if (action == 1) {
         TaskControlRobot_ProcessEvent(ROBOT_EVENT_STOP);
@@ -196,6 +218,17 @@ void test_compare(TIM_HandleTypeDef *timer, uint32_t channel, uint32_t value) {
     }
     timer->compare[channel] = value;
 }
+static uint32_t test_get_autoreload(TIM_HandleTypeDef *timer) {
+    CHECK(timer == &pwm);
+    ++autoreload_reads;
+    return mock_pwm_arr;
+}
+HAL_StatusTypeDef HAL_TIM_Encoder_Start(TIM_HandleTypeDef *timer, uint32_t channels) {
+    (void)timer; CHECK(channels == TIM_CHANNEL_ALL); return HAL_OK;
+}
+HAL_StatusTypeDef HAL_TIM_Encoder_Stop(TIM_HandleTypeDef *timer, uint32_t channels) {
+    (void)timer; CHECK(channels == TIM_CHANNEL_ALL); return HAL_OK;
+}
 int32_t Encoder_ReadDelta(EncoderHandle_t *encoder) {
     CHECK(critical_depth == 0);
     if (encoder == &left_encoder) { ++left_encoder_reads; return left_encoder_delta; }
@@ -206,6 +239,7 @@ int32_t Encoder_ReadDelta(EncoderHandle_t *encoder) {
 static void setup(void) {
     CHECK(critical_depth == 0 && scheduler_depth == 0);
     clock_tick = 1000U;
+    advance_tick_on_motor_receive = 0U;
     input = (SensoresDatos_t){0};
     input.timestamp = clock_tick;
     input.distancia_m = input.distancia_trasera_m = 0.30f;
@@ -220,6 +254,7 @@ static void setup(void) {
     target_pending = 0;
     left_encoder_delta = right_encoder_delta = 0;
     left_encoder_reads = right_encoder_reads = pi_calls = 0U;
+    mock_pwm_arr = 8399U; autoreload_reads = 0U;
     safety_stop_active = false; safety_faults = SAFETY_FAULT_NONE;
     safety_fault_revision = 0U; safety_fault_tick = 0U; safety_has_fault = false;
     safety_task_handle = NULL; robot_state = ROBOT_STATE_MANUAL; event_queue = (void *)1;
@@ -264,6 +299,142 @@ static void residual_motion(void) {
 static void expect_residual_speed(void) {
     CHECK(task_context.left_speed_cps == 200 && task_context.right_speed_cps == -300);
     CHECK(left_encoder_reads >= 2U && right_encoder_reads >= 2U);
+}
+
+static void test_motor_encoder_regressions(void) {
+    setup(); CHECK(Motor_GetPwmLimit(&left_motor) == 840U && Motor_GetPwmLimit(&right_motor) == 840U);
+    Motor_SetSpeed(&left_motor, INT16_MAX); Motor_SetSpeed(&right_motor, INT16_MIN);
+    CHECK(left_motor.current_speed == 840 && right_motor.current_speed == -840);
+    CHECK(pwm.compare[0] == 840U && pwm.compare[1] == 840U);
+    CHECK((pins.pins & 3U) == 1U && (pins.pins & 12U) == 8U);
+    PASS("permanent driver cap is symmetric and preserves electrical sign");
+
+    setup(); mock_pwm_arr = 1999U; Motor_SetSpeed(&left_motor, 800); Motor_SetSpeed(&right_motor, -800);
+    CHECK(pwm.compare[0] == 200U && pwm.compare[1] == 200U);
+    PASS("permanent driver limit follows actual ARR for both motors");
+
+    setup(); mock_pwm_arr = 0U; Motor_SetSpeed(&left_motor, 800); Motor_SetSpeed(&right_motor, -800);
+    CHECK(pwm.compare[0] == 0U && pwm.compare[1] == 0U);
+    PASS("zero effective range disables actuation without affecting zero path");
+
+    setup(); mock_pwm_arr = UINT32_MAX;
+    CHECK(Motor_GetPwmLimit(&left_motor) == MOTOR_MAX_SPEED);
+    Motor_SetSpeed(&left_motor, INT16_MAX); CHECK(pwm.compare[0] == MOTOR_MAX_SPEED);
+    PASS("period arithmetic cannot overflow or exceed driver representation");
+
+    setup(); Motor_SetSpeed(&left_motor, 0); Motor_Stop(&right_motor);
+    CHECK(autoreload_reads == 0U); expect_zero();
+    PASS("zero and Stop bypass PWM limit computation");
+
+    setup(); safety_stop_active = true; Motor_SetSpeed(&left_motor, INT16_MAX);
+    CHECK(autoreload_reads == 0U); expect_zero();
+    PASS("Safety block reaches immediate zero before any limit calculation");
+
+    setup(); TaskMotorControl_SetTargetSpeeds(100000, -100000); run_motor(10);
+    CHECK(pwm.compare[0] == 840U && pwm.compare[1] == 840U);
+    CHECK(task_context.left_integral == 0.0f && task_context.right_integral == 0.0f);
+    PASS("real PI and driver share saturation without accumulating integral");
+
+    setup(); mock_pwm_arr = 1999U; TaskMotorControl_SetTargetSpeeds(1700, -1700); run_motor(2);
+    CHECK(pwm.compare[0] == 200U && pwm.compare[1] == 200U);
+    CHECK(task_context.left_integral == 0.0f && task_context.right_integral == 0.0f);
+    PASS("antiwindup follows effective driver ceiling rather than obsolete 840");
+
+    setup(); float integral = 500.0f;
+    CHECK(MotorPI_Calculate(100, 100, &integral, 200U) == 200 && integral == 200.0f);
+    integral = -500.0f;
+    CHECK(MotorPI_Calculate(-100, -100, &integral, 200U) == -200 && integral == -200.0f);
+    PASS("shrinking PWM limit clamps a previously accumulated integral");
+
+    setup(); integral = 840.0f;
+    CHECK(MotorPI_Calculate(100, 200, &integral, 840U) < 840 && integral < 840.0f);
+    integral = -840.0f;
+    CHECK(MotorPI_Calculate(-100, -200, &integral, 840U) > -840 && integral > -840.0f);
+    PASS("integral can recover from saturation with opposing error");
+
+    setup(); integral = 500.0f;
+    CHECK(MotorPI_Calculate(100, 0, &integral, 0U) == 0 && integral == 0.0f);
+    integral = 500.0f;
+    CHECK(MotorPI_Calculate(0, 300, &integral, 840U) == 0 && integral == 0.0f);
+    PASS("zero target or zero ceiling never integrates residual movement");
+
+    setup(); integral = 0.0f;
+    int16_t correct = MotorPI_Calculate(1700, 500, &integral, 840U);
+    integral = 0.0f;
+    int16_t reversed = MotorPI_Calculate(1700, -500, &integral, 840U);
+    CHECK(correct > 0 && correct < reversed && reversed == 840);
+    PASS("demonstrates negative measured sign increases positive target error");
+
+    setup(); CHECK(TaskMotorControl_DeltaToCps(1) == 100 && TaskMotorControl_DeltaToCps(-1) == -100);
+    CHECK(TaskMotorControl_DeltaToCps(INT32_MAX) == INT32_MAX);
+    CHECK(TaskMotorControl_DeltaToCps(INT32_MIN) == INT32_MIN);
+    left_encoder_delta = INT32_MAX; right_encoder_delta = INT32_MIN; run_motor(1);
+    CHECK(task_context.left_speed_cps == INT32_MAX && task_context.right_speed_cps == INT32_MIN);
+    expect_zero(); PASS("cps conversion preserves sign without signed multiplication overflow");
+
+    TIM_HandleTypeDef timer = {0}; EncoderHandle_t encoder;
+    setup(); timer.Init.Period = UINT16_MAX; timer.counter = 65530U;
+    ActualEncoder_Init(&encoder, &timer); timer.counter = 4U;
+    CHECK(ActualEncoder_ReadDelta(&encoder) == 10);
+    CHECK(timer.counter == 4U && encoder.last_count == 4U);
+    CHECK(ActualEncoder_ReadDelta(&encoder) == 0);
+    PASS("real TIM1 encoder delta wraps forward and never resets CNT");
+
+    timer.counter = 65530U;
+    CHECK(ActualEncoder_ReadDelta(&encoder) == -10 && timer.counter == 65530U);
+    PASS("real TIM1 encoder delta wraps backward with signed result");
+
+    setup(); timer.Init.Period = UINT32_MAX; timer.counter = UINT32_MAX - 5U;
+    ActualEncoder_Init(&encoder, &timer); timer.counter = 4U;
+    CHECK(ActualEncoder_ReadDelta(&encoder) == 10 && timer.counter == 4U);
+    timer.counter = UINT32_MAX - 5U;
+    CHECK(ActualEncoder_ReadDelta(&encoder) == -10);
+    PASS("real TIM2 driver handles 32 bit wrap in both directions");
+
+    setup(); timer.counter = 123U; ActualEncoder_Init(&encoder, &timer);
+    timer.counter = 456U; CHECK(ActualEncoder_Start(&encoder) == HAL_OK);
+    CHECK(timer.counter == 456U && encoder.last_count == 456U);
+    CHECK(ActualEncoder_ReadDelta(&encoder) == 0 && ActualEncoder_Stop(&encoder) == HAL_OK);
+    PASS("encoder start updates reference without zeroing hardware counter");
+}
+
+/* Coverage retained from the removed fixtures, through the public API only. */
+static void test_public_velocity_control(void) {
+    for (unsigned selected = 0U; selected < 4U; ++selected) {
+        setup();
+        bool left = selected < 2U;
+        int32_t target = selected % 2U == 0U ? 1700 : -1700;
+        TaskMotorControl_SetTargetSpeeds(left ? target : 0, left ? 0 : target);
+        run_motor(1);
+        CHECK(pi_calls == 1U);
+        CHECK(pwm.compare[left ? 0 : 1] == 840U && pwm.compare[left ? 1 : 0] == 0U);
+        CHECK((left ? left_motor.current_speed : right_motor.current_speed) == (target > 0 ? 840 : -840));
+        if (left) left_encoder_delta = target > 0 ? 5 : -5;
+        else right_encoder_delta = target > 0 ? 5 : -5;
+        run_motor(1);
+        int32_t measured = left ? task_context.left_speed_cps : task_context.right_speed_cps;
+        int16_t applied = left ? left_motor.current_speed : right_motor.current_speed;
+        CHECK(measured == (target > 0 ? 500 : -500));
+        CHECK((target > 0 && applied > 0 && applied < 840) ||
+              (target < 0 && applied < 0 && applied > -840));
+        CHECK(pwm.compare[left ? 1 : 0] == 0U && pi_calls == 2U);
+        PASS("public PI individually controls either motor in either direction with signed feedback");
+    }
+
+    setup(); clock_tick = 0U; TaskMotorControl_SetTargetSpeeds(100, 0); run_motor(1);
+    CHECK(task_context.left_target_cps == 100 && pwm.compare[0] > 0U && pwm.compare[1] == 0U);
+    CHECK(task_context.command_tick == 0U && pi_calls == 1U);
+    PASS("public velocity command emitted at legitimate tick zero is accepted");
+
+    setup(); clock_tick = 0U; TaskMotorControl_SetTargetSpeeds(100, 0);
+    target_pending = 0; run_motor(1); expect_zero(); CHECK(pi_calls == 0U);
+    PASS("unconsumed tick zero metadata cannot generate motor output");
+
+    setup(); TaskMotorControl_SetTargetSpeeds(100, 100); clock_tick += 489U;
+    advance_tick_on_motor_receive = 1U; run_motor(1);
+    CHECK((TickType_t)(clock_tick - queued_target.issued_tick) == 500U);
+    expect_zero(); CHECK(pi_calls == 0U);
+    PASS("deadline crossed while consuming a public command prevents stale PI actuation");
 }
 
 int main(void) {
@@ -591,6 +762,8 @@ int main(void) {
     CHECK(pi_calls == 2U);
     PASS("individual restart starts clean and preserves the other active PI");
 
+    test_motor_encoder_regressions();
+    test_public_velocity_control();
     printf("RESULT %u tests passed; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
     return 0;

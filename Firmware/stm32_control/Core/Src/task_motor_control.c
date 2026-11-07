@@ -47,6 +47,8 @@ static TaskMotorControlContext_t task_context;
 static QueueHandle_t target_speed_queue = NULL;
 // Orden total de emisiones/paradas, incluso si comparten tick o se encolan tarde.
 static uint32_t command_generation = 0U;
+static TickType_t last_stop_tick = 0U;
+static bool has_stop = false;
 
 /* Con scheduler activo requiere seccion critica. Conserva velocidades medidas. */
 static void TaskMotorControl_ClearTargets(TaskMotorControlContext_t *context) {
@@ -62,6 +64,8 @@ static void TaskMotorControl_ClearTargets(TaskMotorControlContext_t *context) {
 
 void TaskMotorControl_Stop(void) {
     taskENTER_CRITICAL();
+    last_stop_tick = xTaskGetTickCount();
+    has_stop = true;
     ++command_generation;
     TaskMotorControl_ClearTargets(&task_context);
     // Los handles se registran antes de iniciar las tareas; tolerar aun no creado.
@@ -154,6 +158,7 @@ static void TaskMotorControl_Run(void *parameters) {
         TickType_t now = xTaskGetTickCount();
         RobotControlState_t state = TaskControlRobot_GetState();
         bool enabled = !TaskSafety_IsStopActive() &&
+                       !TaskControlRobot_IsStopPending() &&
                        (state == ROBOT_STATE_MANUAL || state == ROBOT_STATE_AUTONOMOUS);
         context->left_speed_cps = TaskMotorControl_DeltaToCps(left_delta);
         context->right_speed_cps = TaskMotorControl_DeltaToCps(right_delta);
@@ -238,28 +243,50 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
     }
 }
 
-void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
-                                      int32_t right_speed_cps) {
+static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed_cps,
+                                     bool dated, TickType_t issued_tick,
+                                     RobotControlState_t required_mode) {
     TaskMotorControlTarget_t target;
-    // Este es el punto de emision real: no existen productores intermedios.
-    // Tick y epoca se capturan juntos, incluso si STOP ocurre en el mismo tick.
+    // Admision y epoca atomicas. La API clasica fecha esta llamada; la variante
+    // fechada conserva el origen UART y comprueba las barreras de parada/modo.
     taskENTER_CRITICAL();
     RobotControlState_t state = TaskControlRobot_GetState();
+    TickType_t now = xTaskGetTickCount();
 
     // Rechaza ordenes si existe una parada de seguridad
     // o si el robot no esta en un modo de movimiento.
-    if (TaskSafety_IsStopActive() ||
+    if (TaskSafety_IsStopActive() || TaskControlRobot_IsStopPending() ||
         (state != ROBOT_STATE_MANUAL &&
         state != ROBOT_STATE_AUTONOMOUS) || target_speed_queue == NULL) {
         taskEXIT_CRITICAL();
-        return;
+        return false;
+    }
+    if (dated && ((TickType_t)(now - issued_tick) >= pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS) ||
+        (has_stop && (TickType_t)(now - issued_tick) >= (TickType_t)(now - last_stop_tick)) ||
+        !TaskControlRobot_AcceptsMotionAt(required_mode, issued_tick))) {
+        taskEXIT_CRITICAL();
+        return false;
+    }
+    if (dated && left_speed_cps == 0 && right_speed_cps == 0) {
+        TaskMotorControl_Stop();
+        taskEXIT_CRITICAL();
+        return true;
     }
     target.left_speed_cps = left_speed_cps;
     target.right_speed_cps = right_speed_cps;
-    target.issued_tick = xTaskGetTickCount();
+    target.issued_tick = dated ? issued_tick : now;
     target.generation = ++command_generation;
     taskEXIT_CRITICAL();
 
     // Sin colas dentro de la seccion critica. Si hubo STOP, se rechazara la epoca.
-    (void)xQueueOverwrite(target_speed_queue, &target);
+    return xQueueOverwrite(target_speed_queue, &target) == pdPASS;
+}
+
+void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps, int32_t right_speed_cps) {
+    (void)TaskMotorControl_Publish(left_speed_cps, right_speed_cps, false, 0U, ROBOT_STATE_IDLE);
+}
+
+bool TaskMotorControl_TrySetTargetSpeedsAt(int32_t left_speed_cps, int32_t right_speed_cps,
+                                         TickType_t issued_tick, RobotControlState_t required_mode) {
+    return TaskMotorControl_Publish(left_speed_cps, right_speed_cps, true, issued_tick, required_mode);
 }

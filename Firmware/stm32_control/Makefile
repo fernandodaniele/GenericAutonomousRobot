@@ -74,6 +74,7 @@ Core/Src/task_control_robot.c \
 Core/Src/task_safety.c \
 Core/Src/drv_ultrasound.c \
 Core/Src/mid_kinematics.c \
+Core/Src/mid_motion.c \
 Core/Src/ds1302.c \
 Core/Src/mid_log.c \
 Core/Src/drv_sd_spi.c \

@@ -24,6 +24,12 @@ void Uart_SendStop(void);
 
 void Uart_SendManual(void);
 
+void Uart_SendForward(void);
+void Uart_SendReverse(void);
+void Uart_SendLeft(void);
+void Uart_SendRight(void);
+void Uart_SendHalt(void);
+
 /**
  * @brief Lee e imprime datos recibidos desde la STM32.
  */

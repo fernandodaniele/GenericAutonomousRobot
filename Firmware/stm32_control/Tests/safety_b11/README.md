@@ -1,6 +1,6 @@
-# Control de motores y seguridad: version consolidada B5
+# Control de motores y seguridad: B5 y comandos B6
 
-Estado de referencia: rama G1-add/ControlMotores, HEAD 83330ea.
+Base B6: rama G1-add/ComandosMovimiento, HEAD feda552.
 Este README describe el comportamiento permanente y las pruebas actuales.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
@@ -18,10 +18,13 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
   exclusivo de los ensayos retirados: NO es el timeout permanente de consignas.
 - Solo MANUAL/AUTONOMOUS y Safety sin bloqueo admiten consignas y actuacion.
   Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
-- No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas,
-  registros historicos de ensayo en RAM ni comandos UART nuevos de velocidad.
-- La aplicacion actual no incorpora un productor permanente de consignas no
-  nulas; la API queda disponible para futuras integraciones autorizadas.
+- No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas
+  ni registros historicos de ensayo en RAM.
+- B6 agrega ordenes UART manuales fijas mediante mid_motion, sin velocidades
+  numericas ni renovacion automatica. La fecha del primer byte se conserva en
+  la publicacion y consumo, con barreras de STOP/entrada al modo.
+  Protocolo, arquitectura, compilacion B6 y ensayo fisico propuesto:
+  [B6_MOVIMIENTO.md](../../../../Docs/B6_MOVIMIENTO.md).
 
 ## Limite PWM y controlador PI
 
@@ -112,10 +115,18 @@ Wall/Wextra/Werror y conteo de invocaciones PI solo en host. Salidas:
 - Firmware/stm32_control/build/safety_tests/results.log
 - Firmware/stm32_control/build/ultrasound_tests/results.log
 
-Conjunto de seguridad/control: 123 casos. Se preservaron los 99 de B1/B1.1.1 y
+Base B5 de seguridad/control: 123 casos. Se preservaron los 99 de B1/B1.1.1 y
 17 permanentes de limite, anti-windup y encoder. Se migraron 7 comprobaciones
 utiles de los ensayos a llamadas directas de la API publica en el arnes, sin
 productores adicionales en el firmware.
+
+B6 conserva los 123 casos y agrega 42: total 165. Incluye los fuentes reales
+mid_motion.c, drv_uart.c y task_comms.c, con HAL UART sustituida. Comprueba
+las cinco traducciones, admision por modo/Safety, STOP inmediato aun con cola
+llena, DETENER, rearme, mismo tick, generaciones y carreras, vencimiento desde
+origen, ausencia de renovacion, wrap/tick cero, prioridad STOP en el mailbox,
+CRLF, overflow, NUL embebido y comandos desconocidos. run.bat ejecuta todo el
+conjunto permanente; no hay variantes de banco.
 
 La cobertura incluye arranque, validez/antiguedad individual, obstaculos e IR,
 rearme/fallas concurrentes, STOP/consignas pendientes/generaciones/mismo tick,
@@ -134,7 +145,7 @@ anidamiento/suspension y hasta seis escrituras GPIO/CCR por transaccion.
 Esto no mide tiempos Cortex-M ni sustituye hardware. Los 19 casos ultrasonicos
 permanentes se mantienen separados y sin cambios.
 
-## Compilacion limpia y ELF de produccion
+## Compilacion B5 historica y ELF de produccion
 
 Con GNU Arm Embedded y MinGW make en PATH, desde la raiz:
 
@@ -149,7 +160,8 @@ Se usa un directorio separado y -B para reconstruir todos los objetos. -o
 excluye solo el directorio ya creado, evitando el mkdir del Makefile en Windows.
 No se cambia el Makefile ni se utilizan operaciones Git para limpiar.
 
-ELF actual: Firmware/stm32_control/build/b5/firmware/stm32_control.elf.
+ELF historico B5: Firmware/stm32_control/build/b5/firmware/stm32_control.elf.
+Para B6 utilizar build/b6/firmware/stm32_control.elf, segun el documento B6.
 Log: Firmware/stm32_control/build/b5/firmware_build.log.
 
 Antes de seleccionar un ELF para una futura sesion autorizada, comprobar exito
@@ -164,7 +176,7 @@ pruebas permanentes y 19/19 ultrasonicas. Sin simbolos temporales en objeto ni
 ELF y sin referencias activas en Core, Tests o configuracion de compilacion.
 El BIN conserva el SHA256 de la variante normal B4 anterior. Se comprobaron
 sin cambios los hashes de once archivos protegidos, incluido Debug.launch.
-La API conserva declaracion/definicion y simbolo en su objeto; el enlazador
+En B5 la API conservaba declaracion/definicion y simbolo en su objeto; el enlazador
 puede descartar la funcion del ELF si ninguna tarea la invoca actualmente.
 
 ## Resultados historicos: NO son funciones disponibles actualmente

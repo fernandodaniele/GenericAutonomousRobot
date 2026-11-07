@@ -2,6 +2,9 @@
 #define TEST_HAL_H
 #include <stdint.h>
 typedef enum { HAL_OK = 0, HAL_ERROR, HAL_BUSY, HAL_TIMEOUT } HAL_StatusTypeDef;
+typedef struct { unsigned unused; } UART_HandleTypeDef;
+HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *, uint8_t *, uint16_t);
+HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *, uint8_t *, uint16_t, uint32_t);
 typedef struct {
     uint32_t compare[4];
     struct { uint32_t Period; } Init;

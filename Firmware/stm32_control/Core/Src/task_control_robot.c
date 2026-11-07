@@ -14,6 +14,8 @@
 
 // Estado inicial del robot.
 static volatile RobotControlState_t robot_state = ROBOT_STATE_IDLE;
+static bool stop_pending = false;
+static TickType_t mode_entry_tick = 0U;
 
 // Cola de eventos para la maquina de estados.
 static QueueHandle_t event_queue = NULL;
@@ -38,6 +40,7 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
             // Verifica nuevamente que no haya aparecido una parada.
             if (!TaskSafety_IsStopActive()) {
                 robot_state = ROBOT_STATE_IDLE;
+                mode_entry_tick = xTaskGetTickCount();
             }
 
             taskEXIT_CRITICAL();
@@ -52,17 +55,19 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
 
         case ROBOT_EVENT_START_AUTO:
             if (robot_state == ROBOT_STATE_IDLE &&
-                !TaskSafety_IsStopActive()) {
+                !TaskSafety_IsStopActive() && !stop_pending) {
 
                 robot_state = ROBOT_STATE_AUTONOMOUS;
+                mode_entry_tick = xTaskGetTickCount();
             }
             break;
 
         case ROBOT_EVENT_START_MANUAL:
             if (robot_state == ROBOT_STATE_IDLE &&
-                !TaskSafety_IsStopActive()) {
+                !TaskSafety_IsStopActive() && !stop_pending) {
 
                 robot_state = ROBOT_STATE_MANUAL;
+                mode_entry_tick = xTaskGetTickCount();
             }
             break;
 
@@ -70,7 +75,9 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
             if (robot_state != ROBOT_STATE_SAFETY_STOP) {
                 TaskMotorControl_Stop();
                 robot_state = ROBOT_STATE_IDLE;
+                mode_entry_tick = xTaskGetTickCount();
             }
+            stop_pending = false;
             break;
 
         case ROBOT_EVENT_SAFETY_STOP:
@@ -114,6 +121,10 @@ static void TaskControlRobot_Run(void *parameters) {
         while (xQueueReceive(event_queue, &event, 0U) == pdTRUE) {
             TaskControlRobot_ProcessEvent(event);
         }
+        /* Incluso con cola llena, una solicitud STOP ya anulo los motores y
+         * debe completar la transicion a IDLE. No depende de encolarla de nuevo.
+         */
+        if (TaskControlRobot_IsStopPending()) TaskControlRobot_ProcessEvent(ROBOT_EVENT_STOP);
 
         // Pendiente: incorporar logica de navegacion
         // y coordinacion con las demas tareas.
@@ -131,6 +142,8 @@ void TaskControlRobot_Create(void) {
     }
 
     robot_state = ROBOT_STATE_IDLE;
+    stop_pending = false;
+    mode_entry_tick = xTaskGetTickCount();
 
     event_queue = xQueueCreate(
         TASK_CONTROL_QUEUE_LENGTH,
@@ -169,6 +182,18 @@ bool TaskControlRobot_SendEvent(RobotControlEvent_t event) {
         return false;
     }
 
+    if (event == ROBOT_EVENT_STOP) {
+        /* Stop, marca y encolado forman una operacion de tarea; IRQ activas,
+         * cola no bloqueante FUERA de la seccion critica. */
+        vTaskSuspendAll();
+        taskENTER_CRITICAL();
+        stop_pending = true;
+        TaskMotorControl_Stop();
+        taskEXIT_CRITICAL();
+        bool queued = xQueueSend(event_queue, &event, 0U) == pdTRUE;
+        (void)xTaskResumeAll();
+        return queued;
+    }
     return (xQueueSend(event_queue, &event, 0U) == pdTRUE);
 }
 
@@ -184,4 +209,21 @@ RobotControlState_t TaskControlRobot_GetState(void) {
     taskEXIT_CRITICAL();
 
     return state;
+}
+
+bool TaskControlRobot_IsStopPending(void) {
+    taskENTER_CRITICAL();
+    bool pending = stop_pending;
+    taskEXIT_CRITICAL();
+    return pending;
+}
+
+bool TaskControlRobot_AcceptsMotionAt(RobotControlState_t mode, TickType_t issued_tick) {
+    taskENTER_CRITICAL();
+    TickType_t now = xTaskGetTickCount();
+    bool accepted = (mode == ROBOT_STATE_MANUAL || mode == ROBOT_STATE_AUTONOMOUS) &&
+        robot_state == mode && !stop_pending &&
+        (TickType_t)(now - issued_tick) < (TickType_t)(now - mode_entry_tick);
+    taskEXIT_CRITICAL();
+    return accepted;
 }

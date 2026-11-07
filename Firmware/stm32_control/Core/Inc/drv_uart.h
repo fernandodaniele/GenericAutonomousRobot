@@ -14,6 +14,8 @@ extern "C" {
 
 #include "main.h"
 #include <stdint.h>
+#include <stdbool.h>
+#include "FreeRTOS.h"
 
 #define UART_RX_BUFFER_SIZE    64
 
@@ -23,6 +25,12 @@ typedef struct {
     char rx_buffer[UART_RX_BUFFER_SIZE];
     uint16_t rx_index;
     volatile uint8_t message_ready;
+    char frame_buffer[UART_RX_BUFFER_SIZE];
+    uint8_t discard_frame;
+    uint8_t cr_seen;
+    uint8_t message_priority;
+    TickType_t frame_tick;
+    TickType_t message_tick;
 } DrvUart_t;
 
 /**
@@ -58,6 +66,12 @@ uint8_t DrvUart_IsMessageReady(DrvUart_t *uart);
  * @param destination_size Tamaño máximo del buffer destino.
  */
 void DrvUart_GetMessage(DrvUart_t *uart, char *destination, uint16_t destination_size);
+
+/* Fecha del PRIMER byte de la trama; false si no existe mensaje completo o
+ * el destino no puede contenerlo entero. No se entrega un prefijo truncado.
+ */
+bool DrvUart_GetMessageTimed(DrvUart_t *uart, char *destination,
+                            uint16_t destination_size, TickType_t *issued_tick);
 
 /**
  * @brief Envía un string por UART en modo bloqueante.

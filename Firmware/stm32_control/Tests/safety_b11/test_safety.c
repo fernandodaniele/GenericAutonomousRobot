@@ -35,6 +35,9 @@ static jmp_buf finish;
 #include "../../Core/Src/task_control_robot.c"
 #include "../../Core/Src/drv_motor.c"
 #include "../../Core/Src/task_motor_control.c"
+#include "../../Core/Src/mid_motion.c"
+#include "../../Core/Src/drv_uart.c"
+#include "../../Core/Src/task_comms.c"
 
 /* Real encoder driver under distinct host-only names; task injection remains
  * available for deterministic PI/race tests. No copied delta algorithm. */
@@ -58,6 +61,8 @@ static int32_t left_encoder_delta, right_encoder_delta;
 static unsigned left_encoder_reads, right_encoder_reads, pi_calls;
 static uint32_t mock_pwm_arr;
 static unsigned autoreload_reads;
+static char uart_response[128];
+static unsigned uart_rearms;
 
 /* Host-only function-entry instrumentation: counts the real PI, not a wrapper. */
 void __attribute__((no_instrument_function))
@@ -104,6 +109,16 @@ void test_exit(void) {
     }
 }
 TickType_t xTaskGetTickCount(void) { return clock_tick; }
+TickType_t xTaskGetTickCountFromISR(void) { return clock_tick; }
+HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *uart, uint8_t *byte, uint16_t size) {
+    (void)uart; CHECK(byte != NULL && size == 1U); ++uart_rearms; return HAL_OK;
+}
+HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *uart, uint8_t *bytes,
+                                   uint16_t size, uint32_t timeout) {
+    (void)uart; CHECK(critical_depth == 0 && scheduler_depth == 0);
+    CHECK(size < sizeof(uart_response) && timeout == 50U);
+    memcpy(uart_response, bytes, size); uart_response[size] = '\0'; return HAL_OK;
+}
 void vTaskDelayUntil(TickType_t *last, TickType_t period) {
     CHECK(critical_depth == 0 && scheduler_depth == 0);
     if (++delay_calls > cycles) longjmp(finish, 1);
@@ -259,6 +274,9 @@ static void setup(void) {
     safety_fault_revision = 0U; safety_fault_tick = 0U; safety_has_fault = false;
     safety_task_handle = NULL; robot_state = ROBOT_STATE_MANUAL; event_queue = (void *)1;
     command_generation = 0U;
+    has_stop = false; last_stop_tick = 0U;
+    stop_pending = false; mode_entry_tick = clock_tick - 1U;
+    uart_response[0] = '\0'; uart_rearms = 0U;
     memset(&task_context, 0, sizeof(task_context));
     memset(&pwm, 0, sizeof(pwm)); memset(&pins, 0, sizeof(pins));
     left_motor = (MotorHandle_t){ .htim = &pwm, .channel = 0U,
@@ -435,6 +453,304 @@ static void test_public_velocity_control(void) {
     CHECK((TickType_t)(clock_tick - queued_target.issued_tick) == 500U);
     expect_zero(); CHECK(pi_calls == 0U);
     PASS("deadline crossed while consuming a public command prevents stale PI actuation");
+}
+
+static void uart_feed(DrvUart_t *uart, const char *frame) {
+    while (*frame) {
+        uart->rx_byte = (uint8_t)*frame++;
+        DrvUart_RxCallback(uart);
+    }
+}
+static bool uart_consume(DrvUart_t *uart) {
+    char frame[UART_RX_BUFFER_SIZE];
+    TickType_t tick;
+    if (!DrvUart_GetMessageTimed(uart, frame, sizeof(frame), &tick)) return false;
+    TaskComms_ProcessMessage(uart, frame, tick);
+    return true;
+}
+static void test_motion_commands(void) {
+    static const char *frames[] = {
+        "AVANZAR\n", "RETROCEDER\n", "GIRAR_IZQUIERDA\n", "GIRAR_DERECHA\n"
+    };
+    static const int32_t expected[][2] = {
+        {1600, 1600}, {-1600, -1600}, {-1200, 1200}, {1200, -1200}
+    };
+    DrvUart_t uart;
+    UART_HandleTypeDef peripheral = {0};
+    for (unsigned i = 0; i < 4U; ++i) {
+        setup(); DrvUart_Init(&uart, &peripheral); DrvUart_StartReceive(&uart);
+        uart_feed(&uart, frames[i]); CHECK(uart_consume(&uart));
+        CHECK(strcmp(uart_response, "MOVE_ACCEPTED\n") == 0);
+        CHECK(queued_target.left_speed_cps == expected[i][0]);
+        CHECK(queued_target.right_speed_cps == expected[i][1]);
+        CHECK(queued_target.issued_tick == 1000U);
+        run_motor(1);
+        CHECK(task_context.left_target_cps == expected[i][0]);
+        CHECK(task_context.right_target_cps == expected[i][1]);
+        CHECK((left_motor.current_speed > 0) == (expected[i][0] > 0));
+        CHECK((right_motor.current_speed > 0) == (expected[i][1] > 0));
+        CHECK(pwm.compare[0] > 0 && pwm.compare[0] <= 840U);
+        CHECK(pwm.compare[1] > 0 && pwm.compare[1] <= 840U);
+        PASS("B6 UART mapping exercises real motion layer PI and limited driver");
+    }
+    setup(); DrvUart_Init(&uart, &peripheral);
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    run_motor(1); uart_feed(&uart, "DETENER\n"); CHECK(uart_consume(&uart));
+    expect_zero(); CHECK(robot_state == ROBOT_STATE_MANUAL);
+    run_motor(3); expect_zero();
+    PASS("B6 DETENER immediately clears objectives integrals and PWM without leaving MANUAL");
+
+    const RobotControlState_t rejected[] = { ROBOT_STATE_IDLE, ROBOT_STATE_SAFETY_STOP, ROBOT_STATE_AUTONOMOUS };
+    for (unsigned i = 0U; i < 3U; ++i) {
+        setup(); robot_state = rejected[i]; DrvUart_Init(&uart, &peripheral);
+        uart_feed(&uart, "AVANZAR\n"); CHECK(uart_consume(&uart));
+        CHECK(strcmp(uart_response, "MOVE_REJECTED\n") == 0 && !target_pending);
+        run_motor(1); expect_zero();
+        PASS("B6 manual UART rejects non-MANUAL state without emitting a target");
+    }
+    setup(); safety_stop_active = true;
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    CHECK(!Motion_Execute(MOTION_HALT, ROBOT_STATE_MANUAL, clock_tick));
+    CHECK(!target_pending); run_motor(1); expect_zero();
+    PASS("B6 Safety block rejects motion regardless of MANUAL state");
+    setup(); CHECK(!Motion_Execute((MotionCommand_t)99, ROBOT_STATE_MANUAL, clock_tick));
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_IDLE, clock_tick));
+    CHECK(!target_pending && command_generation == 0U);
+    PASS("B6 invalid order or requested mode cannot publish a target");
+
+    setup(); mode_entry_tick = clock_tick - 1000U;
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick - 499U));
+    CHECK(queued_target.issued_tick == clock_tick - 499U);
+    run_motor(1); expect_zero();
+    PASS("B6 age 499 admitted but deadline before consumption prevents PWM");
+    setup(); mode_entry_tick = 0U;
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick - 500U));
+    CHECK(!target_pending); PASS("B6 age exactly 500 is rejected at publication");
+    setup(); CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    uint32_t generation = command_generation;
+    run_motor(49); CHECK(pwm.compare[0] > 0U);
+    run_motor(1); expect_zero(); run_motor(10); expect_zero();
+    CHECK(command_generation == generation && !target_pending);
+    PASS("B6 single emission expires at 500 ms and never renews automatically");
+
+    setup(); CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    run_motor(1); CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)); expect_zero();
+    CHECK(TaskControlRobot_IsStopPending());
+    CHECK(!Motion_Execute(MOTION_REVERSE, ROBOT_STATE_MANUAL, clock_tick));
+    run_motor(1); expect_zero(); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE && !TaskControlRobot_IsStopPending());
+    PASS("B6 accepted STOP zeroes PWM immediately and blocks publication before FSM drain");
+    setup(); CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    run_motor(1);
+    for (unsigned i = 0U; i < 8U; ++i) CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_START_MANUAL));
+    CHECK(!TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)); expect_zero();
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    run_fsm(1); CHECK(robot_state == ROBOT_STATE_IDLE); expect_zero();
+    PASS("B6 full event queue cannot prevent STOP or its eventual IDLE transition");
+
+    setup(); TickType_t old = clock_tick;
+    TaskControlRobot_ProcessEvent(ROBOT_EVENT_STOP);
+    TaskControlRobot_ProcessEvent(ROBOT_EVENT_START_MANUAL);
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, old));
+    CHECK(!target_pending); run_motor(1); expect_zero();
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    run_motor(1); CHECK(pwm.compare[0] > 0U);
+    PASS("B6 same-tick STOP MANUAL rejects old or ambiguous order and admits later fresh order");
+    setup(); mode_entry_tick = clock_tick;
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    ++clock_tick;
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    PASS("B6 mode entry and order in same tick conservatively require a fresh later tick");
+    recovery(); TaskControlRobot_ProcessEvent(ROBOT_EVENT_SAFETY_STOP);
+    CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET)); run_fsm(1);
+    CHECK(robot_state == ROBOT_STATE_IDLE);
+    TickType_t before_manual = clock_tick;
+    TaskControlRobot_ProcessEvent(ROBOT_EVENT_START_MANUAL);
+    CHECK(!Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, before_manual));
+    run_motor(1); expect_zero();
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    run_motor(1); CHECK(pwm.compare[0] > 0U);
+    PASS("B6 explicit recovery and MANUAL do not revive a pre-transition order");
+
+    setup(); overwrite_action = 1;
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    CHECK(queued_target.generation != command_generation); run_motor(1); expect_zero();
+    PASS("B6 STOP MANUAL between admission and enqueue cannot execute old generation");
+    setup(); fault_at_next_outer_exit = 1;
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    CHECK(TaskSafety_IsStopActive()); run_motor(1); expect_zero();
+    PASS("B6 concurrent Safety after admission invalidates late queued command");
+    setup(); CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, clock_tick));
+    ++clock_tick; CHECK(Motion_Execute(MOTION_HALT, ROBOT_STATE_MANUAL, clock_tick));
+    run_motor(1); expect_zero();
+    PASS("B6 DETENER invalidates an unconsumed movement generation");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVAN"); ++clock_tick;
+    CHECK(Motion_Execute(MOTION_HALT, ROBOT_STATE_MANUAL, clock_tick));
+    ++clock_tick; uart_feed(&uart, "ZAR\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response, "MOVE_REJECTED\n") == 0 && !target_pending);
+    run_motor(1); expect_zero();
+    PASS("B6 partial frame older than DETENER cannot restart motion in unchanged MANUAL");
+    setup(); clock_tick = 0U; mode_entry_tick = UINT32_MAX - 2U;
+    has_stop = true; last_stop_tick = UINT32_MAX - 3U;
+    CHECK(Motion_Execute(MOTION_FORWARD, ROBOT_STATE_MANUAL, 0U));
+    run_motor(1); CHECK(pwm.compare[0] > 0U);
+    clock_tick = 500U; run_motor(1); expect_zero();
+    PASS("B6 modular ordering and expiry accept legitimate tick zero across wrap");
+    setup(); robot_state = ROBOT_STATE_AUTONOMOUS;
+    CHECK(Motion_Execute(MOTION_TURN_LEFT, ROBOT_STATE_AUTONOMOUS, clock_tick));
+    run_motor(1); CHECK(left_motor.current_speed < 0 && right_motor.current_speed > 0);
+    PASS("B6 reusable API can explicitly require AUTO without creating a producer or changing modes");
+
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR\nSTOP\nRETROCEDER\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response, "STOP_QUEUED\n") == 0 && !target_pending);
+    CHECK(!uart_consume(&uart)); run_fsm(1); expect_zero();
+    PASS("B6 STOP replaces pending motion and cannot be replaced by subsequent motion");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR\nDETENER\nRETROCEDER\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response, "MOVE_ACCEPTED\n") == 0 && has_stop && !target_pending);
+    PASS("B6 DETENER replaces pending ordinary command and discards following motion");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "DETENER\nSTOP\n"); CHECK(uart_consume(&uart));
+    CHECK(TaskControlRobot_IsStopPending()); PASS("B6 STOP takes precedence over DETENER");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR\nRETROCEDER\n"); CHECK(uart_consume(&uart));
+    CHECK(queued_target.left_speed_cps == 1600 && !uart_consume(&uart));
+    PASS("B6 bounded mailbox does not accumulate or renew a burst of movements");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR\r\n"); CHECK(uart_consume(&uart));
+    CHECK(queued_target.left_speed_cps == 1600);
+    PASS("B6 CRLF produces a complete recognized command");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVAN"); clock_tick += 501U; uart_feed(&uart, "ZAR\n");
+    CHECK(uart_consume(&uart) && strcmp(uart_response, "MOVE_REJECTED\n") == 0);
+    CHECK(!target_pending); PASS("B6 partial frame is dated at first byte and cannot gain freshness at LF");
+    setup(); robot_state = ROBOT_STATE_IDLE; DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVAN"); ++clock_tick;
+    TaskControlRobot_ProcessEvent(ROBOT_EVENT_START_MANUAL); ++clock_tick;
+    uart_feed(&uart, "ZAR\n"); CHECK(uart_consume(&uart)); CHECK(!target_pending);
+    PASS("B6 frame started before MANUAL cannot be admitted after mode change");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR\n"); clock_tick += 500U;
+    CHECK(uart_consume(&uart) && !target_pending);
+    PASS("B6 complete frame held in mailbox for 500 ms is not rejuvenated on consumption");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    for (unsigned i = 0; i < 70U; ++i) uart_feed(&uart, "X");
+    uart_feed(&uart, "AVANZAR\n"); CHECK(!uart_consume(&uart)); CHECK(!target_pending);
+    uart_feed(&uart, "AVANZAR\n"); CHECK(uart_consume(&uart) && target_pending);
+    PASS("B6 oversized frame discarded through LF without executing a valid suffix");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR"); uart.rx_byte = 0U; DrvUart_RxCallback(&uart);
+    uart_feed(&uart, "\n"); CHECK(!uart_consume(&uart));
+    uart.rx_byte = 0U; DrvUart_RxCallback(&uart);
+    uart_feed(&uart, "AVANZAR\n"); CHECK(uart_consume(&uart) && target_pending);
+    PASS("B6 embedded NUL invalidates frame while leading boot NUL remains tolerated");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR\rX\n"); CHECK(!uart_consume(&uart));
+    uart_feed(&uart, "AVANZAR\t\n"); CHECK(!uart_consume(&uart));
+    CHECK(!target_pending); PASS("B6 malformed CR and embedded control bytes cannot actuate");
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "AVANZAR\n"); char small[4]; TickType_t tick = 0U;
+    CHECK(!DrvUart_GetMessageTimed(&uart, small, sizeof(small), &tick));
+    CHECK(small[0] == '\0' && !DrvUart_IsMessageReady(&uart));
+    CHECK(!DrvUart_GetMessageTimed(NULL, small, sizeof(small), &tick));
+    PASS("B6 bounded copy cannot truncate received text into another command");
+    static const char *invalid[] = {"avanzar\n", "AVANZAR 1700\n", "GIRO\n", " AVANZAR\n", "\n"};
+    for (unsigned i = 0; i < 5U; ++i) {
+        setup(); DrvUart_Init(&uart, &peripheral); uart_feed(&uart, invalid[i]);
+        bool got = uart_consume(&uart);
+        CHECK(i == 4U ? !got : got && strcmp(uart_response, "ERR_UNKNOWN\n") == 0);
+        CHECK(!target_pending && command_generation == 0U);
+        PASS("B6 malformed or unknown command emits no target");
+    }
+    setup(); DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "PING\n"); CHECK(uart_consume(&uart)); CHECK(strcmp(uart_response, "PONG\n") == 0);
+    uart_feed(&uart, "STATUS\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response, "STATE=2 FAULTS=0 STOP=0\n") == 0);
+    uart_feed(&uart, "RESET\n"); CHECK(uart_consume(&uart)); CHECK(strcmp(uart_response, "RESET_QUEUED\n") == 0);
+    uart_feed(&uart, "MANUAL\n"); CHECK(uart_consume(&uart)); CHECK(strcmp(uart_response, "MANUAL_QUEUED\n") == 0);
+    PASS("B6 legacy PING STATUS RESET MANUAL responses remain compatible");
+}
+
+/* B6.5: real UART/FSM/Safety/motor paths. Only the sensor publication is
+ * substituted: a transient cliff must remain latched independently of STOP.
+ */
+static void b65_sensor_snapshot(uint8_t cliff) {
+    input.timestamp = clock_tick;
+    input.timestamp_ultrasonido_frontal = clock_tick - 1U;
+    input.timestamp_ultrasonido_trasero = clock_tick - 1U;
+    input.hay_caida = cliff;
+}
+static void b65_uart_command(DrvUart_t *uart, const char *frame, const char *response) {
+    uart_feed(uart, frame);
+    CHECK(uart_consume(uart));
+    CHECK(strcmp(uart_response, response) == 0);
+}
+static void b65_start_manual(DrvUart_t *uart, UART_HandleTypeDef *peripheral) {
+    setup(); safety_stop_active = true; robot_state = ROBOT_STATE_SAFETY_STOP;
+    DrvUart_Init(uart, peripheral);
+    b65_uart_command(uart, "RESET\n", "RESET_QUEUED\n"); run_fsm(1);
+    b65_uart_command(uart, "STATUS\n", "STATE=0 FAULTS=0 STOP=0\n");
+    b65_uart_command(uart, "MANUAL\n", "MANUAL_QUEUED\n"); run_fsm(1);
+    b65_uart_command(uart, "STATUS\n", "STATE=2 FAULTS=0 STOP=0\n");
+    ++clock_tick; /* A fresh command strictly after the mode transition. */
+}
+static void test_stop_b65(void) {
+    DrvUart_t uart;
+    UART_HandleTypeDef peripheral = {0};
+    b65_start_manual(&uart, &peripheral);
+    const char *frames[] = {
+        "AVANZAR\n", "RETROCEDER\n", "GIRAR_IZQUIERDA\n", "GIRAR_DERECHA\n", "DETENER\n"
+    };
+    for (unsigned i = 0U; i < 5U; ++i) {
+        ++clock_tick;
+        b65_uart_command(&uart, frames[i], "MOVE_ACCEPTED\n"); run_motor(1);
+    }
+    b65_uart_command(&uart, "STOP\n", "STOP_QUEUED\n"); expect_zero();
+    CHECK(TaskSafety_GetFaults() == SAFETY_FAULT_NONE && !TaskSafety_IsStopActive());
+    run_fsm(1); b65_sensor_snapshot(0U); run_safety(1); run_fsm(1);
+    b65_uart_command(&uart, "STATUS\n", "STATE=0 FAULTS=0 STOP=0\n"); expect_zero();
+    PASS("B6.5 RESET MANUAL five accepted orders STOP ends IDLE without creating faults");
+
+    for (unsigned safety_first = 0U; safety_first < 2U; ++safety_first) {
+        b65_start_manual(&uart, &peripheral);
+        b65_uart_command(&uart, "AVANZAR\n", "MOVE_ACCEPTED\n"); run_motor(1);
+        CHECK(pwm.compare[0] > 0U && pwm.compare[1] > 0U);
+        TickType_t old_origin = clock_tick;
+        /* Leave an old motion in the actual motor queue across STOP/reset. */
+        b65_uart_command(&uart, "RETROCEDER\n", "MOVE_ACCEPTED\n");
+        CHECK(target_pending);
+        if (safety_first) { b65_sensor_snapshot(1U); run_safety(1); }
+        b65_uart_command(&uart, "STOP\n", "STOP_QUEUED\n"); expect_zero();
+        CHECK(TaskSafety_GetFaults() == (safety_first ? SAFETY_FAULT_CLIFF : SAFETY_FAULT_NONE));
+        if (!safety_first) { b65_sensor_snapshot(1U); run_safety(1); }
+        CHECK(TaskSafety_GetFaults() == 1U);
+        run_fsm(1);
+        b65_uart_command(&uart, "STATUS\n", "STATE=3 FAULTS=1 STOP=1\n"); expect_zero();
+        PASS("B6.5 cliff before or after STOP produces exact observed latched status");
+
+        uint32_t revision = safety_fault_revision;
+        clock_tick += 81000U;
+        b65_sensor_snapshot(0U); run_safety(1); run_fsm(1); run_motor(1);
+        CHECK(safety_fault_revision == revision); /* No new fault is needed. */
+        b65_uart_command(&uart, "STATUS\n", "STATE=3 FAULTS=1 STOP=1\n"); expect_zero();
+        PASS("B6.5 transient cliff remains latched beyond 80 seconds with fresh safe sensors");
+
+        b65_uart_command(&uart, "MANUAL\n", "MANUAL_QUEUED\n"); run_fsm(1);
+        CHECK(robot_state == ROBOT_STATE_SAFETY_STOP); expect_zero();
+        b65_sensor_snapshot(0U);
+        b65_uart_command(&uart, "RESET\n", "RESET_QUEUED\n"); run_fsm(1); run_motor(1);
+        b65_uart_command(&uart, "STATUS\n", "STATE=0 FAULTS=0 STOP=0\n"); expect_zero();
+        b65_uart_command(&uart, "MANUAL\n", "MANUAL_QUEUED\n"); run_fsm(1); run_motor(1);
+        CHECK(robot_state == ROBOT_STATE_MANUAL); expect_zero();
+        CHECK(!Motion_Execute(MOTION_REVERSE, ROBOT_STATE_MANUAL, old_origin));
+        expect_zero();
+        b65_uart_command(&uart, "AVANZAR\n", "MOVE_ACCEPTED\n"); run_motor(1);
+        CHECK(pwm.compare[0] > 0U && pwm.compare[1] > 0U);
+        b65_uart_command(&uart, "STOP\n", "STOP_QUEUED\n"); run_fsm(1); expect_zero();
+        PASS("B6.5 reset needs new safe captures and MANUAL cannot restore pre-STOP motion");
+    }
 }
 
 int main(void) {
@@ -764,6 +1080,8 @@ int main(void) {
 
     test_motor_encoder_regressions();
     test_public_velocity_control();
+    test_motion_commands();
+    test_stop_b65();
     printf("RESULT %u tests passed; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
     return 0;

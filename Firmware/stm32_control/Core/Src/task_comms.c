@@ -5,6 +5,7 @@
 #include "main.h"
 #include "task_control_robot.h"
 #include "task_safety.h"
+#include "mid_motion.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -16,70 +17,75 @@
 /**
  * @brief Procesa los mensajes recibidos desde el ESP32.
  */
+static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickType_t issued_tick) {
+    if (strcmp(message, "PING") == 0) {
+        DrvUart_SendString(uart, "PONG\n");
+
+    } else if (strcmp(message, "STATUS") == 0) {
+
+        char response[64];
+
+        snprintf(
+            response,
+            sizeof(response),
+            "STATE=%u FAULTS=%lu STOP=%u\n",
+            (unsigned int)TaskControlRobot_GetState(),
+            (unsigned long)TaskSafety_GetFaults(),
+            TaskSafety_IsStopActive() ? 1U : 0U
+        );
+
+        DrvUart_SendString(uart, response);
+
+    } else if (strcmp(message, "RESET") == 0) {
+
+        if (TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET)) {
+            DrvUart_SendString(uart, "RESET_QUEUED\n");
+        } else {
+            DrvUart_SendString(uart, "RESET_QUEUE_ERROR\n");
+        }
+
+    } else if (strcmp(message, "MANUAL") == 0) {
+
+        if (TaskControlRobot_SendEvent(ROBOT_EVENT_START_MANUAL)) {
+            DrvUart_SendString(uart, "MANUAL_QUEUED\n");
+        } else {
+            DrvUart_SendString(uart, "MANUAL_QUEUE_ERROR\n");
+        }
+
+    } else if (strcmp(message, "STOP") == 0) {
+
+        if (TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)) {
+            DrvUart_SendString(uart, "STOP_QUEUED\n");
+        } else {
+            DrvUart_SendString(uart, "STOP_QUEUE_ERROR\n");
+        }
+
+    } else {
+        MotionCommand_t command;
+        if (strcmp(message, "AVANZAR") == 0) command = MOTION_FORWARD;
+        else if (strcmp(message, "RETROCEDER") == 0) command = MOTION_REVERSE;
+        else if (strcmp(message, "GIRAR_IZQUIERDA") == 0) command = MOTION_TURN_LEFT;
+        else if (strcmp(message, "GIRAR_DERECHA") == 0) command = MOTION_TURN_RIGHT;
+        else if (strcmp(message, "DETENER") == 0) command = MOTION_HALT;
+        else {
+            // Comando no reconocido.
+            DrvUart_SendString(uart, "ERR_UNKNOWN\n");
+            return;
+        }
+        DrvUart_SendString(uart, Motion_Execute(command, ROBOT_STATE_MANUAL, issued_tick) ?
+            "MOVE_ACCEPTED\n" : "MOVE_REJECTED\n");
+    }
+}
+
 static void TaskComms_Run(void *parameters) {
     DrvUart_t *uart = (DrvUart_t *)parameters;
     char message[UART_RX_BUFFER_SIZE];
-
     TickType_t last_wake_time = xTaskGetTickCount();
-
     for (;;) {
-        vTaskDelayUntil(&last_wake_time,
-                        pdMS_TO_TICKS(TASK_COMMS_PERIOD_MS));
-
-        // Verifica si hay un mensaje completo disponible.
-        if (DrvUart_IsMessageReady(uart) == 0U) {
-            continue;
-        }
-
-        // Recupera el mensaje recibido.
-        DrvUart_GetMessage(uart, message,
-                           (uint16_t)sizeof(message));
-
-        if (strcmp(message, "PING") == 0) {
-            DrvUart_SendString(uart, "PONG\n");
-
-        } else if (strcmp(message, "STATUS") == 0) {
-
-            char response[64];
-
-            snprintf(
-                response,
-                sizeof(response),
-                "STATE=%u FAULTS=%lu STOP=%u\n",
-                (unsigned int)TaskControlRobot_GetState(),
-                (unsigned long)TaskSafety_GetFaults(),
-                TaskSafety_IsStopActive() ? 1U : 0U
-            );
-
-            DrvUart_SendString(uart, response);
-
-        } else if (strcmp(message, "RESET") == 0) {
-
-            if (TaskControlRobot_SendEvent(ROBOT_EVENT_SAFETY_RESET)) {
-                DrvUart_SendString(uart, "RESET_QUEUED\n");
-            } else {
-                DrvUart_SendString(uart, "RESET_QUEUE_ERROR\n");
-            }
-
-        } else if (strcmp(message, "MANUAL") == 0) {
-
-            if (TaskControlRobot_SendEvent(ROBOT_EVENT_START_MANUAL)) {
-                DrvUart_SendString(uart, "MANUAL_QUEUED\n");
-            } else {
-                DrvUart_SendString(uart, "MANUAL_QUEUE_ERROR\n");
-            }
-
-        } else if (strcmp(message, "STOP") == 0) {
-
-            if (TaskControlRobot_SendEvent(ROBOT_EVENT_STOP)) {
-                DrvUart_SendString(uart, "STOP_QUEUED\n");
-            } else {
-                DrvUart_SendString(uart, "STOP_QUEUE_ERROR\n");
-            }
-
-        } else {
-            // Comando no reconocido.
-            DrvUart_SendString(uart, "ERR_UNKNOWN\n");
+        vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(TASK_COMMS_PERIOD_MS));
+        TickType_t issued_tick;
+        if (DrvUart_GetMessageTimed(uart, message, sizeof(message), &issued_tick)) {
+            TaskComms_ProcessMessage(uart, message, issued_tick);
         }
     }
 }

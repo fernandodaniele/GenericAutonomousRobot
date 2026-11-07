@@ -10,105 +10,86 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-/**
- * @brief Inicializa la estructura del driver UART.
- * @param uart Puntero a la estructura del driver.
- * @param huart Puntero al handle UART generado por HAL.
- */
+/** @brief Inicializa ambos buffers y el estado de recepcion. */
 void DrvUart_Init(DrvUart_t *uart, UART_HandleTypeDef *huart) {
+    memset(uart, 0, sizeof(*uart));
     uart->huart = huart;
-    uart->rx_byte = 0;
-    uart->rx_index = 0;
-    uart->message_ready = 0;
-    memset(uart->rx_buffer, 0, UART_RX_BUFFER_SIZE);
 }
 
-/**
- * @brief Inicia la recepción UART por interrupción byte a byte.
- * @param uart Puntero a la estructura del driver.
- */
+/** @brief Inicia la recepcion UART por interrupcion byte a byte. */
 void DrvUart_StartReceive(DrvUart_t *uart) {
-    HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1);
+    (void)HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1U);
 }
 
-/**
- * @brief Procesa internamente el byte recibido por interrupción.
- * @param uart Puntero a la estructura del driver.
+/* Mailbox acotado: no acumula movimientos. STOP reemplaza cualquier pendiente,
+ * DETENER reemplaza trafico ordinario; un movimiento no desplaza una parada.
+ * ISR solo ensambla/fecha mensajes: no actua sobre FSM ni motores.
  */
 void DrvUart_RxCallback(DrvUart_t *uart) {
-
-    if (uart->message_ready == 0U) {
-
-        if (uart->rx_byte == '\n') {
-
-            // Ignorar mensajes vacios.
-            if (uart->rx_index > 0U) {
-
-                uart->rx_buffer[uart->rx_index] = '\0';
-                uart->rx_index = 0U;
+    uint8_t byte = uart->rx_byte;
+    if (byte == '\n') {
+        if (!uart->discard_frame && uart->rx_index != 0U) {
+            uart->frame_buffer[uart->rx_index] = '\0';
+            uint8_t priority = strcmp(uart->frame_buffer, "STOP") == 0 ? 2U :
+                (strcmp(uart->frame_buffer, "DETENER") == 0 ? 1U : 0U);
+            if (!uart->message_ready || priority > uart->message_priority) {
+                memcpy(uart->rx_buffer, uart->frame_buffer, uart->rx_index + 1U);
+                uart->message_tick = uart->frame_tick;
+                uart->message_priority = priority;
                 uart->message_ready = 1U;
             }
-
+        }
+        uart->rx_index = 0U;
+        uart->discard_frame = 0U;
+        uart->cr_seen = 0U;
+    } else if (!uart->discard_frame) {
+        if (byte == 0U && uart->rx_index == 0U && !uart->cr_seen) {
+            /* Conservar tolerancia al NUL de arranque, nunca al NUL embebido. */
+        } else if (byte == '\r' && !uart->cr_seen) {
+            uart->cr_seen = 1U;
+        } else if (uart->cr_seen || byte < 32U || byte > 126U ||
+                   uart->rx_index >= UART_RX_BUFFER_SIZE - 1U) {
+            /* Descartar hasta LF: un sufijo no puede convertirse en otra orden. */
+            uart->discard_frame = 1U;
         } else {
-
-            // Ignorar bytes NUL antes del inicio de una trama.
-            if (uart->rx_byte == 0U && uart->rx_index == 0U) {
-                // No almacenar ni avanzar el indice.
-
-            } else if (uart->rx_index < (UART_RX_BUFFER_SIZE - 1U)) {
-                uart->rx_buffer[uart->rx_index] = (char)uart->rx_byte;
-                uart->rx_index++;
-
-            } else {
-                uart->rx_index = 0U;
-                memset(uart->rx_buffer, 0, UART_RX_BUFFER_SIZE);
-            }
+            if (uart->rx_index == 0U) uart->frame_tick = xTaskGetTickCountFromISR();
+            uart->frame_buffer[uart->rx_index++] = (char)byte;
         }
     }
-
-    // Rearmar la recepcion del siguiente byte.
-    HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1);
+    (void)HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1U);
 }
 
-/**
- * @brief Indica si hay un mensaje completo disponible.
- * @param uart Puntero a la estructura del driver.
- * @return 1 si hay un mensaje listo, 0 si no hay mensaje.
- */
 uint8_t DrvUart_IsMessageReady(DrvUart_t *uart) {
     return uart->message_ready;
 }
 
-/**
- * @brief Copia el mensaje recibido hacia un buffer externo.
- * @param uart Puntero a la estructura del driver.
- * @param destination Buffer destino donde se copiará el mensaje.
- * @param destination_size Tamaño máximo del buffer destino.
- */
-void DrvUart_GetMessage(DrvUart_t *uart, char *destination, uint16_t destination_size) {
-    if (uart == NULL || destination == NULL || destination_size == 0U) {
-        return;
-    }
-
-    // Protege el buffer compartido con la interrupción UART.
+bool DrvUart_GetMessageTimed(DrvUart_t *uart, char *destination,
+                            uint16_t destination_size, TickType_t *issued_tick) {
+    if (uart == NULL || destination == NULL || destination_size == 0U || issued_tick == NULL)
+        return false;
+    destination[0] = '\0';
     taskENTER_CRITICAL();
-
-    strncpy(destination, uart->rx_buffer, destination_size - 1U);
-    destination[destination_size - 1U] = '\0';
-
-    memset(uart->rx_buffer, 0, UART_RX_BUFFER_SIZE);
-    uart->message_ready = 0U;
-
+    bool ready = uart->message_ready != 0U;
+    bool complete = ready && strlen(uart->rx_buffer) < destination_size;
+    if (complete) {
+        strcpy(destination, uart->rx_buffer);
+        *issued_tick = uart->message_tick;
+    }
+    if (ready) {
+        uart->message_ready = 0U;
+        uart->message_priority = 0U;
+        uart->rx_buffer[0] = '\0';
+    }
     taskEXIT_CRITICAL();
+    return complete;
 }
 
-/**
- * @brief Envía un string por UART en modo bloqueante.
- * @param uart Puntero a la estructura del driver.
- * @param message Mensaje terminado en null a transmitir.
- */
+/* Compatibilidad con consumidores que no necesitan la fecha de origen. */
+void DrvUart_GetMessage(DrvUart_t *uart, char *destination, uint16_t destination_size) {
+    TickType_t unused;
+    (void)DrvUart_GetMessageTimed(uart, destination, destination_size, &unused);
+}
+
 void DrvUart_SendString(DrvUart_t *uart, const char *message) {
-    HAL_UART_Transmit(uart->huart, (uint8_t *)message, strlen(message), 50U);
+    (void)HAL_UART_Transmit(uart->huart, (uint8_t *)message, strlen(message), 50U);
 }
-
-

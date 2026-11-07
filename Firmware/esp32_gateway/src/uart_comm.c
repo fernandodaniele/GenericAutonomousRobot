@@ -80,6 +80,18 @@ void Uart_SendManual(void)
     ESP_LOGI(TAG, "Enviado a STM32: MANUAL");
 }
 
+/* Una pulsacion explicita = una trama; sin temporizador de renovacion. */
+static void Uart_SendMotion(const char *message) {
+    uart_write_bytes(UART_PORT, message, strlen(message));
+    ESP_LOGI(TAG, "Movimiento enviado: %s", message);
+}
+
+void Uart_SendForward(void) { Uart_SendMotion("AVANZAR\n"); }
+void Uart_SendReverse(void) { Uart_SendMotion("RETROCEDER\n"); }
+void Uart_SendLeft(void) { Uart_SendMotion("GIRAR_IZQUIERDA\n"); }
+void Uart_SendRight(void) { Uart_SendMotion("GIRAR_DERECHA\n"); }
+void Uart_SendHalt(void) { Uart_SendMotion("DETENER\n"); }
+
 void Uart_ReadResponse(void) {
     uint8_t rx_buffer[UART_RX_BUFFER_SIZE];
 

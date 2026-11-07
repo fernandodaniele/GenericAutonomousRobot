@@ -2,6 +2,7 @@
 #define TASK_CONTROL_ROBOT_H_
 
 #include <stdbool.h>
+#include "FreeRTOS.h"
 
 /**
  * @brief Estados de funcionamiento del robot.
@@ -41,5 +42,13 @@ bool TaskControlRobot_SendEvent(RobotControlEvent_t event);
  * @return Estado de la máquina de estados.
  */
 RobotControlState_t TaskControlRobot_GetState(void);
+
+/* Solicitud STOP recibida pero aun no procesada por la FSM. */
+bool TaskControlRobot_IsStopPending(void);
+
+/* Frescura respecto de la entrada efectiva al modo. Igual tick se rechaza
+ * conservadoramente: no puede probarse el orden entre recepcion y transicion.
+ */
+bool TaskControlRobot_AcceptsMotionAt(RobotControlState_t mode, TickType_t issued_tick);
 
 #endif /* TASK_CONTROL_ROBOT_H_ */

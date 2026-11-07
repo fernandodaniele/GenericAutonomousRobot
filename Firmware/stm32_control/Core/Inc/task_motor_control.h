@@ -2,6 +2,8 @@
 #define TASK_MOTOR_CONTROL_H_
 
 #include <stdint.h>
+#include "FreeRTOS.h"
+#include "task_control_robot.h"
 
 #include "drv_encoder.h"
 #include "drv_motor.h"
@@ -30,6 +32,15 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
  */
 void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
                                       int32_t right_speed_cps);
+
+/* Emision con fecha de origen (p.ej. primer byte UART), sin rejuvenecer cola.
+ * Exige modo indicado y origen estrictamente posterior al ultimo Stop y a la
+ * entrada al modo. Igual tick se rechaza. Cero/cero usa Stop B1 inmediato.
+ * true confirma admision/publicacion, no movimiento fisico ni ausencia futura
+ * de fallas. Contexto de tarea, nunca desde ISR.
+ */
+bool TaskMotorControl_TrySetTargetSpeedsAt(int32_t left_speed_cps, int32_t right_speed_cps,
+                                         TickType_t issued_tick, RobotControlState_t required_mode);
 
 /**
  * @brief Invalida consignas previas, reinicia PI y pone ambos PWM a cero.

@@ -187,3 +187,74 @@ Enumeraciones y máscaras confirmadas en la referencia indicada al inicio:
 
 La etapa D1 crea únicamente este manual. No implementa códigos, productores,
 cola, configuración del RTC ni escritura de `EVENTOS.CSV`.
+
+## 7. Contrato de argumentos y persistencia para D2.2
+
+Esta sección establece el contrato de diseño para las próximas implementaciones
+del consumidor. No describe funcionalidades de persistencia actualmente
+operativas. D2.1 dispone de la cola estática de ocho eventos y de la interfaz:
+
+```c
+BaseType_t Log_EventPublish(uint16_t code, uint32_t data1,
+                            uint32_t data2, uint32_t data3);
+```
+
+### Interpretación de los argumentos
+
+| Código | `data1` | `data2` | `data3` |
+|---|---|---|---|
+| 100 | Estado inicial | Máscara de fallas | Bloqueo |
+| 110 | Estado anterior | Estado nuevo | Evento FSM |
+| 201 | Bit 1 (valor decimal 1) | Máscara acumulada | 0 |
+| 202 | Bit 2 (valor decimal 2) | Máscara acumulada | 0 |
+| 203 | Bit 4 (valor decimal 4) | Máscara acumulada | 0 |
+| 204 | Bit 8 (valor decimal 8) | Máscara acumulada | 0 |
+| 210 | Fallas anteriores | 0 | 0 |
+| 300 | Estado al recibir STOP | 0 | 0 |
+| 900 | Cantidad de descartados | 0 | 0 |
+
+Los bits indicados son valores de máscara, no posiciones de bit. Los argumentos
+numéricos se representarán como enteros decimales sin signo en `DATO`, mediante
+las claves ya definidas en D1 y el separador literal `|`:
+
+- 100: `estado=data1|fallas=data2|bloqueo=data3`.
+- 110: `anterior=data1|nuevo=data2|evento=data3`.
+- 201–204: `bit=data1|mascara=data2`; `data3` no se serializa.
+- 210: exactamente `fallas_anteriores=N|fallas=0|bloqueo=0`, donde `N` es
+  `data1`. Los argumentos `data2` y `data3` deben ser cero.
+- 300: `estado=data1`; los argumentos no utilizados deben ser cero.
+- 900: `descartados=data1`; los argumentos no utilizados deben ser cero.
+
+En estas expresiones, `data1`, `data2` y `data3` se sustituyen por sus valores
+decimales; no se escriben literalmente sus nombres en el CSV. El código 204
+continúa reservado sin productor operativo. El código 900 todavía no está
+implementado. No se agregan ni redefinen códigos de D1.
+
+### Reglas de persistencia aprobadas para la implementación futura
+
+1. El archivo previsto es `0:/EVENTOS.CSV`, con las columnas
+   `FECHA_HORA,TICK,CODIGO,DATO`.
+2. `TICK` proviene del evento encolado y conserva el instante de publicación;
+   no se sustituye por el tick del momento de escritura.
+3. `FECHA_HORA` proviene del RTC cuando el consumidor procesa el evento. Si la
+   lectura falla o sus datos no son válidos, se permite dejar vacía exclusivamente
+   esa columna, conservando `TICK`, `CODIGO` y `DATO`. No se ajustará ni
+   configurará automáticamente el RTC.
+4. Los códigos desconocidos no se serializarán como eventos definidos ni se
+   confundirán con pérdidas por cola llena.
+5. La cabecera solo se escribirá al crear un archivo vacío. No se sobrescribirá
+   ni reparará automáticamente un CSV existente incompatible o con una última
+   fila incompleta.
+6. La primera implementación utilizará `f_sync()` por registro.
+7. Ante un error persistente de almacenamiento, se deshabilitará la escritura
+   hasta el siguiente reinicio, sin reintentos continuos.
+8. Mientras el almacenamiento permanezca deshabilitado, el consumidor podrá
+   drenar y descartar eventos para evitar que la cola quede saturada
+   permanentemente. Consumir o descartar un evento no equivale a haberlo
+   registrado.
+9. No se garantiza persistencia ante cortes de alimentación ni recuperación
+   automática de la SD.
+
+Este contrato no incorpora tareas, consumidores, productores, contador de
+pérdidas ni escritura de archivos. Su implementación requiere una autorización
+posterior.

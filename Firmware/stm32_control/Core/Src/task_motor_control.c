@@ -179,7 +179,13 @@ static void TaskMotorControl_Run(void *parameters) {
             target.generation == command_generation &&
             (!Navigation_IsCommandCurrent(target.navigation_session, now) ||
              (TickType_t)(now - target.issued_tick) >= pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS))) {
-            Navigation_CancelSession(target.navigation_session);
+            bool complete = false;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+            complete = enabled && state == ROBOT_STATE_AUTONOMOUS &&
+                (TickType_t)(now - target.issued_tick) < pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS) &&
+                Navigation_CompleteCommand(target.navigation_session, now);
+#endif
+            if (!complete) Navigation_CancelSession(target.navigation_session);
         }
 
         if (enabled && received == pdTRUE &&
@@ -212,7 +218,13 @@ static void TaskMotorControl_Run(void *parameters) {
                  !Navigation_IsCommandCurrent(context->navigation_session, now) ||
                  (TickType_t)(now - context->command_tick) >=
                  pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS))) {
-                Navigation_CancelSession(context->navigation_session);
+                bool complete = false;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+                complete = enabled && state == ROBOT_STATE_AUTONOMOUS &&
+                    (TickType_t)(now - context->command_tick) < pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS) &&
+                    Navigation_CompleteCommand(context->navigation_session, now);
+#endif
+                if (!complete) Navigation_CancelSession(context->navigation_session);
             }
             TaskMotorControl_ClearTargets(context);
         }
@@ -238,6 +250,11 @@ static void TaskMotorControl_Run(void *parameters) {
                 Motor_GetPwmLimit(context->motor_right));
             Motor_SetSpeed(context->motor_right, context->right_pwm_command);
         }
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+        if (context->command_mode == ROBOT_STATE_AUTONOMOUS) {
+            Navigation_CommandApplied(context->navigation_session, now);
+        }
+#endif
         taskEXIT_CRITICAL();
     }
 }
@@ -293,11 +310,16 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
     TickType_t now = xTaskGetTickCount();
 
     // La API manual no puede seleccionar AUTO mediante un parametro.
+    NavigationState_t phase = NAV_DETENIDO;
+    if (left_speed_cps == MOTION_DRIVE_CPS && right_speed_cps == MOTION_DRIVE_CPS) phase = NAV_AVANZAR;
+    if (left_speed_cps == -MOTION_DRIVE_CPS && right_speed_cps == -MOTION_DRIVE_CPS) phase = NAV_RETROCEDER_ACOTADO;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    if (left_speed_cps == NAV_TURN_LEFT_CPS && right_speed_cps == NAV_TURN_RIGHT_CPS) phase = NAV_GIRAR_ACOTADO;
+#endif
     bool authorized_source = from_navigation ?
         (dated && required_mode == ROBOT_STATE_AUTONOMOUS &&
          state == ROBOT_STATE_AUTONOMOUS && TaskControlRobot_IsCurrentTask() &&
-         left_speed_cps == right_speed_cps &&
-         (left_speed_cps == MOTION_DRIVE_CPS || left_speed_cps == -MOTION_DRIVE_CPS)) :
+         phase != NAV_DETENIDO) :
         state == ROBOT_STATE_MANUAL;
     if (TaskSafety_IsStopActive() || TaskControlRobot_IsStopPending() ||
         !authorized_source || target_speed_queue == NULL) {
@@ -316,7 +338,7 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
         return true;
     }
     if (from_navigation &&
-        !Navigation_ConsumeEmission(navigation_session, issued_tick, now, left_speed_cps < 0)) {
+        !Navigation_ConsumeEmission(navigation_session, issued_tick, now, phase)) {
         taskEXIT_CRITICAL();
         return false;
     }

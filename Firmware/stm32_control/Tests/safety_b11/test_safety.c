@@ -305,6 +305,10 @@ static void setup(void) {
     current_task = (TaskHandle_t)12; control_task_handle = CONTROL_TASK_ID;
     navigation.active = false; navigation.state = NAV_DETENIDO;
     navigation.emission_ready = false; navigation.session = 0U;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    navigation.reverse_applied = false; navigation.turn_used = false;
+    navigation.turn_started_tick = 0U;
+#endif
     uart_response[0] = '\0'; uart_rearms = 0U;
     memset(&task_context, 0, sizeof(task_context));
     memset(&pwm, 0, sizeof(pwm)); memset(&pins, 0, sizeof(pins));
@@ -983,8 +987,9 @@ static void test_auto_b72(void) {
 
 #include "test_navigation.c"
 #include "test_navigation_reverse.c"
+#include "test_navigation_turn.c"
 
-int main(void) {
+int run_permanent_regressions(void) {
     CHECK(TaskSafety_IsStopActive() && robot_state == ROBOT_STATE_IDLE);
     PASS("startup blocked");
     setup(); TaskSafety_Create(); CHECK(TaskSafety_IsStopActive());
@@ -1317,7 +1322,18 @@ int main(void) {
     test_auto_b72();
     test_navigation_b73();
     test_navigation_b75();
-    printf("RESULT %u tests passed; queues/waits outside critical sections; "
-           "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
+    return 0;
+}
+
+int main(void) {
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    test_turn_enabled_b77();
+#else
+    (void)run_permanent_regressions();
+    test_turn_disabled_b77();
+#endif
+    printf("RESULT %u tests passed; TURN=%u LEFT=%u; queues/waits outside critical sections; "
+           "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n",
+           tests, (unsigned)NAV_EXPERIMENTAL_TURN_ENABLED, (unsigned)NAV_TURN_LEFT);
     return 0;
 }

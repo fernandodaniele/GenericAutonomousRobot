@@ -1,6 +1,6 @@
-# Control de motores, seguridad y navegacion B7.5
+# Control de motores, seguridad y navegacion B7.7
 
-Base B7.5: rama G1-add/NavegacionAutonoma, HEAD 845d793.
+Base B7.7: rama G1-add/NavegacionAutonoma, HEAD bc00bbd.
 Este README describe el comportamiento permanente y las pruebas actuales.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
@@ -20,7 +20,11 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
   AUTO y agrega retroceso acotado con sesion/fase, direccion y permiso de un uso.
   Consulta, arquitectura, compilacion y validacion sin potencia:
   [B7_5_RETROCESO.md](../../../../Docs/B7_5_RETROCESO.md).
-  Regresion actual: 350 casos (281 anteriores +69 B7.5), mas 19 ultrasonicos.
+  Regresion normal actual: 354 casos (350 anteriores +4 de giro deshabilitado),
+  mas 19 ultrasonicos. El giro experimental esta deshabilitado por defecto.
+  Su cobertura adicional ejecuta 55 casos host con giro izquierdo y otros 55
+  con giro derecho, sobre los mismos fuentes de produccion:
+  [B7_7_GIRO_EXPERIMENTAL.md](../../../../Docs/B7_7_GIRO_EXPERIMENTAL.md).
   Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
 - No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas
   ni registros historicos de ensayo en RAM.
@@ -179,11 +183,19 @@ Desde la raiz, con GCC nativo/MinGW disponible:
 & .\Firmware\stm32_control\Tests\ultrasound\run.bat 'C:\MinGW\bin\gcc.exe'
 ~~~
 
-El ejecutor de seguridad compila UNA variante, sin opciones de banco, con C11,
-Wall/Wextra/Werror y conteo de invocaciones PI solo en host. Salidas:
+El ejecutor de seguridad compila con C11, Wall/Wextra/Werror y conteo de
+invocaciones PI solo en host. Ejecuta primero todas las 350 regresiones
+anteriores y 4 casos nuevos con la configuracion normal. Luego ejecuta 55 casos
+experimentales para cada sentido, con NAV_EXPERIMENTAL_TURN_ENABLED=1 y
+NAV_TURN_LEFT=1/0. Son variantes nativas de prueba, no nuevos firmware de banco.
+Las expectativas historicas de finalizar el retroceso sin giro se comprueban
+en la variante normal; no se eliminan ni se relajan para habilitar el giro.
+Salidas:
 
 - Firmware/stm32_control/build/safety_tests/test_safety.exe
 - Firmware/stm32_control/build/safety_tests/results.log
+- Firmware/stm32_control/build/safety_tests/test_turn_left_results.log
+- Firmware/stm32_control/build/safety_tests/test_turn_right_results.log
 - Firmware/stm32_control/build/ultrasound_tests/results.log
 
 Base B5 de seguridad/control: 123 casos. Se preservaron los 99 de B1/B1.1.1 y
@@ -196,8 +208,9 @@ mid_motion.c, drv_uart.c y task_comms.c, con HAL UART sustituida. Comprueba
 las cinco traducciones, admision por modo/Safety, STOP inmediato aun con cola
 llena, DETENER, rearme, mismo tick, generaciones y carreras, vencimiento desde
 origen, ausencia de renovacion, wrap/tick cero, prioridad STOP en el mailbox,
-CRLF, overflow, NUL embebido y comandos desconocidos. run.bat ejecuta todo el
-conjunto permanente; no hay variantes de banco.
+CRLF, overflow, NUL embebido y comandos desconocidos. run.bat conserva todo el
+conjunto permanente y agrega las pruebas experimentales host descriptas arriba;
+no hay productores ni instrumentacion de banco en ARM.
 
 La cobertura incluye arranque, validez/antiguedad individual, obstaculos e IR,
 rearme/fallas concurrentes, STOP/consignas pendientes/generaciones/mismo tick,

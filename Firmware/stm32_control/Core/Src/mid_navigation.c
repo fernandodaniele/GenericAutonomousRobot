@@ -15,6 +15,11 @@ static struct {
     TickType_t started_tick;
     TickType_t reverse_started_tick;
     TickType_t decision_tick;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    TickType_t turn_started_tick;
+    bool reverse_applied;
+    bool turn_used;
+#endif
 } navigation = { .state = NAV_DETENIDO };
 
 void Navigation_Begin(TickType_t entered_tick) {
@@ -22,6 +27,11 @@ void Navigation_Begin(TickType_t entered_tick) {
     ++navigation.session;
     navigation.started_tick = entered_tick;
     navigation.reverse_started_tick = 0U;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    navigation.turn_started_tick = 0U;
+    navigation.reverse_applied = false;
+    navigation.turn_used = false;
+#endif
     navigation.state = NAV_ESPERAR_DATOS;
     navigation.active = true;
     navigation.emission_ready = false;
@@ -34,6 +44,9 @@ void Navigation_Cancel(void) {
     navigation.active = false;
     navigation.emission_ready = false;
     navigation.state = NAV_DETENIDO;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    navigation.reverse_applied = false;
+#endif
     taskEXIT_CRITICAL();
 }
 
@@ -53,25 +66,64 @@ void Navigation_CancelSession(uint32_t session) {
 bool Navigation_IsCommandCurrent(uint32_t session, TickType_t now) {
     taskENTER_CRITICAL();
     bool current = navigation.active &&
-        (navigation.state == NAV_AVANZAR || navigation.state == NAV_RETROCEDER_ACOTADO) &&
+        (navigation.state == NAV_AVANZAR || navigation.state == NAV_RETROCEDER_ACOTADO
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+         || navigation.state == NAV_GIRAR_ACOTADO
+#endif
+        ) &&
         navigation.session == session &&
         (TickType_t)(now - navigation.started_tick) < pdMS_TO_TICKS(NAV_SESSION_MAX_MS) &&
         (navigation.state != NAV_RETROCEDER_ACOTADO ||
-         (TickType_t)(now - navigation.reverse_started_tick) < pdMS_TO_TICKS(NAV_REVERSE_MAX_MS));
+         (TickType_t)(now - navigation.reverse_started_tick) < pdMS_TO_TICKS(NAV_REVERSE_MAX_MS))
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+        && (navigation.state != NAV_GIRAR_ACOTADO ||
+            (TickType_t)(now - navigation.turn_started_tick) < pdMS_TO_TICKS(NAV_TURN_MAX_MS))
+#endif
+        ;
     taskEXIT_CRITICAL();
     return current;
 }
 
 bool Navigation_ConsumeEmission(uint32_t session, TickType_t issued_tick, TickType_t now,
-                                bool reversing) {
+                                NavigationState_t phase) {
     taskENTER_CRITICAL();
     bool allowed = Navigation_IsCommandCurrent(session, now) &&
         navigation.emission_ready && issued_tick == navigation.decision_tick &&
-        reversing == (navigation.state == NAV_RETROCEDER_ACOTADO);
+        phase == navigation.state;
     if (allowed) navigation.emission_ready = false;
     taskEXIT_CRITICAL();
     return allowed;
 }
+
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+void Navigation_CommandApplied(uint32_t session, TickType_t now) {
+    taskENTER_CRITICAL();
+    if (navigation.state == NAV_RETROCEDER_ACOTADO && Navigation_IsCommandCurrent(session, now)) {
+        navigation.reverse_applied = true;
+    }
+    taskEXIT_CRITICAL();
+}
+
+/* Requiere seccion critica. Se reserva la ventana completa de 250 ms, incluida
+ * la siguiente iteracion sin comprimir el cronograma. Nunca renueva started_tick. */
+static bool Navigation_TurnReady(uint32_t session, TickType_t now) {
+    TickType_t age = (TickType_t)(now - navigation.started_tick);
+    return navigation.active && navigation.session == session &&
+        navigation.state == NAV_RETROCEDER_ACOTADO && navigation.reverse_applied &&
+        !navigation.turn_used &&
+        (TickType_t)(now - navigation.reverse_started_tick) >= pdMS_TO_TICKS(NAV_REVERSE_MAX_MS) &&
+        age < pdMS_TO_TICKS(NAV_SESSION_MAX_MS) &&
+        pdMS_TO_TICKS(NAV_SESSION_MAX_MS) - age >= pdMS_TO_TICKS(NAV_TURN_MAX_MS);
+}
+
+bool Navigation_CompleteCommand(uint32_t session, TickType_t now) {
+    taskENTER_CRITICAL();
+    bool complete = Navigation_TurnReady(session, now);
+    if (complete) navigation.emission_ready = false;
+    taskEXIT_CRITICAL();
+    return complete;
+}
+#endif
 
 void Navigation_Step(void) {
     if (!TaskControlRobot_IsCurrentTask()) return;
@@ -93,14 +145,35 @@ void Navigation_Step(void) {
     if (TaskControlRobot_GetState() != ROBOT_STATE_AUTONOMOUS ||
         TaskControlRobot_IsStopPending() || TaskSafety_IsStopActive() ||
         (TickType_t)(now - navigation.started_tick) >= pdMS_TO_TICKS(NAV_SESSION_MAX_MS) ||
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+        (navigation.state == NAV_GIRAR_ACOTADO &&
+         (TickType_t)(now - navigation.turn_started_tick) >= pdMS_TO_TICKS(NAV_TURN_MAX_MS))) {
+#else
         (navigation.state == NAV_RETROCEDER_ACOTADO &&
          (TickType_t)(now - navigation.reverse_started_tick) >= pdMS_TO_TICKS(NAV_REVERSE_MAX_MS))) {
+#endif
         TaskMotorControl_Stop();
         taskEXIT_CRITICAL();
         return;
     }
     uint32_t faults = available ? TaskSafety_EvaluateSnapshot(&data, now) : SAFETY_FAULT_SENSOR;
     bool finite = available && isfinite(data.distancia_m) && isfinite(data.distancia_trasera_m);
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    if (navigation.state == NAV_RETROCEDER_ACOTADO &&
+        (TickType_t)(now - navigation.reverse_started_tick) >= pdMS_TO_TICKS(NAV_REVERSE_MAX_MS)) {
+        bool turn = Navigation_TurnReady(session, now) && faults == SAFETY_FAULT_NONE && finite &&
+            data.distancia_trasera_m > (float)NAV_REAR_REVERSE_MIN_MM / 1000.0f;
+        TaskMotorControl_Stop();
+        if (turn) {
+            navigation.active = true;
+            navigation.state = NAV_GIRAR_ACOTADO;
+            navigation.turn_started_tick = now;
+            navigation.turn_used = true;
+        }
+        taskEXIT_CRITICAL();
+        return; /* Cero antes del giro; otra iteracion revalida sensores. */
+    }
+#endif
     /* Un obstaculo frontal vigente termina incluso la espera si aun falta el
      * trasero. No convertir una distancia frontal antigua en un dato vigente.
      */
@@ -108,7 +181,7 @@ void Navigation_Step(void) {
         (TickType_t)(now - data.timestamp) <= pdMS_TO_TICKS(TASK_SAFETY_SENSOR_TIMEOUT_MS) &&
         (TickType_t)(now - data.timestamp_ultrasonido_frontal) <=
             pdMS_TO_TICKS(TASK_SAFETY_ULTRASOUND_MAX_AGE_MS);
-    if (navigation.state != NAV_RETROCEDER_ACOTADO && front_current &&
+    if ((navigation.state == NAV_ESPERAR_DATOS || navigation.state == NAV_AVANZAR) && front_current &&
         data.distancia_m <= (float)NAV_FRONT_STOP_MM / 1000.0f) {
         bool reverse_allowed = navigation.state == NAV_AVANZAR &&
             faults == SAFETY_FAULT_NONE && finite &&
@@ -142,18 +215,29 @@ void Navigation_Step(void) {
     }
     if ((TickType_t)(now - navigation.started_tick) == 0U ||
         (navigation.state == NAV_RETROCEDER_ACOTADO &&
-         (TickType_t)(now - navigation.reverse_started_tick) == 0U)) {
+         (TickType_t)(now - navigation.reverse_started_tick) == 0U)
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+        || (navigation.state == NAV_GIRAR_ACOTADO &&
+            (TickType_t)(now - navigation.turn_started_tick) == 0U)
+#endif
+        ) {
         taskEXIT_CRITICAL();
         return; /* Igual tick que AUTO o parada de avance: no inventar orden. */
     }
     bool reversing = navigation.state == NAV_RETROCEDER_ACOTADO;
-    if (!reversing) navigation.state = NAV_AVANZAR;
+    bool turning = NAV_EXPERIMENTAL_TURN_ENABLED && navigation.state == NAV_GIRAR_ACOTADO;
+    if (!reversing && !turning) navigation.state = NAV_AVANZAR;
     navigation.decision_tick = now;
     navigation.emission_ready = true;
     taskEXIT_CRITICAL();
 
-    bool emitted = reversing ? Motion_NavigationReverse(now, session) :
-                               Motion_NavigationAdvance(now, session);
+    bool emitted;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    if (turning) emitted = Motion_NavigationTurn(now, session);
+    else
+#endif
+    emitted = reversing ? Motion_NavigationReverse(now, session) :
+                          Motion_NavigationAdvance(now, session);
     if (!emitted) {
         taskENTER_CRITICAL();
         if (navigation.active && navigation.session == session) TaskMotorControl_Stop();

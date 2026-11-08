@@ -15,6 +15,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#include "queue.h"
 #include "stm32f4xx_hal.h"
 
 #include <stdio.h>
@@ -23,6 +24,22 @@
 #define LOG_BUF_SIZE     160
 #define LOG_CDC_RETRIES  5
 #define LOG_FILE_PATH    "0:/GAR.LOG"
+#define LOG_EVENT_QUEUE_LENGTH 8U
+
+/* Datos por valor: la cola conserva una copia independiente del productor. */
+typedef struct
+{
+    TickType_t tick;
+    uint16_t code;
+    uint32_t data1;
+    uint32_t data2;
+    uint32_t data3;
+} LogEvent_t;
+
+/* Cola estatica: no reserva heap ni crea una tarea consumidora en D2.1. */
+static StaticQueue_t s_event_queue_cb;
+static uint8_t s_event_queue_storage[LOG_EVENT_QUEUE_LENGTH * sizeof(LogEvent_t)];
+static QueueHandle_t s_event_queue = NULL;
 
 static Ds1302_t         *s_rtc   = NULL;
 static SemaphoreHandle_t s_mutex = NULL;
@@ -103,6 +120,34 @@ void Log_Init(Ds1302_t *rtc)
     {
         s_mutex = xSemaphoreCreateMutex();
     }
+
+    /* Independiente del resultado de montaje SD. */
+    if (s_event_queue == NULL)
+    {
+        s_event_queue = xQueueCreateStatic(LOG_EVENT_QUEUE_LENGTH,
+                                           sizeof(LogEvent_t),
+                                           s_event_queue_storage,
+                                           &s_event_queue_cb);
+    }
+}
+
+BaseType_t Log_EventPublish(uint16_t code, uint32_t data1,
+                            uint32_t data2, uint32_t data3)
+{
+    LogEvent_t event;
+
+    if (s_event_queue == NULL)
+    {
+        return pdFAIL;
+    }
+
+    event.tick = xTaskGetTickCount();
+    event.code = code;
+    event.data1 = data1;
+    event.data2 = data2;
+    event.data3 = data3;
+
+    return xQueueSend(s_event_queue, &event, 0U);
 }
 
 void Log_Write(const char *level, const char *fmt, ...)

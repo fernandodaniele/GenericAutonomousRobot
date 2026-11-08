@@ -19,6 +19,7 @@
 #define MID_LOG_H
 
 #include "ds1302.h"
+#include "FreeRTOS.h"
 
 /** @brief  Línea de log nivel INFO. */
 #define LOG_INFO(fmt, ...)   Log_Write("INF", fmt, ##__VA_ARGS__)
@@ -38,5 +39,19 @@ void Log_Init(Ds1302_t *rtc);
  * @brief  Función interna — usar las macros LOG_* en lugar de llamarla directo.
  */
 void Log_Write(const char *level, const char *fmt, ...);
+
+/**
+ * @brief Encola un evento para su procesamiento diferido (solo desde tareas).
+ *
+ * El tick FreeRTOS se captura al publicar. Los tres datos numericos tienen
+ * significado segun el codigo definido en Docs/CODIGOS_EVENTOS.md; pasar 0
+ * para los campos no utilizados. No accede al RTC, la SD ni el USB.
+ *
+ * @return pdPASS si el evento fue encolado; pdFAIL si la cola no esta
+ *         disponible o esta llena. Nunca espera por espacio en la cola.
+ * @note No llamar desde ISR; no se incluye variante FromISR en D2.1.
+ */
+BaseType_t Log_EventPublish(uint16_t code, uint32_t data1,
+                            uint32_t data2, uint32_t data3);
 
 #endif /* MID_LOG_H */

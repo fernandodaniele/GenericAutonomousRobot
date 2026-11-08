@@ -2,6 +2,7 @@
 #include "task_control_robot.h"
 #include "task_sensores.h"
 #include "task_motor_control.h"
+#include "mid_log.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -61,6 +62,10 @@ static void TaskSafety_Run(void *parameters) {
 
     TickType_t last_wake_time = xTaskGetTickCount();
     TickType_t startup_tick = last_wake_time;
+
+    /* Una vez desde tarea, despues de Log_Init y antes de supervisar sensores. */
+    (void)Log_EventPublish(100U, (uint32_t)TaskControlRobot_GetState(),
+                           TaskSafety_GetFaults(), TaskSafety_IsStopActive() ? 1U : 0U);
 
     for (;;) {
         vTaskDelayUntil(&last_wake_time,
@@ -139,7 +144,9 @@ void TaskSafety_ReportFault(SafetyFault_t fault) {
 
     taskENTER_CRITICAL();
 
+    uint32_t new_faults = (uint32_t)fault & ~safety_faults;
     safety_faults |= (uint32_t)fault;
+    uint32_t latched_faults = safety_faults;
     safety_fault_revision++;
     safety_fault_tick = xTaskGetTickCount();
     safety_has_fault = true;
@@ -148,6 +155,15 @@ void TaskSafety_ReportFault(SafetyFault_t fault) {
     TaskMotorControl_Stop();
 
     taskEXIT_CRITICAL();
+
+    /* Observar solo bits nuevos; conservar todas las notificaciones de Safety.
+     * Publicacion fuera de la seccion critica, sin reintentar si no hay lugar. */
+    if ((new_faults & SAFETY_FAULT_CLIFF) != 0U)
+        (void)Log_EventPublish(201U, SAFETY_FAULT_CLIFF, latched_faults, 0U);
+    if ((new_faults & SAFETY_FAULT_OBSTACLE) != 0U)
+        (void)Log_EventPublish(202U, SAFETY_FAULT_OBSTACLE, latched_faults, 0U);
+    if ((new_faults & SAFETY_FAULT_SENSOR) != 0U)
+        (void)Log_EventPublish(203U, SAFETY_FAULT_SENSOR, latched_faults, 0U);
 }
 
 /**
@@ -200,6 +216,7 @@ bool TaskSafety_RequestReset(void) {
     }
 
     bool reset = false;
+    uint32_t previous_faults = SAFETY_FAULT_NONE;
     /* Solo TaskSensores publica, desde tarea. Suspender el scheduler impide
      * otra publicacion entre esta segunda copia y la decision. Las IRQ siguen
      * activas; peek es no bloqueante y queda FUERA de la seccion critica.
@@ -219,6 +236,7 @@ bool TaskSafety_RequestReset(void) {
             (TaskSafety_SnapshotFaults(&sensores, now) == SAFETY_FAULT_NONE) &&
             new_captures) {
             TaskMotorControl_Stop();
+            previous_faults = safety_faults;
             safety_faults = SAFETY_FAULT_NONE;
             safety_stop_active = false;
             reset = true;
@@ -226,5 +244,7 @@ bool TaskSafety_RequestReset(void) {
         taskEXIT_CRITICAL();
     }
     (void)xTaskResumeAll();
-    return reset && !TaskSafety_IsStopActive();
+    bool completed = reset && !TaskSafety_IsStopActive();
+    if (completed) (void)Log_EventPublish(210U, previous_faults, 0U, 0U);
+    return completed;
 }

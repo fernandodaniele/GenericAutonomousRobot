@@ -25,6 +25,8 @@
 #define LOG_CDC_RETRIES  5
 #define LOG_FILE_PATH    "0:/GAR.LOG"
 #define LOG_EVENT_QUEUE_LENGTH 8U
+#define LOG_EVENT_TASK_STACK_WORDS 512U
+#define LOG_EVENT_TASK_PRIORITY (tskIDLE_PRIORITY + 1U)
 
 /* Datos por valor: la cola conserva una copia independiente del productor. */
 typedef struct
@@ -41,12 +43,29 @@ static StaticQueue_t s_event_queue_cb;
 static uint8_t s_event_queue_storage[LOG_EVENT_QUEUE_LENGTH * sizeof(LogEvent_t)];
 static QueueHandle_t s_event_queue = NULL;
 
+static StackType_t s_event_task_stack[LOG_EVENT_TASK_STACK_WORDS];
+static StaticTask_t s_event_task_cb;
+static TaskHandle_t s_event_task = NULL;
+
 static Ds1302_t         *s_rtc   = NULL;
 static SemaphoreHandle_t s_mutex = NULL;
 
 static FATFS   s_fs;
 static FIL     s_fil;
 static uint8_t s_sd_ok = 0U;   /* 1 = SD montada y GAR.LOG abierto en append */
+
+static void Log_EventTask(void *parameters)
+{
+    LogEvent_t event;
+    (void)parameters;
+
+    for (;;)
+    {
+        (void)xQueueReceive(s_event_queue, &event, portMAX_DELAY);
+        /* D2.2.2: descartar deliberadamente; aun no hay persistencia.
+         * No conectar productores operativos durante esta etapa intermedia. */
+    }
+}
 
 static int scheduler_running(void)
 {
@@ -128,6 +147,18 @@ void Log_Init(Ds1302_t *rtc)
                                            sizeof(LogEvent_t),
                                            s_event_queue_storage,
                                            &s_event_queue_cb);
+    }
+
+    if ((s_event_queue != NULL) && (s_mutex != NULL) && (s_event_task == NULL))
+    {
+        s_event_task = xTaskCreateStatic(Log_EventTask, "LogEvents",
+                                          LOG_EVENT_TASK_STACK_WORDS, NULL,
+                                          LOG_EVENT_TASK_PRIORITY,
+                                          s_event_task_stack, &s_event_task_cb);
+        if (s_event_task == NULL)
+        {
+            return; /* Sin bloquear el robot; otra Log_Init puede reintentar. */
+        }
     }
 }
 

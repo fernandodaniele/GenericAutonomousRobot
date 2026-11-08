@@ -2,6 +2,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include "stm32_status.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 
@@ -49,6 +52,31 @@ static esp_err_t WebServer_Health(httpd_req_t *request)
     return httpd_resp_send(request, response, sizeof(response) - 1U);
 }
 
+static esp_err_t WebServer_Status(httpd_req_t *request)
+{
+    Stm32StatusSnapshot status;
+    Stm32Status_GetSnapshot(&status);
+    char response[192];
+    int length;
+    if (!status.valid) {
+        length = snprintf(response, sizeof(response),
+                          "{\"valid\":false,\"connected\":false,\"state\":null,"
+                          "\"faults\":null,\"stop\":null,\"age_ms\":null}");
+    } else {
+        length = snprintf(response, sizeof(response),
+                          "{\"valid\":true,\"connected\":%s,\"state\":%" PRIu32
+                          ",\"faults\":%" PRIu32 ",\"stop\":%" PRIu32 ",\"age_ms\":%" PRIu64 "}",
+                          status.connected ? "true" : "false", status.state,
+                          status.faults, status.stop, status.age_ms);
+    }
+    if (length < 0 || (size_t)length >= sizeof(response)) return ESP_FAIL;
+    esp_err_t err = httpd_resp_set_type(request, "application/json; charset=utf-8");
+    if (err != ESP_OK) return err;
+    err = httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    if (err != ESP_OK) return err;
+    return httpd_resp_send(request, response, length);
+}
+
 esp_err_t WebServer_Start(void)
 {
     if (s_attempted) return s_result;
@@ -63,7 +91,8 @@ esp_err_t WebServer_Start(void)
         { .uri = "/", .method = HTTP_GET, .handler = WebServer_Resource, .user_ctx = (void *)&resources[0] },
         { .uri = "/style.css", .method = HTTP_GET, .handler = WebServer_Resource, .user_ctx = (void *)&resources[1] },
         { .uri = "/app.js", .method = HTTP_GET, .handler = WebServer_Resource, .user_ctx = (void *)&resources[2] },
-        { .uri = "/health", .method = HTTP_GET, .handler = WebServer_Health }
+        { .uri = "/health", .method = HTTP_GET, .handler = WebServer_Health },
+        { .uri = "/api/status", .method = HTTP_GET, .handler = WebServer_Status }
     };
     for (size_t i = 0U; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);

@@ -1,4 +1,5 @@
 #include "uart_comm.h"
+#include "stm32_status.h"
 
 #include <string.h>
 #include "driver/uart.h"
@@ -99,6 +100,7 @@ void Uart_ReadResponse(void) {
                                  UART_RX_BUFFER_SIZE - 1,
                                  pdMS_TO_TICKS(100));
     if (length > 0) {
+        Stm32Status_Feed(rx_buffer, (size_t)length);
         rx_buffer[length] = '\0';
         printf("[STM32] %s", (char *)rx_buffer);
     }

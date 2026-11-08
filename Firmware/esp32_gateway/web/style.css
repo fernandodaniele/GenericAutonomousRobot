@@ -36,6 +36,11 @@ button:focus-visible, a:focus-visible { outline: 3px solid #b07d21; outline-offs
 .endpoint { margin: 19px 0 0; color: #75847c; font-size: .72rem; }
 code { color: #4b6357; margin-left: 6px; font-size: .75rem; }
 .neutral-label { display: inline-block; padding: 5px 10px; border-radius: 5px; background: #eef2ef; color: #54675d; font-size: .78rem; }
+.readings { margin: 20px 0; font-size: .83rem; }
+.readings div { padding: 12px 0; border-top: 1px solid #e5ece7; }
+.readings dt { color: #617369; margin-bottom: 4px; }
+.readings dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.readings[data-stale="true"] dd { color: #806321; }
 .local-note { margin-top: 24px; padding: 24px 28px; border-radius: 12px; background: #e9f0eb; }
 .note-title { font-size: .85rem; font-weight: 650; }
 .local-note p { font-size: .82rem; color: #607268; margin: 7px 0 0; }

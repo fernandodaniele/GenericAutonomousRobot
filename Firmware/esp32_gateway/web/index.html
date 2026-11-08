@@ -15,14 +15,14 @@
         <span class="monogram" aria-hidden="true">GR</span>
         <span>INTERFAZ LOCAL</span>
       </a>
-      <span class="version">W1 · Primera versión</span>
+      <span class="version">W2 · Monitoreo</span>
     </header>
 
     <main>
       <section class="intro" aria-labelledby="page-title">
         <p class="eyebrow">PLATAFORMA ROBÓTICA</p>
         <h1 id="page-title">GenericAutonomousRobot</h1>
-        <p class="lead">Un punto de acceso local a la interfaz del proyecto.</p>
+        <p class="lead">Monitoreo local del último estado informado por la STM32.</p>
       </section>
 
       <div class="cards">
@@ -40,17 +40,28 @@
         </section>
 
         <section class="card" aria-labelledby="stm32-title">
-          <p class="eyebrow">ALCANCE DE ESTA VERSIÓN</p>
+          <p class="eyebrow">MONITOREO UART</p>
           <h2 id="stm32-title">Enlace STM32</h2>
-          <span class="neutral-label">No evaluado en W1</span>
-          <p class="description">La respuesta del servidor verifica únicamente la web de la ESP32. No confirma una conexión con la STM32 ni el estado de Safety.</p>
-          <p class="description">Esta página no consulta sensores ni envía órdenes al robot. La consola UART existente conserva sus comandos.</p>
+          <div id="stm32-status" class="status" data-state="unknown" role="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="stm32-connection">Sin comprobar</span>
+          </div>
+          <p id="stm32-detail" class="description">Esperando la primera consulta de monitoreo.</p>
+          <dl id="robot-values" class="readings" data-stale="true">
+            <div><dt>FSM</dt><dd id="robot-state">Desconocido</dd></div>
+            <div><dt>Fallas Safety enclavadas</dt><dd id="robot-faults">Desconocidas</dd></div>
+            <div><dt>Bloqueo STOP informado</dt><dd id="robot-stop">Desconocido</dd></div>
+            <div><dt>Edad del último STATUS</dt><dd id="robot-age">Sin datos</dd></div>
+          </dl>
+          <p class="endpoint">Consulta automática <code>GET /api/status</code></p>
+          <noscript><p>Activá JavaScript para el monitoreo automático.</p></noscript>
         </section>
       </div>
 
       <aside class="local-note">
         <span class="note-title">Todo queda en la red local</span>
         <p>La página y sus recursos se alojan en la ESP32. Podés acceder desde tu computadora o celular sin conexión a Internet.</p>
+        <p>Solo monitoreo. Una respuesta web no demuestra conexión STM32 ni habilitación de Safety. Los valores desactualizados son históricos; no autorizan movimiento.</p>
       </aside>
     </main>
 

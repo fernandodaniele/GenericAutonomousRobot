@@ -1,5 +1,8 @@
 # Interfaz local W1
 
+Documento historico de W1. El monitoreo incorporado posteriormente se documenta
+en `README_W2.md`; las limitaciones de esta seccion describen la primera version.
+
 La ESP32 ofrece una pagina offline y una comprobacion de su servidor HTTP.
 No expone comandos del robot ni verifica la conexion STM32 o Safety.
 

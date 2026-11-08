@@ -172,6 +172,16 @@ static void TaskMotorControl_Run(void *parameters) {
         context->left_speed_cps = TaskMotorControl_DeltaToCps(left_delta);
         context->right_speed_cps = TaskMotorControl_DeltaToCps(right_delta);
 
+        /* Tambien termina una autorizacion vencida recibida antes de haber
+         * aplicado su primer objetivo. Un mensaje de otra fase no la cancela.
+         */
+        if (received == pdTRUE && target.mode == ROBOT_STATE_AUTONOMOUS &&
+            target.generation == command_generation &&
+            (!Navigation_IsCommandCurrent(target.navigation_session, now) ||
+             (TickType_t)(now - target.issued_tick) >= pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS))) {
+            Navigation_CancelSession(target.navigation_session);
+        }
+
         if (enabled && received == pdTRUE &&
             target.mode == state &&
             (state == ROBOT_STATE_MANUAL ||
@@ -286,7 +296,8 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
     bool authorized_source = from_navigation ?
         (dated && required_mode == ROBOT_STATE_AUTONOMOUS &&
          state == ROBOT_STATE_AUTONOMOUS && TaskControlRobot_IsCurrentTask() &&
-         left_speed_cps == MOTION_DRIVE_CPS && right_speed_cps == MOTION_DRIVE_CPS) :
+         left_speed_cps == right_speed_cps &&
+         (left_speed_cps == MOTION_DRIVE_CPS || left_speed_cps == -MOTION_DRIVE_CPS)) :
         state == ROBOT_STATE_MANUAL;
     if (TaskSafety_IsStopActive() || TaskControlRobot_IsStopPending() ||
         !authorized_source || target_speed_queue == NULL) {
@@ -305,7 +316,7 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
         return true;
     }
     if (from_navigation &&
-        !Navigation_ConsumeEmission(navigation_session, issued_tick, now)) {
+        !Navigation_ConsumeEmission(navigation_session, issued_tick, now, left_speed_cps < 0)) {
         taskEXIT_CRITICAL();
         return false;
     }

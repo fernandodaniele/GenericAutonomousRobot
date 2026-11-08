@@ -982,6 +982,7 @@ static void test_auto_b72(void) {
 }
 
 #include "test_navigation.c"
+#include "test_navigation_reverse.c"
 
 int main(void) {
     CHECK(TaskSafety_IsStopActive() && robot_state == ROBOT_STATE_IDLE);
@@ -1315,6 +1316,7 @@ int main(void) {
     test_stop_b65();
     test_auto_b72();
     test_navigation_b73();
+    test_navigation_b75();
     printf("RESULT %u tests passed; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
     return 0;

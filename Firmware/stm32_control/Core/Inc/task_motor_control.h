@@ -44,7 +44,7 @@ bool TaskMotorControl_TrySetTargetSpeedsAt(int32_t left_speed_cps, int32_t right
                                          TickType_t issued_tick, RobotControlState_t required_mode);
 
 /* Solo mid_motion para navegacion: TaskControlRobot, permiso de un uso y sesion
- * vigente; se admite exclusivamente el avance fijo de B6 (+1600/+1600 cps). */
+ * vigente; solo +/-1600 cps iguales en ambos motores y con fase autorizada. */
 bool TaskMotorControl_TrySetNavigationSpeedsAt(int32_t left_speed_cps, int32_t right_speed_cps,
                                              TickType_t issued_tick, uint32_t session);
 

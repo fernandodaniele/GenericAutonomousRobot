@@ -57,7 +57,7 @@ static void test_navigation_b73(void) {
         } else b73_terminal();
         PASS("B7.3 301 mm permits advance while 300 mm and below stop the session");
     }
-    b73_advance(); b73_fresh(); input.distancia_m = 0.300f; b73_step();
+    b73_advance(); b73_fresh(); input.distancia_m = input.distancia_trasera_m = 0.300f; b73_step();
     expect_zero(); CHECK(TaskSafety_GetFaults() == SAFETY_FAULT_NONE);
     b73_terminal(); PASS("B7.3 preventive obstacle immediately clears live targets without inventing a Safety fault");
     b73_begin(); input.distancia_m = 0.300f; input.ultrasonido_trasero_valido = 0U;

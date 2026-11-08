@@ -19,13 +19,14 @@ typedef enum {
 } MotionCommand_t;
 
 /* Desde tarea. Una llamada = una emision, nunca una renovacion periodica.
- * Esta ruta sigue exigiendo MANUAL. AUTO usa Motion_NavigationAdvance con un
+ * Esta ruta sigue exigiendo MANUAL. AUTO usa las rutas Navigation con un
  * permiso de navegacion; esta funcion no cambia modos ni rearma.
  */
 bool Motion_Execute(MotionCommand_t command, RobotControlState_t required_mode,
                     TickType_t issued_tick);
 
-/* Ruta exclusiva de avance de navegacion: permiso/sesion validados en backend. */
+/* Rutas exclusivas de navegacion: permiso, fase y sesion validados en backend. */
 bool Motion_NavigationAdvance(TickType_t issued_tick, uint32_t session);
+bool Motion_NavigationReverse(TickType_t issued_tick, uint32_t session);
 
 #endif

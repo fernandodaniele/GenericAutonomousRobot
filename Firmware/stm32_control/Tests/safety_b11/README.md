@@ -1,6 +1,6 @@
-# Control de motores, seguridad y navegacion B7.3
+# Control de motores, seguridad y navegacion B7.5
 
-Base B7.3: rama G1-add/NavegacionAutonoma, HEAD 281e550.
+Base B7.5: rama G1-add/NavegacionAutonoma, HEAD 845d793.
 Este README describe el comportamiento permanente y las pruebas actuales.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
@@ -16,11 +16,11 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
 - Edad <500 ms desde emision se admite; edad >=500 ms se rechaza o vence.
   El consumo o reenqueued no rejuvenece el mensaje. El plazo de 200 ms era
   exclusivo de los ensayos retirados: NO es el timeout permanente de consignas.
-- Las APIs genericas siguen siendo exclusivas de MANUAL. B7.3 agrega avance
-  AUTO mediante una ruta dedicada a navegacion, con sesion y permiso de un uso.
+- Las APIs genericas siguen siendo exclusivas de MANUAL. B7.5 conserva avance
+  AUTO y agrega retroceso acotado con sesion/fase, direccion y permiso de un uso.
   Consulta, arquitectura, compilacion y validacion sin potencia:
-  [B7_3_NAVEGACION.md](../../../../Docs/B7_3_NAVEGACION.md).
-  Regresion actual: 281 casos (215 anteriores +66 B7.3), mas 19 ultrasonicos.
+  [B7_5_RETROCESO.md](../../../../Docs/B7_5_RETROCESO.md).
+  Regresion actual: 350 casos (281 anteriores +69 B7.5), mas 19 ultrasonicos.
   Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
 - No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas
   ni registros historicos de ensayo en RAM.

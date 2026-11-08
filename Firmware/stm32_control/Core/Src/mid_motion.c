@@ -19,3 +19,8 @@ bool Motion_NavigationAdvance(TickType_t issued_tick, uint32_t session) {
     return TaskMotorControl_TrySetNavigationSpeedsAt(MOTION_DRIVE_CPS, MOTION_DRIVE_CPS,
                                                     issued_tick, session);
 }
+
+bool Motion_NavigationReverse(TickType_t issued_tick, uint32_t session) {
+    return TaskMotorControl_TrySetNavigationSpeedsAt(-MOTION_DRIVE_CPS, -MOTION_DRIVE_CPS,
+                                                    issued_tick, session);
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>GenericAutonomousRobot · Interfaz local</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Inicio GenericAutonomousRobot">
+        <span class="monogram" aria-hidden="true">GR</span>
+        <span>INTERFAZ LOCAL</span>
+      </a>
+      <span class="version">W1 · Primera versión</span>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">PLATAFORMA ROBÓTICA</p>
+        <h1 id="page-title">GenericAutonomousRobot</h1>
+        <p class="lead">Un punto de acceso local a la interfaz del proyecto.</p>
+      </section>
+
+      <div class="cards">
+        <section class="card server-card" aria-labelledby="server-title">
+          <p class="eyebrow">CONECTIVIDAD WEB</p>
+          <h2 id="server-title">Servidor ESP32</h2>
+          <div id="server-status" class="status" data-state="unknown" role="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="status-text">Sin comprobar</span>
+          </div>
+          <p id="status-detail" class="description">Consultá el servidor local para verificar su respuesta HTTP.</p>
+          <button id="check-health" type="button">Comprobar servidor <span aria-hidden="true">↗</span></button>
+          <p class="endpoint">Consulta local <code>GET /health</code></p>
+          <noscript><p>Activá JavaScript para consultar el estado, o abrí <a href="/health">/health</a> directamente.</p></noscript>
+        </section>
+
+        <section class="card" aria-labelledby="stm32-title">
+          <p class="eyebrow">ALCANCE DE ESTA VERSIÓN</p>
+          <h2 id="stm32-title">Enlace STM32</h2>
+          <span class="neutral-label">No evaluado en W1</span>
+          <p class="description">La respuesta del servidor verifica únicamente la web de la ESP32. No confirma una conexión con la STM32 ni el estado de Safety.</p>
+          <p class="description">Esta página no consulta sensores ni envía órdenes al robot. La consola UART existente conserva sus comandos.</p>
+        </section>
+      </div>
+
+      <aside class="local-note">
+        <span class="note-title">Todo queda en la red local</span>
+        <p>La página y sus recursos se alojan en la ESP32. Podés acceder desde tu computadora o celular sin conexión a Internet.</p>
+      </aside>
+    </main>
+
+    <footer><span>GenericAutonomousRobot</span><span>ESP32 · Wi-Fi AP · HTTP</span></footer>
+  </div>
+</body>
+</html>

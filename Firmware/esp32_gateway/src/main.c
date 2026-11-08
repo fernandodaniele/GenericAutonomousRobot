@@ -2,6 +2,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "uart_comm.h"
+#include "wifi_ap.h"
+#include "web_server.h"
 
 // Tarea encargada de leer comandos del monitor serial.
 static void ConsoleInputTask(void *parameters)
@@ -46,6 +48,11 @@ static void ConsoleInputTask(void *parameters)
 void app_main(void)
 {
     Uart_Init();
+
+    /* Inicio unico, sin esperar clientes. Un fallo de red no cancela UART. */
+    if (WifiAp_Start() == ESP_OK) {
+        (void)WebServer_Start(); /* El modulo informa sus errores. */
+    }
 
     printf("\n=== ESP32 UART TEST ===\n");
     printf("Comandos: p=PING, s=STATUS, r=RESET, t=STOP, m=MANUAL\n");

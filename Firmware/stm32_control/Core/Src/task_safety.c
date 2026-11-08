@@ -11,9 +11,6 @@
 #define TASK_SAFETY_STACK_SIZE 256U
 #define TASK_SAFETY_PRIORITY (tskIDLE_PRIORITY + 6U)
 #define TASK_SAFETY_OBSTACLE_DISTANCE_M 0.20f
-#define TASK_SAFETY_SENSOR_TIMEOUT_MS 100U
-// PROVISIONAL: solo desarrollo/validacion sin potencia de motores.
-#define TASK_SAFETY_ULTRASOUND_MAX_AGE_MS 200U
 
 // El sistema comienza con el movimiento bloqueado.
 static volatile bool safety_stop_active = true;
@@ -51,6 +48,10 @@ static uint32_t TaskSafety_SnapshotFaults(const SensoresDatos_t *data,
         faults |= SAFETY_FAULT_CLIFF;
     }
     return faults;
+}
+
+uint32_t TaskSafety_EvaluateSnapshot(const SensoresDatos_t *data, TickType_t now) {
+    return data != NULL ? TaskSafety_SnapshotFaults(data, now) : SAFETY_FAULT_SENSOR;
 }
 
 /**

@@ -1,6 +1,6 @@
-# Control de motores y seguridad: B5, B6 y habilitacion AUTO B7.2
+# Control de motores, seguridad y navegacion B7.3
 
-Base B7.2: rama G1-add/NavegacionAutonoma, HEAD 0e2c4b7.
+Base B7.3: rama G1-add/NavegacionAutonoma, HEAD 281e550.
 Este README describe el comportamiento permanente y las pruebas actuales.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
@@ -16,9 +16,11 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
 - Edad <500 ms desde emision se admite; edad >=500 ms se rechaza o vence.
   El consumo o reenqueued no rejuvenece el mensaje. El plazo de 200 ms era
   exclusivo de los ensayos retirados: NO es el timeout permanente de consignas.
-- En B7.2 solo MANUAL y Safety sin bloqueo admiten consignas y actuacion.
-  AUTONOMOUS se habilita como estado sin movimiento: el backend rechaza
-  emisiones y consumo de consignas durante AUTO.
+- Las APIs genericas siguen siendo exclusivas de MANUAL. B7.3 agrega avance
+  AUTO mediante una ruta dedicada a navegacion, con sesion y permiso de un uso.
+  Consulta, arquitectura, compilacion y validacion sin potencia:
+  [B7_3_NAVEGACION.md](../../../../Docs/B7_3_NAVEGACION.md).
+  Regresion actual: 281 casos (215 anteriores +66 B7.3), mas 19 ultrasonicos.
   Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
 - No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas
   ni registros historicos de ensayo en RAM.
@@ -28,7 +30,10 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
   Protocolo, arquitectura, compilacion B6 y ensayo fisico propuesto:
   [B6_MOVIMIENTO.md](../../../../Docs/B6_MOVIMIENTO.md).
 
-## B7.2: AUTO sin movimiento
+## B7.2 historica: AUTO sin movimiento
+
+El bloqueo total de actuacion AUTO descrito en esta seccion fue reemplazado
+por la ruta controlada B7.3. No interpretar n como un ensayo sin movimiento.
 
 La consola ESP32 agrega n, que envia AUTO seguido de LF. La STM32 responde
 AUTO_QUEUED si pudo admitir y encolar la solicitud, o AUTO_REJECTED si el modo,

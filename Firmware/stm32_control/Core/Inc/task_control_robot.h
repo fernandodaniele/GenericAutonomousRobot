@@ -39,7 +39,7 @@ bool TaskControlRobot_SendEvent(RobotControlEvent_t event);
 
 /* AUTO desde tarea: fecha real de origen (primer byte UART), edad <500 ms y
  * posterior estricta a STOP/RESET y entrada a IDLE. Revalida al consumir.
- * true confirma encolado, no transicion. B7.2 mantiene AUTO sin actuacion.
+ * true confirma encolado, no transicion. B7.3 inicia una sesion acotada.
  */
 bool TaskControlRobot_RequestAutoAt(TickType_t issued_tick);
 
@@ -51,6 +51,9 @@ RobotControlState_t TaskControlRobot_GetState(void);
 
 /* Solicitud STOP recibida pero aun no procesada por la FSM. */
 bool TaskControlRobot_IsStopPending(void);
+
+/* Identidad de tarea para la ruta de emision exclusiva de navegacion. */
+bool TaskControlRobot_IsCurrentTask(void);
 
 /* Frescura respecto de la entrada efectiva al modo. Igual tick se rechaza
  * conservadoramente: no puede probarse el orden entre recepcion y transicion.

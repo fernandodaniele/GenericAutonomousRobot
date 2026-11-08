@@ -2,6 +2,7 @@
 #define MID_MOTION_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "FreeRTOS.h"
 #include "task_control_robot.h"
 
@@ -18,10 +19,13 @@ typedef enum {
 } MotionCommand_t;
 
 /* Desde tarea. Una llamada = una emision, nunca una renovacion periodica.
- * UART debe exigir MANUAL. Un futuro productor AUTO debe validar sus datos y
- * pasar su instante de emision real; esta funcion no cambia modos ni rearma.
+ * Esta ruta sigue exigiendo MANUAL. AUTO usa Motion_NavigationAdvance con un
+ * permiso de navegacion; esta funcion no cambia modos ni rearma.
  */
 bool Motion_Execute(MotionCommand_t command, RobotControlState_t required_mode,
                     TickType_t issued_tick);
+
+/* Ruta exclusiva de avance de navegacion: permiso/sesion validados en backend. */
+bool Motion_NavigationAdvance(TickType_t issued_tick, uint32_t session);
 
 #endif

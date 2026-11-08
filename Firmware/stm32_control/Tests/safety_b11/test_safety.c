@@ -18,6 +18,9 @@ static uint32_t test_get_autoreload(TIM_HandleTypeDef *timer);
 #include "task_control_robot.h"
 
 static TickType_t clock_tick;
+static TaskHandle_t current_task;
+#define CONTROL_TASK_ID ((TaskHandle_t)10)
+#define MOTOR_TASK_ID ((TaskHandle_t)11)
 static SensoresDatos_t input;
 static int queue_available, refresh_snapshot;
 static int critical_depth, scheduler_depth, cycles, delay_calls;
@@ -27,6 +30,7 @@ static int event_send_action;
 static int fault_at_inner_exit, fault_at_next_outer_exit, pending_fault;
 static int mode_at_second_delay;
 static TickType_t advance_tick_on_motor_receive;
+static TickType_t advance_tick_before_navigation_emit;
 static unsigned tests, unsafe_pwm_writes, transaction_writes, max_transaction_writes;
 static unsigned event_count;
 static jmp_buf finish;
@@ -38,6 +42,7 @@ static jmp_buf finish;
 #include "../../Core/Src/mid_motion.c"
 #include "../../Core/Src/drv_uart.c"
 #include "../../Core/Src/task_comms.c"
+#include "../../Core/Src/mid_navigation.c"
 static TaskControlRobotEventMessage_t events[8];
 
 /* Real encoder driver under distinct host-only names; task injection remains
@@ -64,6 +69,7 @@ static uint32_t mock_pwm_arr;
 static unsigned autoreload_reads;
 static char uart_response[128];
 static unsigned uart_rearms;
+static void run_motor(int count);
 
 /* Host-only function-entry instrumentation: counts the real PI, not a wrapper. */
 void __attribute__((no_instrument_function))
@@ -101,6 +107,10 @@ void test_exit(void) {
         if (--fault_at_inner_exit == 0) pending_fault = 1;
     }
     if (critical_depth == 0) {
+        if (navigation.emission_ready && advance_tick_before_navigation_emit != 0U) {
+            clock_tick += advance_tick_before_navigation_emit;
+            advance_tick_before_navigation_emit = 0U;
+        }
         if (transaction_writes > max_transaction_writes)
             max_transaction_writes = transaction_writes;
         if (fault_at_next_outer_exit) {
@@ -111,6 +121,7 @@ void test_exit(void) {
 }
 TickType_t xTaskGetTickCount(void) { return clock_tick; }
 TickType_t xTaskGetTickCountFromISR(void) { return clock_tick; }
+TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current_task; }
 HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *uart, uint8_t *byte, uint16_t size) {
     (void)uart; CHECK(byte != NULL && size == 1U); ++uart_rearms; return HAL_OK;
 }
@@ -148,7 +159,7 @@ BaseType_t xTaskResumeAll(void) {
 BaseType_t xTaskCreate(void (*entry)(void *), const char *name, unsigned stack,
                       void *arg, UBaseType_t priority, TaskHandle_t *out) {
     (void)entry; (void)name; (void)stack; (void)arg; (void)priority;
-    if (out != NULL) *out = (void *)1;
+    if (out != NULL) *out = strcmp(name, "ControlRobot") == 0 ? CONTROL_TASK_ID : (void *)1;
     return pdPASS;
 }
 void Error_Handler(void) { fprintf(stderr, "Unexpected Error_Handler\n"); exit(1); }
@@ -167,6 +178,7 @@ BaseType_t TaskSensores_GetData(SensoresDatos_t *out) {
     if (action == 4) TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
     if (action == 5) queue_available = 0;
     if (action == 6) input.ultrasonido_trasero_valido = 0U;
+    if (action == 7) TaskMotorControl_Stop();
     if (scheduler_depth && pending_fault == 2) pending_fault = 1;
     return pdTRUE;
 }
@@ -216,6 +228,9 @@ BaseType_t xQueueOverwrite(QueueHandle_t queue, const void *item) {
         TaskControlRobot_ProcessEvent(ROBOT_EVENT_START_MANUAL);
     }
     if (action == 2) TaskMotorControl_SetTargetSpeeds(0, 0);
+    if (action == 3) CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP));
+    if (action == 4) TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
+    if (action == 6) run_motor(1); /* Higher-priority motor task before overwrite. */
     queued_target = *(const TaskMotorControlTarget_t *)item;
     target_pending = 1; return pdPASS;
 }
@@ -263,6 +278,7 @@ static void setup(void) {
     CHECK(critical_depth == 0 && scheduler_depth == 0);
     clock_tick = 1000U;
     advance_tick_on_motor_receive = 0U;
+    advance_tick_before_navigation_emit = 0U;
     input = (SensoresDatos_t){0};
     input.timestamp = clock_tick;
     input.distancia_m = input.distancia_trasera_m = 0.30f;
@@ -286,6 +302,9 @@ static void setup(void) {
     has_stop = false; last_stop_tick = 0U;
     stop_pending = false; mode_entry_tick = clock_tick - 1U;
     auto_request_epoch = 0U; auto_barrier_tick = clock_tick - 1U;
+    current_task = (TaskHandle_t)12; control_task_handle = CONTROL_TASK_ID;
+    navigation.active = false; navigation.state = NAV_DETENIDO;
+    navigation.emission_ready = false; navigation.session = 0U;
     uart_response[0] = '\0'; uart_rearms = 0U;
     memset(&task_context, 0, sizeof(task_context));
     memset(&pwm, 0, sizeof(pwm)); memset(&pins, 0, sizeof(pins));
@@ -300,12 +319,16 @@ static void run_safety(int count) {
     if (setjmp(finish) == 0) TaskSafety_Run(NULL);
 }
 static void run_motor(int count) {
+    TaskHandle_t previous = current_task; current_task = MOTOR_TASK_ID;
     cycles = count; delay_calls = 0;
     if (setjmp(finish) == 0) TaskMotorControl_Run(&task_context);
+    current_task = previous;
 }
 static void run_fsm(int count) {
+    TaskHandle_t previous = current_task; current_task = CONTROL_TASK_ID;
     cycles = count; delay_calls = 0;
     if (setjmp(finish) == 0) TaskControlRobot_Run(NULL);
+    current_task = previous;
 }
 static void recovery(void) {
     setup(); TaskSafety_ReportFault(SAFETY_FAULT_SENSOR);
@@ -958,6 +981,8 @@ static void test_auto_b72(void) {
     PASS("B7.2 real task creation keeps one existing eight-entry queue with dated events");
 }
 
+#include "test_navigation.c"
+
 int main(void) {
     CHECK(TaskSafety_IsStopActive() && robot_state == ROBOT_STATE_IDLE);
     PASS("startup blocked");
@@ -1289,6 +1314,7 @@ int main(void) {
     test_motion_commands();
     test_stop_b65();
     test_auto_b72();
+    test_navigation_b73();
     printf("RESULT %u tests passed; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
     return 0;

@@ -6,6 +6,7 @@
 #include "main.h"
 #include "task_safety.h"
 #include "task_motor_control.h"
+#include "mid_navigation.h"
 
 #define TASK_CONTROL_PERIOD_MS 20U
 #define TASK_CONTROL_STACK_SIZE 256U
@@ -29,6 +30,7 @@ typedef struct {
 
 // Cola de eventos para la maquina de estados.
 static QueueHandle_t event_queue = NULL;
+static TaskHandle_t control_task_handle = NULL;
 
 /* Solo desde tarea; admite una seccion critica externa. */
 static void TaskControlRobot_InvalidateAuto(void) {
@@ -59,6 +61,7 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
     // TaskSafety_RequestReset consulta la cola de sensores.
     if (event == ROBOT_EVENT_SAFETY_RESET) {
         TaskControlRobot_InvalidateAuto();
+        if (TaskControlRobot_GetState() == ROBOT_STATE_AUTONOMOUS) TaskMotorControl_Stop();
 
         if (TaskControlRobot_GetState() == ROBOT_STATE_SAFETY_STOP &&
             TaskSafety_RequestReset()) {
@@ -92,6 +95,7 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
                 TaskMotorControl_Stop();
                 robot_state = ROBOT_STATE_AUTONOMOUS;
                 mode_entry_tick = xTaskGetTickCount();
+                Navigation_Begin(mode_entry_tick);
             }
             break;
 
@@ -170,8 +174,7 @@ static void TaskControlRobot_Run(void *parameters) {
          */
         if (TaskControlRobot_IsStopPending()) TaskControlRobot_ProcessEvent(ROBOT_EVENT_STOP);
 
-        // Pendiente: incorporar logica de navegacion
-        // y coordinacion con las demas tareas.
+        Navigation_Step();
     }
 }
 
@@ -207,12 +210,13 @@ void TaskControlRobot_Create(void) {
         TASK_CONTROL_STACK_SIZE,
         NULL,
         TASK_CONTROL_PRIORITY,
-        NULL
+        &control_task_handle
     );
 
     if (result != pdPASS) {
         vQueueDelete(event_queue);
         event_queue = NULL;
+        control_task_handle = NULL;
         Error_Handler();
     }
 }
@@ -239,8 +243,8 @@ bool TaskControlRobot_SendEvent(RobotControlEvent_t event) {
         vTaskSuspendAll();
         taskENTER_CRITICAL();
         TaskControlRobot_InvalidateAuto();
-        if (event == ROBOT_EVENT_STOP) {
-            stop_pending = true;
+        if (event == ROBOT_EVENT_STOP || robot_state == ROBOT_STATE_AUTONOMOUS) {
+            if (event == ROBOT_EVENT_STOP) stop_pending = true;
             TaskMotorControl_Stop();
         }
         taskEXIT_CRITICAL();
@@ -284,6 +288,10 @@ bool TaskControlRobot_IsStopPending(void) {
     bool pending = stop_pending;
     taskEXIT_CRITICAL();
     return pending;
+}
+
+bool TaskControlRobot_IsCurrentTask(void) {
+    return control_task_handle != NULL && xTaskGetCurrentTaskHandle() == control_task_handle;
 }
 
 bool TaskControlRobot_AcceptsMotionAt(RobotControlState_t mode, TickType_t issued_tick) {

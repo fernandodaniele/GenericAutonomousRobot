@@ -6,6 +6,7 @@
 #include "main.h"
 #include "task_safety.h"
 #include "task_motor_control.h"
+#include "mid_log.h"
 
 #define TASK_CONTROL_PERIOD_MS 20U
 #define TASK_CONTROL_STACK_SIZE 256U
@@ -24,6 +25,8 @@ static QueueHandle_t event_queue = NULL;
  * @brief Procesa las transiciones de la maquina de estados.
  */
 static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
+    RobotControlState_t previous_state;
+    RobotControlState_t next_state;
 
     // El rearme se procesa fuera de la seccion critica porque
     // TaskSafety_RequestReset consulta la cola de sensores.
@@ -37,13 +40,17 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
 
             taskENTER_CRITICAL();
 
+            previous_state = robot_state;
             // Verifica nuevamente que no haya aparecido una parada.
             if (!TaskSafety_IsStopActive()) {
                 robot_state = ROBOT_STATE_IDLE;
                 mode_entry_tick = xTaskGetTickCount();
             }
 
+            next_state = robot_state;
             taskEXIT_CRITICAL();
+            if (previous_state != next_state)
+                (void)Log_EventPublish(110U, (uint32_t)previous_state, (uint32_t)next_state, (uint32_t)event);
         }
 
         return;
@@ -51,6 +58,7 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
 
     taskENTER_CRITICAL();
 
+    previous_state = robot_state;
     switch (event) {
 
         case ROBOT_EVENT_START_AUTO:
@@ -99,7 +107,10 @@ static void TaskControlRobot_ProcessEvent(RobotControlEvent_t event) {
             break;
     }
 
+    next_state = robot_state;
     taskEXIT_CRITICAL();
+    if (previous_state != next_state)
+        (void)Log_EventPublish(110U, (uint32_t)previous_state, (uint32_t)next_state, (uint32_t)event);
 }
 
 /**
@@ -187,10 +198,15 @@ bool TaskControlRobot_SendEvent(RobotControlEvent_t event) {
          * cola no bloqueante FUERA de la seccion critica. */
         vTaskSuspendAll();
         taskENTER_CRITICAL();
+        RobotControlState_t requested_state = robot_state;
         stop_pending = true;
         TaskMotorControl_Stop();
         taskEXIT_CRITICAL();
         bool queued = xQueueSend(event_queue, &event, 0U) == pdTRUE;
+        /* Solicitud real, aun si la cola FSM esta llena; no en el fallback.
+         * Motores ya detenidos. Ambas colas usan espera cero y quedan fuera
+         * de la seccion critica, antes de reanudar las tareas. */
+        (void)Log_EventPublish(300U, (uint32_t)requested_state, 0U, 0U);
         (void)xTaskResumeAll();
         return queued;
     }

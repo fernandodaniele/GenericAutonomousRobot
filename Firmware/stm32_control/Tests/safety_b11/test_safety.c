@@ -753,6 +753,8 @@ static void test_stop_b65(void) {
     }
 }
 
+#include "test_log_producers.c"
+
 int main(void) {
     CHECK(TaskSafety_IsStopActive() && robot_state == ROBOT_STATE_IDLE);
     PASS("startup blocked");
@@ -1082,6 +1084,7 @@ int main(void) {
     test_public_velocity_control();
     test_motion_commands();
     test_stop_b65();
+    test_log_producers();
     printf("RESULT %u tests passed; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
     return 0;

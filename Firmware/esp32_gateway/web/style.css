@@ -46,6 +46,26 @@ code { color: #4b6357; margin-left: 6px; font-size: .75rem; }
 .stop-button { background: #a5362d; }
 .stop-button:hover { background: #842a23; }
 .safety-note { color: #804b26; font-size: .82rem; }
+.manual-pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: ". forward ." "left reverse right" "halt halt halt";
+  gap: 12px;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto 20px;
+}
+.manual-pad button { justify-content: center; min-width: 0; min-height: 64px; padding: 12px 6px; gap: 4px; white-space: nowrap; }
+.manual-pad .manual-direction { flex-direction: column; }
+.direction-icon { font-size: 1.5rem; line-height: 1; }
+#manual-forward { grid-area: forward; }
+#manual-left { grid-area: left; }
+#manual-reverse { grid-area: reverse; }
+#manual-right { grid-area: right; }
+#manual-halt { grid-area: halt; }
+.manual-direction { touch-action: none; user-select: none; -webkit-user-select: none; }
+.manual-direction:active { background: #103d2e; }
+.halt-button { background: #775722; }
 .local-note { margin-top: 24px; padding: 24px 28px; border-radius: 12px; background: #e9f0eb; }
 .note-title { font-size: .85rem; font-weight: 650; }
 .local-note p { font-size: .82rem; color: #607268; margin: 7px 0 0; }
@@ -60,4 +80,8 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 32px
   .local-note { padding: 22px 24px; }
   button { width: 100%; }
   footer { flex-direction: column; gap: 5px; }
+}
+@media (max-width: 390px) {
+  .manual-pad { gap: 6px; }
+  .manual-pad button { font-size: .7rem; padding: 12px 3px; }
 }

@@ -1,4 +1,5 @@
 "use strict";
+let manualControl = null; // manual.js: controles aislados del flujo puntual W3.
 
 const statusBox = document.getElementById("server-status");
 const statusText = document.getElementById("status-text");
@@ -100,9 +101,11 @@ async function pollStatus() {
     const status = await response.json();
     if (!validStatus(status)) throw new Error("STATUS inválido");
     renderStatus(status);
+    manualControl?.onStatus(status);
     observeCommand(status);
   } catch {
     connectionBox.dataset.state = "error";
+    manualControl?.cancel("Monitoreo no disponible; se cerró la autorización manual.");
     readings.dataset.stale = "true";
     setText("stm32-connection", "Monitoreo sin respuesta");
     setText("stm32-detail", "No se pudo consultar la ESP32. El enlace STM32 y el estado actual del robot no pueden verificarse.");
@@ -164,6 +167,7 @@ function observeCommand(status) {
 async function sendCommand(name) {
   if (!Object.prototype.hasOwnProperty.call(commandButtons, name)) return;
   if (activeCommand && !(name === "STOP" && activeCommand.name !== "STOP")) return;
+  manualControl?.cancel("Solicitud operativa: se cerró la autorización manual.");
   const requestedAt = performance.now();
   if (requestedAt - lastCommandAt[name] < 1000) return; // Tambien cubre una confirmacion muy rapida entre dos pulsaciones.
   if (typeof crypto === "undefined" || typeof crypto.getRandomValues !== "function") {

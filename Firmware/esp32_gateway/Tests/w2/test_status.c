@@ -23,15 +23,19 @@ static unsigned cases, tx_count, rx_count, init_count, task_count, iterations;
 static char frames[4096][32], reply[16384];
 static CRITICAL_SECTION tx_lock;
 static int tx_error;
+static int64_t wait_delay;
+static bool gate_fail;
+static void (*wait_hook)(void);
 static void (*tx_hook)(void);
 static const char *request_type="text/plain", *request_origin="http://192.168.4.1", *request_host="192.168.4.1", *request_id;
 static const char *request_body, *response_status;
+static const char *request_token, *request_sequence;
 static size_t body_offset, body_chunk=6;
 static int body_error;
 static int64_t body_delay;
 static const char *rx_data, *keys;
 static size_t rx_size;
-static httpd_uri_t routes[6];
+static httpd_uri_t routes[11];
 static unsigned route_count, server_count, server_stops, fail_route;
 static int http_error, network_error;
 static jmp_buf task_end;
@@ -42,6 +46,18 @@ void test_exit(portMUX_TYPE *lock) { assert(lock_depth == 1); --lock_depth; Leav
 int64_t esp_timer_get_time(void) { assert(!lock_depth); return clock_us; }
 void test_log(const char *tag, const char *fmt, ...) { (void)tag; (void)fmt; assert(!lock_depth); }
 const char *esp_err_to_name(esp_err_t err) { (void)err; return "mock"; }
+SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *s) { InitializeCriticalSection(&s->lock); return s; }
+BaseType_t xSemaphoreTake(SemaphoreHandle_t s,unsigned ticks)
+{
+    assert(!lock_depth && ticks==pdMS_TO_TICKS(20));
+    if(gate_fail) return 0;
+    DWORD started=GetTickCount();
+    do { if(TryEnterCriticalSection(&s->lock)) return pdTRUE; Sleep(0); } while(GetTickCount()-started<20);
+    return 0;
+}
+BaseType_t xSemaphoreGive(SemaphoreHandle_t s) { LeaveCriticalSection(&s->lock); return pdTRUE; }
+void esp_fill_random(void *buffer,size_t size) { static LONG n; LONG value=InterlockedIncrement(&n); assert(!lock_depth); memset(buffer,(unsigned char)value,size); }
+int uart_wait_tx_done(int port,unsigned ticks) { assert(port==2 && ticks==pdMS_TO_TICKS(20) && !lock_depth); clock_us+=wait_delay; if(wait_hook) {void (*hook)(void)=wait_hook; wait_hook=NULL; hook();} return ESP_OK; }
 int uart_driver_install(int p,int rx,int tx,int q,void *queue,int flags)
 { assert(p==2 && rx==256 && tx==0 && q==0 && !queue && !flags && !lock_depth); ++init_count; return 0; }
 int uart_param_config(int p,const uart_config_t *c)
@@ -68,7 +84,7 @@ esp_err_t httpd_start(httpd_handle_t *out,const httpd_config_t *cfg)
 { assert(cfg->server_port==80 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
 esp_err_t httpd_stop(httpd_handle_t handle) { assert(handle); ++server_stops; return ESP_OK; }
 esp_err_t httpd_register_uri_handler(httpd_handle_t handle,const httpd_uri_t *r)
-{ assert(handle && route_count<6); assert(r->method==HTTP_GET || (!strcmp(r->uri,"/api/command") && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
+{ assert(handle && route_count<11); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12)) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type)
 { assert(r && type && !lock_depth); return http_error==1 ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value)
@@ -80,6 +96,8 @@ static const char *header(const char *name)
     if(!strcmp(name,"Origin")) return request_origin;
     if(!strcmp(name,"Host")) return request_host;
     if(!strcmp(name,"X-Request-ID")) return request_id;
+    if(!strcmp(name,"X-Session-Token")) return request_token;
+    if(!strcmp(name,"X-Sequence")) return request_sequence;
     assert(0); return NULL;
 }
 size_t httpd_req_get_hdr_value_len(httpd_req_t *r,const char *name) { assert(r); const char *s=header(name); return s ? strlen(s) : 0; }
@@ -107,6 +125,9 @@ static void reset(void)
     memset(s_receipts,0,sizeof s_receipts); s_pending=s_sending=s_latest=-1; s_next_receipt=0; tx_error=0; tx_hook=NULL;
     request_type="text/plain"; request_origin="http://192.168.4.1"; request_host="192.168.4.1";
     request_id="0123456789abcdef0123456789abcdef"; body_offset=0; body_chunk=6; body_error=0; body_delay=0;
+    memset(&s_manual,0,sizeof s_manual); memset(s_manual_ids,0,sizeof s_manual_ids);
+    s_manual_next=s_manual_controls=0; s_manual_has_barrier=false; s_manual_barrier=0;
+    wait_delay=0; wait_hook=NULL; gate_fail=false; request_token=request_sequence=NULL;
 }
 static void feed(const char *text) { Stm32Status_Feed((const uint8_t *)text,strlen(text)); }
 static Stm32StatusSnapshot snapshot(void) { Stm32StatusSnapshot s; Stm32Status_GetSnapshot(&s); return s; }
@@ -158,12 +179,27 @@ static DWORD WINAPI command_worker(void *arg)
     }
     return 0;
 }
+static char manual_token[33];
+static void manual_ready(void)
+{
+    reset(); clock_us=10000; feed("STATE=2 FAULTS=0 STOP=0\n");
+    assert(WebManual_Open("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",manual_token)==WEB_MANUAL_OK);
+}
+static void revoke_during_wait(void) { assert(WebManual_End(manual_token)==WEB_MANUAL_OK); }
+static void renew_during_wait(void) { assert(WebManual_Renew(manual_token,2,UART_MOTION_RIGHT)==WEB_MANUAL_OK); }
+static void unsafe_during_wait(void) { feed("STATE=3 FAULTS=4 STOP=1\n"); }
+static esp_err_t manual_post(unsigned op,const char *body)
+{
+    request_body=body; body_offset=0; httpd_req_t req={.content_len=strlen(body)};
+    return WebServer_Manual(&req,op);
+}
 
 int main(void)
 {
     InitializeCriticalSection(&s_lock.native);
     InitializeCriticalSection(&s_command_lock.native);
     InitializeCriticalSection(&tx_lock);
+    s_tx_gate=xSemaphoreCreateMutexStatic(&s_tx_storage);
     reset(); assert(!snapshot().valid && !snapshot().connected); api();
     assert(!strcmp(reply,"{\"valid\":false,\"connected\":false,\"state\":null,\"faults\":null,\"stop\":null,\"age_ms\":null}"));
     pass("boot/no response: unknown fields are null, not safe defaults");
@@ -225,7 +261,7 @@ int main(void)
         assert(!strcmp(frames[0],"STATUS\n") && !strcmp(frames[1],"STATUS\n"));
     }
     pass("actual app_main polls at 1 Hz without new tasks, including AP failure");
-    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==6);
+    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==11);
     const char *paths[]={"/","/style.css","/app.js","/health","/api/status"};
     for(unsigned i=0;i<5;++i) {
         assert(!strcmp(routes[i].uri,paths[i])); httpd_req_t r={.user_ctx=routes[i].user_ctx}; assert(routes[i].handler(&r)==ESP_OK);
@@ -310,5 +346,83 @@ int main(void)
     assert(WaitForSingleObject(a,10000)==WAIT_OBJECT_0 && WaitForSingleObject(b,10000)==WAIT_OBJECT_0); CloseHandle(a); CloseHandle(b);
     WebCommands_ProcessPending(); assert(tx_count==1 && !strcmp(frames[0],"STOP\n"));
     pass("1000 concurrent duplicate submissions vs 2000 dispatch/receipt reads: exactly one frame, consistent receipt, no deadlock");
-    printf("RESULT %u native W1/W2/W3 test groups passed; no hardware validation\n",cases); return 0;
+    manual_ready(); assert(tx_count==0 && WebManual_Active());
+    for(uint32_t seq=1;seq<=8;++seq) {
+        assert(WebManual_Renew(manual_token,seq,UART_MOTION_FORWARD)==WEB_MANUAL_OK);
+        WebManual_Process(); WebManual_Process(); assert(tx_count==seq && !strcmp(frames[seq-1],"AVANZAR\n"));
+        clock_us+=200000;
+    }
+    pass("opening never moves; eight held renewals at 200 ms emit exactly one frame each, no autonomous renewal");
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); assert(WebManual_End(manual_token)==WEB_MANUAL_OK);
+    WebManual_Process(); WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"DETENER\n"));
+    assert(WebManual_Renew(manual_token,2,UART_MOTION_FORWARD)==WEB_MANUAL_EXPIRED && WebManual_End(manual_token)==WEB_MANUAL_EXPIRED);
+    pass("release clears pending direction, sends DETENER once, old token never reactivates");
+    manual_ready(); clock_us+=299999; assert(WebManual_Active()); ++clock_us; assert(!WebManual_Active());
+    WebManual_Process(); WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"DETENER\n"));
+    assert(WebManual_Renew(manual_token,1,UART_MOTION_FORWARD)==WEB_MANUAL_EXPIRED);
+    pass("Wi-Fi/page loss without end: lease valid at 299999 us, expires at exactly 300000 us, single halt");
+    manual_ready(); char other[33]; assert(WebManual_Open("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",other)==WEB_MANUAL_BUSY);
+    assert(WebManual_Renew("ffffffffffffffffffffffffffffffff",1,UART_MOTION_FORWARD)==WEB_MANUAL_EXPIRED);
+    assert(WebManual_End("ffffffffffffffffffffffffffffffff")==WEB_MANUAL_EXPIRED && WebManual_Active());
+    WebManual_Renew(manual_token,2,UART_MOTION_LEFT); int64_t expiry=s_manual.expires_us;
+    assert(WebManual_Renew(manual_token,2,UART_MOTION_RIGHT)==WEB_MANUAL_REPLAY && s_manual.expires_us==expiry);
+    assert(WebManual_Renew(manual_token,1,UART_MOTION_RIGHT)==WEB_MANUAL_REPLAY);
+    WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"GIRAR_IZQUIERDA\n"));
+    pass("one owner; wrong tokens cannot release owner; duplicate/out-of-order sequences do not renew or change direction");
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); wait_hook=renew_during_wait;
+    WebManual_Process(); assert(tx_count==0); WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"GIRAR_DERECHA\n"));
+    pass("replaced pending sequence discarded at final TX gate; no catch-up burst");
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); wait_hook=revoke_during_wait;
+    WebManual_Process(); assert(tx_count==0); WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"DETENER\n"));
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); wait_delay=300000;
+    WebManual_Process(); assert(tx_count==0); wait_delay=0; WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"DETENER\n"));
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); wait_hook=unsafe_during_wait;
+    WebManual_Process(); assert(tx_count==0); WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"DETENER\n"));
+    pass("release, expiry and unsafe STATUS while waiting TX are rechecked before any direction write");
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); wait_hook=stop_during_send;
+    WebManual_Process(); assert(tx_count==0); WebCommands_ProcessPending(); WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"STOP\n"));
+    assert(WebManual_Renew(manual_token,2,UART_MOTION_REVERSE)==WEB_MANUAL_EXPIRED);
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); tx_hook=stop_during_send;
+    WebManual_Process(); WebCommands_ProcessPending(); assert(tx_count==2 && !strcmp(frames[0],"AVANZAR\n") && !strcmp(frames[1],"STOP\n"));
+    WebManual_Process(); assert(tx_count==2);
+    pass("STOP before TX claim suppresses motion; STOP during committed frame follows it and prevents later directions");
+    for(unsigned i=0;i<4;++i) {
+        manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD);
+        if(i==0) feed("STATE=0 FAULTS=0 STOP=0\n");
+        if(i==1) feed("STATE=2 FAULTS=4 STOP=0\n");
+        if(i==2) feed("STATE=2 FAULTS=0 STOP=1\n");
+        if(i==3) s_status.valid=false;
+        WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"DETENER\n") && !s_manual.active);
+    }
+    manual_ready();
+    for(unsigned i=1;i<10;++i) {clock_us=10000+(int64_t)i*200000; assert(WebManual_Renew(manual_token,i,UART_MOTION_FORWARD)==WEB_MANUAL_OK); WebManual_Process();}
+    clock_us=2010000; assert(WebManual_Renew(manual_token,10,UART_MOTION_FORWARD)==WEB_MANUAL_EXPIRED);
+    WebManual_Process(); assert(!strcmp(frames[tx_count-1],"DETENER\n"));
+    pass("mode, faults, STOP, missing snapshot and exact 2000-ms status age revoke even a continually renewed lease");
+    manual_ready(); Uart_SendForward(); assert(tx_count==0); Uart_SendHalt(); assert(tx_count==1 && !strcmp(frames[0],"DETENER\n"));
+    Uart_SendReverse(); assert(tx_count==2 && !strcmp(frames[1],"RETROCEDER\n"));
+    manual_ready(); Uart_SendReset(); assert(tx_count==2 && !strcmp(frames[0],"DETENER\n") && !strcmp(frames[1],"RESET\n"));
+    assert(!WebManual_Active()); char fresh[33]; assert(WebManual_Open("cccccccccccccccccccccccccccccccc",fresh)==WEB_MANUAL_UNSAFE);
+    clock_us++; feed("STATE=2 FAULTS=0 STOP=0\n"); assert(WebManual_Open("dddddddddddddddddddddddddddddddd",fresh)==WEB_MANUAL_OK);
+    assert(strcmp(fresh,manual_token)!=0 && WebManual_Renew(manual_token,2,UART_MOTION_FORWARD)==WEB_MANUAL_EXPIRED);
+    pass("console directions excluded only while web owns; console halt/reset always revoke, fresh STATUS/new token needed");
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); tx_error=1;
+    WebManual_Process(); assert(!s_manual.active); WebManual_Process(); WebManual_Process(); assert(tx_count==2);
+    manual_ready(); WebManual_Renew(manual_token,1,UART_MOTION_FORWARD); gate_fail=true;
+    WebManual_Process(); WebManual_Process(); gate_fail=false; WebManual_Process(); assert(tx_count==0 && !s_manual.active);
+    pass("short UART write or bounded TX-gate failure revokes; halt attempted once without infinite retries");
+    reset(); clock_us=10000; feed("STATE=2 FAULTS=0 STOP=0\n");
+    assert(manual_post(0,"OPEN")==ESP_OK && !strncmp(response_status,"201",3) && tx_count==0);
+    char http_token[33]; strcpy(http_token,s_manual.token); request_token=http_token; request_sequence="1";
+    assert(manual_post(1,"AVANZAR")==ESP_OK && !strncmp(response_status,"202",3) && tx_count==0);
+    WebManual_Process(); assert(tx_count==1 && !strcmp(frames[0],"AVANZAR\n"));
+    request_sequence="1"; manual_post(1,"RETROCEDER"); assert(!strncmp(response_status,"409",3));
+    request_sequence="4294967296"; manual_post(1,"AVANZAR"); assert(!strncmp(response_status,"400",3));
+    request_sequence="2"; manual_post(1,"STOP"); assert(!strncmp(response_status,"400",3));
+    assert(manual_post(2,"END")==ESP_OK); WebManual_Process(); assert(tx_count==2 && !strcmp(frames[1],"DETENER\n"));
+    manual_post(1,"AVANZAR"); assert(!strncmp(response_status,"410",3));
+    request_id="eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"; assert(manual_post(3,"DETENER")==ESP_OK); WebManual_Process(); assert(tx_count==3);
+    request_origin="http://foreign"; manual_post(0,"OPEN"); assert(!strncmp(response_status,"403",3));
+    pass("four POST endpoints use bounded shared validation, safe tokens/sequences and no direct HTTP UART writes");
+    printf("RESULT %u native W1/W2/W3/W4 test groups passed; no hardware validation\n",cases); return 0;
 }

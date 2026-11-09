@@ -20,4 +20,22 @@ void WebCommands_ProcessPending(void);
 bool WebCommands_GetLatest(WebCommandReceipt *receipt);
 const char *WebCommands_Name(UartControlCommand command);
 const char *WebCommands_Phase(WebCommandPhase phase);
+
+#define WEB_MANUAL_LEASE_MS 300U
+#define WEB_MANUAL_STATUS_MS 2000U
+typedef enum { WEB_MANUAL_OK, WEB_MANUAL_INVALID, WEB_MANUAL_BUSY, WEB_MANUAL_UNSAFE, WEB_MANUAL_EXPIRED, WEB_MANUAL_REPLAY } WebManualResult;
+WebManualResult WebManual_Open(const char *request_id, char token[33]);
+WebManualResult WebManual_Renew(const char *token, uint32_t sequence, UartMotionCommand command);
+WebManualResult WebManual_End(const char *token);
+WebManualResult WebManual_Halt(const char *request_id);
+void WebManual_RequestHalt(void); /* Consola: parada siempre permitida. */
+void WebManual_Process(void); /* Solo app_main. */
+bool WebManual_Active(void);
+/* Arbitraje TX: invocadas con el mutex UART adquirido; ninguna realiza E/S. */
+bool WebManual_Claim(uint64_t generation, uint32_t sequence, UartMotionCommand direction);
+bool WebManual_TakeHalt(void);
+void WebManual_TxFailed(void);
+bool WebManual_ConsoleAllowed(void);
+void WebManual_ControlBegin(UartControlCommand command);
+void WebManual_ControlEnd(void);
 #endif

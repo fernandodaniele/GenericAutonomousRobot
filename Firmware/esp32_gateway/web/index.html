@@ -7,6 +7,7 @@
   <title>GenericAutonomousRobot · Interfaz local</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
+  <script src="/manual.js" defer></script>
 </head>
 <body>
   <div class="page">
@@ -15,7 +16,7 @@
         <span class="monogram" aria-hidden="true">GR</span>
         <span>INTERFAZ LOCAL</span>
       </a>
-      <span class="version">W3 · Control y monitoreo</span>
+      <span class="version">W4 · Control manual</span>
     </header>
 
     <main>
@@ -73,10 +74,26 @@
         <noscript><p>Los controles requieren JavaScript; no se envía ninguna solicitud automáticamente.</p></noscript>
       </section>
 
+      <section class="card controls" aria-labelledby="manual-title">
+        <p class="eyebrow">MOVIMIENTO MANUAL</p>
+        <h2 id="manual-title">Mantener presionado para mover</h2>
+        <p id="manual-instructions" class="description">Disponible solo en modo manual, sin fallas ni bloqueo y con información reciente. Soltá para solicitar la detención. Reconectar no reanuda el movimiento.</p>
+        <div class="manual-pad" aria-describedby="manual-instructions">
+          <button id="manual-forward" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">↑</span>Avanzar</button>
+          <button id="manual-left" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">←</span>Izquierda</button>
+          <button id="manual-reverse" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">↓</span>Retroceder</button>
+          <button id="manual-right" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">→</span>Derecha</button>
+          <button id="manual-halt" class="halt-button" type="button" disabled><span aria-hidden="true">■</span> Detener movimiento</button>
+        </div>
+        <p id="manual-session" class="neutral-label" role="status" aria-live="polite">Sesión manual inactiva</p>
+        <p id="manual-message" class="description">Esperando información del robot.</p>
+        <p class="safety-note">La autorización temporal no confirma desplazamiento físico ni garantiza frenado ante una falla total. STOP global permanece separado arriba.</p>
+      </section>
+
       <aside class="local-note">
         <span class="note-title">Todo queda en la red local</span>
         <p>La página y sus recursos se alojan en la ESP32. Podés acceder desde tu computadora o celular sin conexión a Internet.</p>
-        <p>Una respuesta web no demuestra conexión con el robot ni autorización de movimiento. Los valores desactualizados son históricos. Esta interfaz no ofrece controles direccionales.</p>
+        <p>Una respuesta web no demuestra conexión con el robot ni autorización de movimiento. Los valores desactualizados son históricos.</p>
       </aside>
     </main>
 

@@ -111,36 +111,52 @@ static esp_err_t CommandReply(httpd_req_t *request, const char *status, const ch
     return close ? ESP_FAIL : err;
 }
 
-static esp_err_t WebServer_Command(httpd_req_t *request)
+static bool CommandHeaders(httpd_req_t *request, char id[33])
 {
-    char id[WEB_COMMAND_ID_LENGTH + 1U], type[40], host[80], origin[88], expected[88];
+    char type[40], host[80], origin[88], expected[88];
     if (!ReadHeader(request, "Host", host, sizeof(host)) ||
         !ReadHeader(request, "Origin", origin, sizeof(origin)))
-        return CommandReply(request, "403 Forbidden", "{\"accepted\":false,\"error\":\"origin_required\"}", true);
+        { (void)CommandReply(request, "403 Forbidden", "{\"accepted\":false,\"error\":\"origin_required\"}", true); return false; }
     const int count = snprintf(expected, sizeof(expected), "http://%s", host);
     if (count < 0 || (size_t)count >= sizeof(expected) || strcmp(origin, expected) != 0)
-        return CommandReply(request, "403 Forbidden", "{\"accepted\":false,\"error\":\"foreign_origin\"}", true);
+        { (void)CommandReply(request, "403 Forbidden", "{\"accepted\":false,\"error\":\"foreign_origin\"}", true); return false; }
     if (!ReadHeader(request, "Content-Type", type, sizeof(type)) || strcmp(type, "text/plain") != 0)
-        return CommandReply(request, "415 Unsupported Media Type", "{\"accepted\":false,\"error\":\"use_text_plain\"}", true);
-    if (!ReadHeader(request, "X-Request-ID", id, sizeof(id)))
-        return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"request_id_required\"}", true);
-    if (request->content_len == 0U)
-        return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"body_required\"}", true);
-    if (request->content_len > 6U)
-        return CommandReply(request, "413 Content Too Large", "{\"accepted\":false,\"error\":\"body_length\"}", true);
+        { (void)CommandReply(request, "415 Unsupported Media Type", "{\"accepted\":false,\"error\":\"use_text_plain\"}", true); return false; }
+    if (!ReadHeader(request, "X-Request-ID", id, WEB_COMMAND_ID_LENGTH + 1U))
+        { (void)CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"request_id_required\"}", true); return false; }
+    if (strlen(id) != 32U) { (void)CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"request_id\"}", true); return false; }
+    for (unsigned i = 0; i < 32U; ++i) if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) {
+        (void)CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"request_id\"}", true); return false;
+    }
+    return true;
+}
 
-    char body[7];
+static bool CommandBody(httpd_req_t *request, char *body, size_t capacity)
+{
+    if (request->content_len == 0U)
+        { (void)CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"body_required\"}", true); return false; }
+    if (request->content_len >= capacity)
+        { (void)CommandReply(request, "413 Content Too Large", "{\"accepted\":false,\"error\":\"body_length\"}", true); return false; }
+
     size_t used = 0U;
     const int64_t started = esp_timer_get_time();
     while (used < request->content_len) {
         if (esp_timer_get_time() - started >= 1000000)
-            return CommandReply(request, "408 Request Timeout", "{\"accepted\":false,\"error\":\"body_timeout\"}", true);
+            { (void)CommandReply(request, "408 Request Timeout", "{\"accepted\":false,\"error\":\"body_timeout\"}", true); return false; }
         const int got = httpd_req_recv(request, body + used, request->content_len - used);
         if (got <= 0 || (size_t)got > request->content_len - used)
-            return CommandReply(request, "408 Request Timeout", "{\"accepted\":false,\"error\":\"body_incomplete\"}", true);
+            { (void)CommandReply(request, "408 Request Timeout", "{\"accepted\":false,\"error\":\"body_incomplete\"}", true); return false; }
         used += (size_t)got;
     }
     body[used] = '\0';
+    return true;
+}
+
+static esp_err_t WebServer_Command(httpd_req_t *request)
+{
+    char id[33], body[7];
+    if (!CommandHeaders(request, id) || !CommandBody(request, body, sizeof(body))) return ESP_FAIL;
+    const size_t used = request->content_len;
     UartControlCommand command;
     if (used == 4U && memcmp(body, "STOP", 4U) == 0) command = UART_CONTROL_STOP;
     else if (used == 5U && memcmp(body, "RESET", 5U) == 0) command = UART_CONTROL_RESET;
@@ -162,12 +178,73 @@ static esp_err_t WebServer_Command(httpd_req_t *request)
     return CommandReply(request, "202 Accepted", response, false);
 }
 
+static esp_err_t WebServer_Manual(httpd_req_t *request, unsigned operation)
+{
+    char id[33], body[16], token[33], seq_text[11];
+    if (!CommandHeaders(request, id) || !CommandBody(request, body, sizeof(body))) return ESP_FAIL;
+    WebManualResult result = WEB_MANUAL_INVALID;
+    if (operation == 0U && request->content_len == 4U && memcmp(body, "OPEN", 4U) == 0) {
+        result = WebManual_Open(id, token);
+    } else if (operation == 1U) {
+        UartMotionCommand direction;
+        if (request->content_len == 7U && memcmp(body, "AVANZAR", 7U) == 0) direction = UART_MOTION_FORWARD;
+        else if (request->content_len == 10U && memcmp(body, "RETROCEDER", 10U) == 0) direction = UART_MOTION_REVERSE;
+        else if (request->content_len == 15U && memcmp(body, "GIRAR_IZQUIERDA", 15U) == 0) direction = UART_MOTION_LEFT;
+        else if (request->content_len == 13U && memcmp(body, "GIRAR_DERECHA", 13U) == 0) direction = UART_MOTION_RIGHT;
+        else return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"direction\"}", false);
+        uint32_t sequence = 0U;
+        if (!ReadHeader(request, "X-Session-Token", token, sizeof(token)) ||
+            !ReadHeader(request, "X-Sequence", seq_text, sizeof(seq_text)))
+            return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"token_sequence\"}", false);
+        for (const char *p = seq_text; *p; ++p) {
+            if (*p < '0' || *p > '9' || sequence > (UINT32_MAX - (uint32_t)(*p - '0')) / 10U)
+                return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"sequence\"}", false);
+            sequence = sequence * 10U + (uint32_t)(*p - '0');
+        }
+        result = WebManual_Renew(token, sequence, direction);
+    } else if (operation == 2U && request->content_len == 3U && memcmp(body, "END", 3U) == 0 &&
+               ReadHeader(request, "X-Session-Token", token, sizeof(token))) {
+        result = WebManual_End(token);
+    } else if (operation == 3U && request->content_len == 7U && memcmp(body, "DETENER", 7U) == 0) {
+        result = WebManual_Halt(id);
+    }
+    if (result != WEB_MANUAL_OK) {
+        static const char *errors[] = { "", "invalid", "busy", "unsafe", "expired", "replay" };
+        char response[80];
+        int length = snprintf(response, sizeof(response), "{\"accepted\":false,\"error\":\"%s\"}", errors[result]);
+        if (length < 0 || (size_t)length >= sizeof(response)) return ESP_FAIL;
+        return CommandReply(request, result == WEB_MANUAL_INVALID ? "400 Bad Request" :
+            result == WEB_MANUAL_UNSAFE ? "412 Precondition Failed" :
+            result == WEB_MANUAL_EXPIRED ? "410 Gone" : "409 Conflict", response, false);
+    }
+    if (operation == 0U) {
+        char response[112];
+        int length = snprintf(response, sizeof(response), "{\"accepted\":true,\"token\":\"%s\",\"lease_ms\":%u}", token, WEB_MANUAL_LEASE_MS);
+        if (length < 0 || (size_t)length >= sizeof(response)) return ESP_FAIL;
+        return CommandReply(request, "201 Created", response, false);
+    }
+    if (operation == 1U) {
+        char response[64];
+        int length = snprintf(response, sizeof(response), "{\"accepted\":true,\"lease_ms\":%u}", WEB_MANUAL_LEASE_MS);
+        if (length < 0 || (size_t)length >= sizeof(response)) return ESP_FAIL;
+        return CommandReply(request, "202 Accepted", response, false);
+    }
+    return CommandReply(request, "202 Accepted", "{\"accepted\":true,\"phase\":\"halt_requested\"}", false);
+}
+static esp_err_t WebServer_ManualOpen(httpd_req_t *r) { return WebServer_Manual(r, 0U); }
+static esp_err_t WebServer_ManualRenew(httpd_req_t *r) { return WebServer_Manual(r, 1U); }
+static esp_err_t WebServer_ManualEnd(httpd_req_t *r) { return WebServer_Manual(r, 2U); }
+static esp_err_t WebServer_ManualHalt(httpd_req_t *r) { return WebServer_Manual(r, 3U); }
+static esp_err_t WebServer_ManualScript(httpd_req_t *r);
+
 esp_err_t WebServer_Start(void)
 {
     if (s_attempted) return s_result;
     s_attempted = true;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.recv_wait_timeout = 1; /* Lecturas POST acotadas; sin esperar UART. */
+    config.max_uri_handlers = 11;
+    config.lru_purge_enable = true;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start: %s; UART continuara", esp_err_to_name(err));
@@ -179,7 +256,12 @@ esp_err_t WebServer_Start(void)
         { .uri = "/app.js", .method = HTTP_GET, .handler = WebServer_Resource, .user_ctx = (void *)&resources[2] },
         { .uri = "/health", .method = HTTP_GET, .handler = WebServer_Health },
         { .uri = "/api/status", .method = HTTP_GET, .handler = WebServer_Status },
-        { .uri = "/api/command", .method = HTTP_POST, .handler = WebServer_Command }
+        { .uri = "/api/command", .method = HTTP_POST, .handler = WebServer_Command },
+        { .uri = "/api/manual/start", .method = HTTP_POST, .handler = WebServer_ManualOpen },
+        { .uri = "/api/manual/renew", .method = HTTP_POST, .handler = WebServer_ManualRenew },
+        { .uri = "/api/manual/end", .method = HTTP_POST, .handler = WebServer_ManualEnd },
+        { .uri = "/api/manual/halt", .method = HTTP_POST, .handler = WebServer_ManualHalt },
+        { .uri = "/manual.js", .method = HTTP_GET, .handler = WebServer_ManualScript }
     };
     for (size_t i = 0U; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);
@@ -193,4 +275,13 @@ esp_err_t WebServer_Start(void)
     }
     ESP_LOGI(TAG, "HTTP listo en puerto %u", (unsigned)config.server_port);
     return s_result = ESP_OK;
+}
+
+extern const uint8_t manual_start[] asm("_binary_manual_js_start");
+extern const uint8_t manual_end[] asm("_binary_manual_js_end");
+static esp_err_t WebServer_ManualScript(httpd_req_t *r)
+{
+    static const WebResource resource = { manual_start, manual_end, "application/javascript; charset=utf-8" };
+    r->user_ctx = (void *)&resource;
+    return WebServer_Resource(r);
 }

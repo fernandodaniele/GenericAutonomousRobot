@@ -22,6 +22,13 @@ void test_exit(portMUX_TYPE *);
 #define taskEXIT_CRITICAL(lock) test_exit(lock)
 typedef int BaseType_t;
 #define pdPASS 1
+#define pdTRUE 1
+typedef struct { CRITICAL_SECTION lock; } StaticSemaphore_t;
+typedef StaticSemaphore_t *SemaphoreHandle_t;
+SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *);
+BaseType_t xSemaphoreTake(SemaphoreHandle_t, unsigned);
+BaseType_t xSemaphoreGive(SemaphoreHandle_t);
+void esp_fill_random(void *, size_t);
 #define pdMS_TO_TICKS(ms) ((ms) / 10U)
 int64_t esp_timer_get_time(void);
 BaseType_t xTaskCreate(void (*)(void *), const char *, unsigned, void *, unsigned, void *);
@@ -44,13 +51,14 @@ int uart_param_config(int, const uart_config_t *);
 int uart_set_pin(int, int, int, int, int);
 int uart_write_bytes(int, const void *, size_t);
 int uart_read_bytes(int, void *, uint32_t, unsigned);
+int uart_wait_tx_done(int, unsigned);
 
 typedef void *httpd_handle_t;
 typedef struct { void *user_ctx; size_t content_len; } httpd_req_t;
 typedef esp_err_t (*http_handler_t)(httpd_req_t *);
 typedef struct { const char *uri; int method; http_handler_t handler; void *user_ctx; } httpd_uri_t;
-typedef struct { unsigned server_port, stack_size, task_priority; int recv_wait_timeout; } httpd_config_t;
-#define HTTPD_DEFAULT_CONFIG() {80U, 4096U, 5U, 5}
+typedef struct { unsigned server_port, stack_size, task_priority; int recv_wait_timeout; unsigned max_uri_handlers; } httpd_config_t;
+#define HTTPD_DEFAULT_CONFIG() {80U, 4096U, 5U, 5, 8U}
 #define HTTP_GET 0
 #define HTTP_POST 1
 esp_err_t httpd_start(httpd_handle_t *, const httpd_config_t *);

@@ -75,6 +75,7 @@ void app_main(void)
     // Recepcion UART independiente del monitor serial.
     while (1) {
         WebCommands_ProcessPending();
+        WebManual_Process();
         if (Stm32Status_PollDue()) Uart_SendStatus();
         Uart_ReadResponse();
         vTaskDelay(pdMS_TO_TICKS(10));

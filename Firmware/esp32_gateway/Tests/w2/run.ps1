@@ -4,13 +4,13 @@ $build = Join-Path $firmware '.pio/build/w2-native'
 New-Item -ItemType Directory -Force -Path $build | Out-Null
 # Headers puente: el mismo mock del SDK, sin APIs de prueba en produccion.
 $mocks = Join-Path $build 'mocks'
-foreach ($header in @('esp_err.h','esp_log.h','esp_timer.h','esp_http_server.h','freertos/FreeRTOS.h','freertos/task.h','driver/uart.h','driver/gpio.h')) {
+foreach ($header in @('esp_err.h','esp_log.h','esp_timer.h','esp_random.h','esp_http_server.h','freertos/FreeRTOS.h','freertos/task.h','freertos/semphr.h','driver/uart.h','driver/gpio.h')) {
     $path = Join-Path $mocks $header
     New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
     Set-Content -LiteralPath $path -Value '#include "sdk.h"' -Encoding Ascii
 }
 $assembly = ".section .rdata,`"dr`"`n"
-foreach ($name in @('index.html','style.css','app.js')) {
+foreach ($name in @('index.html','style.css','app.js','manual.js')) {
     $symbol = $name.Replace('.','_')
     $asset = (Join-Path $firmware "web/$name").Replace('\','/')
     $assembly += ".global _binary_${symbol}_start`n_binary_${symbol}_start:`n.incbin `"$asset`"`n.global _binary_${symbol}_end`n_binary_${symbol}_end:`n"

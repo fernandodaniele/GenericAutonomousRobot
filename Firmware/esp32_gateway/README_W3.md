@@ -1,5 +1,8 @@
 # Controles operativos W3
 
+Alcance historico W3. La autorizacion temporal y los controles direccionales
+posteriores se documentan en `README_W4.md`.
+
 Solo ESP32. Se reutiliza el protocolo presente en
 `Firmware/stm32_control/Core/Src/task_comms.c`: STOP, RESET y MANUAL. AUTO no
 esta implementado como comando UART en esta rama, aunque existe ese estado en

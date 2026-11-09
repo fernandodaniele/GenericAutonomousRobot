@@ -2,9 +2,14 @@
 #define UART_COMM_H
 
 #include <stdbool.h>
+#include <stdint.h>
 typedef enum { UART_CONTROL_STOP, UART_CONTROL_RESET, UART_CONTROL_MANUAL } UartControlCommand;
 /* Resultado de entrega al driver, no confirmacion de la STM32. Solo tareas. */
 bool Uart_SendControl(UartControlCommand command);
+typedef enum { UART_MOTION_FORWARD, UART_MOTION_REVERSE, UART_MOTION_LEFT, UART_MOTION_RIGHT } UartMotionCommand;
+/* Solo app_main: usa permiso de una renovacion, comprobado dentro del turno TX. */
+bool Uart_SendLeasedMotion(UartMotionCommand command, uint64_t generation, uint32_t sequence);
+bool Uart_SendPendingHalt(void);
 
 /**
  * @file uart_comm.h

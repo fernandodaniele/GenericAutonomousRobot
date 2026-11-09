@@ -1,5 +1,6 @@
 #include "uart_comm.h"
 #include "stm32_status.h"
+#include "web_commands.h"
 
 #include <string.h>
 #include "driver/uart.h"
@@ -7,6 +8,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 /* ── Configuración de pines y puerto ─────────────────────────────────────── */
 #define UART_PORT           UART_NUM_2
@@ -17,10 +19,36 @@
 #define UART_TX_BUFFER_SIZE 0
 
 static const char *TAG = "ESP32_UART";
+static StaticSemaphore_t s_tx_storage;
+static SemaphoreHandle_t s_tx_gate;
+
+/* Todos los productores pasan por este turno, siempre fuera de portMUX.
+ * Esperar FIFO vacio ANTES de validar el permiso evita esperas de cola tras
+ * la comprobacion final. Las tramas son menores que el FIFO del ESP32. */
+static bool TxBegin(void)
+{
+    if (!s_tx_gate || xSemaphoreTake(s_tx_gate, pdMS_TO_TICKS(20)) != pdTRUE) return false;
+    if (uart_wait_tx_done(UART_PORT, pdMS_TO_TICKS(20)) != ESP_OK) {
+        xSemaphoreGive(s_tx_gate); return false;
+    }
+    return true;
+}
+static bool TxWrite(const char *message)
+{
+    const size_t length = strlen(message);
+    return uart_write_bytes(UART_PORT, message, length) == (int)length;
+}
+static bool SendOrdinary(const char *message)
+{
+    if (!TxBegin()) return false;
+    const bool sent = TxWrite(message); xSemaphoreGive(s_tx_gate); return sent;
+}
 
 /* ── Implementación ──────────────────────────────────────────────────────── */
 
 void Uart_Init(void) {
+    if (!s_tx_gate) s_tx_gate = xSemaphoreCreateMutexStatic(&s_tx_storage);
+    if (!s_tx_gate) ESP_LOGE(TAG, "No se pudo crear el turno TX; transmisiones inhibidas");
     uart_config_t uart_config = {
         .baud_rate  = UART_BAUD_RATE,
         .data_bits  = UART_DATA_8_BITS,
@@ -41,7 +69,7 @@ void Uart_Init(void) {
 
 void Uart_SendPing(void) {
     const char *message = "PING\n";
-    uart_write_bytes(UART_PORT, message, strlen(message));
+    if (!SendOrdinary(message)) { ESP_LOGW(TAG, "PING no entregado a UART"); return; }
     ESP_LOGI(TAG, "Enviado a STM32: PING");
 }
 
@@ -49,7 +77,7 @@ void Uart_SendStatus(void)
 {
     const char *message = "STATUS\n";
 
-    uart_write_bytes(UART_PORT, message, strlen(message));
+    if (!SendOrdinary(message)) { ESP_LOGW(TAG, "STATUS no entregado a UART"); return; }
 
     ESP_LOGI(TAG, "Enviado a STM32: STATUS");
 }
@@ -63,9 +91,14 @@ bool Uart_SendControl(UartControlCommand command)
         case UART_CONTROL_MANUAL: message = "MANUAL\n"; break;
         default: return false;
     }
-    const size_t length = strlen(message);
-    /* Una trama por llamada: tx_mux del SDK serializa consola y app_main. */
-    const bool sent = uart_write_bytes(UART_PORT, message, length) == (int)length;
+    WebManual_ControlBegin(command);
+    bool sent = false;
+    if (TxBegin()) {
+        const bool halted = !WebManual_TakeHalt() || TxWrite("DETENER\n");
+        if (halted || command == UART_CONTROL_STOP) sent = TxWrite(message);
+        xSemaphoreGive(s_tx_gate);
+    }
+    WebManual_ControlEnd();
     if (sent) ESP_LOGI(TAG, "Entregado a UART: %s", message);
     else ESP_LOGE(TAG, "Fallo de entrega UART; sin reintento");
     return sent;
@@ -77,15 +110,51 @@ void Uart_SendManual(void) { (void)Uart_SendControl(UART_CONTROL_MANUAL); }
 
 /* Una pulsacion explicita = una trama; sin temporizador de renovacion. */
 static void Uart_SendMotion(const char *message) {
-    uart_write_bytes(UART_PORT, message, strlen(message));
-    ESP_LOGI(TAG, "Movimiento enviado: %s", message);
+    if (!TxBegin()) return;
+    const bool allowed = WebManual_ConsoleAllowed();
+    if (allowed) (void)TxWrite(message);
+    xSemaphoreGive(s_tx_gate);
+    if (allowed) ESP_LOGI(TAG, "Movimiento de consola enviado: %s", message);
+    else ESP_LOGW(TAG, "Direccion de consola rechazada: autorizacion web/control activo");
 }
 
 void Uart_SendForward(void) { Uart_SendMotion("AVANZAR\n"); }
 void Uart_SendReverse(void) { Uart_SendMotion("RETROCEDER\n"); }
 void Uart_SendLeft(void) { Uart_SendMotion("GIRAR_IZQUIERDA\n"); }
 void Uart_SendRight(void) { Uart_SendMotion("GIRAR_DERECHA\n"); }
-void Uart_SendHalt(void) { Uart_SendMotion("DETENER\n"); }
+void Uart_SendHalt(void) { WebManual_RequestHalt(); (void)Uart_SendPendingHalt(); }
+
+bool Uart_SendPendingHalt(void)
+{
+    if (!TxBegin()) {
+        if (WebManual_TakeHalt()) ESP_LOGW(TAG, "DETENER consumido sin entrega a UART");
+        return false;
+    }
+    const bool requested = WebManual_TakeHalt();
+    const bool sent = !requested || TxWrite("DETENER\n");
+    xSemaphoreGive(s_tx_gate);
+    if (requested) {
+        if (sent) ESP_LOGI(TAG, "Entregado a UART: DETENER");
+        else ESP_LOGW(TAG, "DETENER consumido sin entrega a UART");
+    }
+    return sent;
+}
+
+bool Uart_SendLeasedMotion(UartMotionCommand command, uint64_t generation, uint32_t sequence)
+{
+    static const char *messages[] = { "AVANZAR\n", "RETROCEDER\n", "GIRAR_IZQUIERDA\n", "GIRAR_DERECHA\n" };
+    if ((unsigned)command >= sizeof(messages) / sizeof(messages[0])) return false;
+    if (!TxBegin()) { WebManual_TxFailed(); return false; }
+    bool sent = false;
+    if (WebManual_Claim(generation, sequence, command)) {
+        sent = TxWrite(messages[command]);
+        if (!sent) WebManual_TxFailed();
+    }
+    xSemaphoreGive(s_tx_gate);
+    if (sent) ESP_LOGI(TAG, "Entregado a UART: %.*s",
+                       (int)(strlen(messages[command]) - 1U), messages[command]);
+    return sent;
+}
 
 void Uart_ReadResponse(void) {
     uint8_t rx_buffer[UART_RX_BUFFER_SIZE];

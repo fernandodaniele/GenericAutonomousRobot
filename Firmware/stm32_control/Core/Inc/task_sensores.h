@@ -21,6 +21,12 @@ typedef struct
     uint8_t ultrasonido_trasero_valido; // 1 si la ultima medicion trasera fue valida
     // Disparo de la ultima captura trasera valida, en ticks FreeRTOS.
     TickType_t timestamp_ultrasonido_trasero;
+    // Telemetria: intento resuelto (valido o fallido); no indica frescura.
+    uint8_t resultado_frontal_disponible;
+    uint8_t resultado_trasero_disponible;
+    TickType_t timestamp_resultado_frontal; // Disparo del ultimo intento resuelto.
+    TickType_t timestamp_resultado_trasero;
+    TickType_t timestamp_ir; // Tick de la ultima lectura de los cuatro GPIO IR.
 } SensoresDatos_t;
 
 void TaskSensores_Create(void);

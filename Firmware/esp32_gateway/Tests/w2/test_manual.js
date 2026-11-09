@@ -1,4 +1,4 @@
-async function runManualTests(appSource, manualSource, report = () => {}) {
+async function runManualTests(appSource, manualSource, report = () => {}, sensorsSource = "") {
   const assert = (value, message) => { if (!value) throw new Error(message); };
   async function fixture({ latency = 0, openLatency = 0 } = {}) {
     let now = 0, serial = 1, nonce = 1, mode = "ok", openResolve;
@@ -40,6 +40,7 @@ async function runManualTests(appSource, manualSource, report = () => {}) {
       requests.push({ url, options, now });
       if (url === "/health") return response({ status: "ok", service: "esp32-web" });
       if (url === "/api/status") return response(status);
+      if (url === "/api/sensors") throw new Error("telemetry unavailable");
       assert(options.method === "POST", "operations require POST");
       if (url === "/api/command") return response({ accepted: true, confirmed: false,
         id: options.headers["X-Request-ID"], command: options.body, phase: "queued" });
@@ -74,7 +75,7 @@ async function runManualTests(appSource, manualSource, report = () => {}) {
       return response({ accepted: true, phase: "halt_requested" });
     }
     const run = new Function("document", "window", "fetch", "AbortController", "setTimeout", "clearTimeout", "performance", "crypto",
-      appSource + "\n" + manualSource + "\nreturn { snapshot(s) {renderStatus(s);manualControl.onStatus(s);}, cancel:manualControl.cancel }; ");
+      appSource + "\n" + manualSource + "\n" + sensorsSource + "\nreturn { snapshot(s) {renderStatus(s);manualControl.onStatus(s);}, cancel:manualControl.cancel }; ");
     const api = run(document, window, fetchMock, Controller,
       (fn, delay) => { const id = serial++; timers.set(id, { fn, at: now + delay }); return id; },
       id => timers.delete(id), { now: () => now }, { getRandomValues(bytes) { bytes.fill(nonce++ % 256); return bytes; } });

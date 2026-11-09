@@ -42,6 +42,9 @@ code { color: #4b6357; margin-left: 6px; font-size: .75rem; }
 .readings dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .readings[data-stale="true"] dd { color: #806321; }
 .controls { margin-top: 24px; }
+.sensor-card { margin-top: 24px; }
+.sensor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.sensor-card [data-stale="true"] { color: #806321; }
 .command-buttons { display: flex; flex-wrap: wrap; gap: 12px; }
 .stop-button { background: #a5362d; }
 .stop-button:hover { background: #842a23; }
@@ -76,6 +79,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 32px
   .version { text-align: right; max-width: 115px; }
   .intro { padding: 40px 0 26px; }
   .cards { grid-template-columns: 1fr; gap: 16px; }
+  .sensor-grid { grid-template-columns: 1fr; gap: 0; }
   .card { padding: 26px; }
   .local-note { padding: 22px 24px; }
   button { width: 100%; }

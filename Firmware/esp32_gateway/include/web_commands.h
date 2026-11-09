@@ -31,6 +31,8 @@ WebManualResult WebManual_Halt(const char *request_id);
 void WebManual_RequestHalt(void); /* Consola: parada siempre permitida. */
 void WebManual_Process(void); /* Solo app_main. */
 bool WebManual_Active(void);
+/* Consulta opcional: false ante cualquier control operativo o sesion manual. */
+bool WebCommands_CanPollSensors(void);
 /* Arbitraje TX: invocadas con el mutex UART adquirido; ninguna realiza E/S. */
 bool WebManual_Claim(uint64_t generation, uint32_t sequence, UartMotionCommand direction);
 bool WebManual_TakeHalt(void);

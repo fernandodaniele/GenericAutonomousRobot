@@ -1,8 +1,11 @@
 #include "uart_comm.h"
 #include "stm32_status.h"
+#include "stm32_sensors.h"
 #include "web_commands.h"
 
 #include <string.h>
+#include <stdio.h>
+#include <inttypes.h>
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -80,6 +83,24 @@ void Uart_SendStatus(void)
     if (!SendOrdinary(message)) { ESP_LOGW(TAG, "STATUS no entregado a UART"); return; }
 
     ESP_LOGI(TAG, "Enviado a STM32: STATUS");
+}
+
+void Uart_PollSensors(void)
+{
+    if (!Stm32Sensors_PollDue()) return;
+    Stm32Sensors_DeferPoll(); /* Tambien ante omision/error: sin rafagas/reintentos. */
+    if (!WebCommands_CanPollSensors() || !TxBegin()) return;
+    /* Revalidar despues de cualquier espera del turno TX. */
+    if (WebCommands_CanPollSensors()) {
+        char message[24];
+        uint32_t query = Stm32Sensors_BeginQuery();
+        int length = snprintf(message, sizeof(message), "SENSORS Q=%" PRIu32 "\n", query);
+        if (length <= 0 || (size_t)length >= sizeof(message) || !TxWrite(message)) {
+            Stm32Sensors_QueryFailed();
+            ESP_LOGW(TAG, "SENSORS no entregado a UART; sin reintento inmediato");
+        }
+    }
+    xSemaphoreGive(s_tx_gate);
 }
 
 bool Uart_SendControl(UartControlCommand command)
@@ -164,6 +185,7 @@ void Uart_ReadResponse(void) {
                                  pdMS_TO_TICKS(100));
     if (length > 0) {
         Stm32Status_Feed(rx_buffer, (size_t)length);
+        Stm32Sensors_Feed(rx_buffer, (size_t)length);
         rx_buffer[length] = '\0';
         printf("[STM32] %s", (char *)rx_buffer);
     }

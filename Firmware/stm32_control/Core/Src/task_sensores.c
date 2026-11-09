@@ -41,6 +41,13 @@ static void TaskSensores_SetUltrasoundResult(SensoresDatos_t *data,
                                 : &data->timestamp_ultrasonido_trasero;
 
     *published_distance = valid ? distance : 0.0f;
+    if (sensor == ULTRASOUND_FRONT) {
+        data->resultado_frontal_disponible = 1U;
+        data->timestamp_resultado_frontal = trigger_tick;
+    } else {
+        data->resultado_trasero_disponible = 1U;
+        data->timestamp_resultado_trasero = trigger_tick;
+    }
     *published_valid = valid;
     if (valid != 0U) {
         *published_tick = trigger_tick;
@@ -69,6 +76,7 @@ static void vTaskSensores(void *pvParameters)
         if ((paso % (SENSORES_PERIODO_IR_MS / SENSORES_PERIODO_BASE_MS)) == 0U)
         {
             datos.ir = TCRT_LeerTodos();
+            datos.timestamp_ir = xTaskGetTickCount();
             datos.hay_caida =
             (datos.ir.del_izq  == TCRT_NO_DETECTA) ||
             (datos.ir.del_der  == TCRT_NO_DETECTA) ||

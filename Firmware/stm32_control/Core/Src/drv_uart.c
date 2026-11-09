@@ -21,8 +21,8 @@ void DrvUart_StartReceive(DrvUart_t *uart) {
     (void)HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1U);
 }
 
-/* Mailbox acotado: no acumula movimientos. STOP reemplaza cualquier pendiente,
- * DETENER reemplaza trafico ordinario; un movimiento no desplaza una parada.
+/* Mailbox acotado: STOP > DETENER > movimiento/modo > STATUS/PING > SENSORS.
+ * No acumula movimientos; una consulta nunca desplaza una orden operativa.
  * ISR solo ensambla/fecha mensajes: no actua sobre FSM ni motores.
  */
 void DrvUart_RxCallback(DrvUart_t *uart) {
@@ -30,8 +30,14 @@ void DrvUart_RxCallback(DrvUart_t *uart) {
     if (byte == '\n') {
         if (!uart->discard_frame && uart->rx_index != 0U) {
             uart->frame_buffer[uart->rx_index] = '\0';
-            uint8_t priority = strcmp(uart->frame_buffer, "STOP") == 0 ? 2U :
-                (strcmp(uart->frame_buffer, "DETENER") == 0 ? 1U : 0U);
+            const char *frame = uart->frame_buffer;
+            uint8_t priority = 1U;
+            if (strcmp(frame, "STOP") == 0) priority = 4U;
+            else if (strcmp(frame, "DETENER") == 0) priority = 3U;
+            else if (strcmp(frame, "AVANZAR") == 0 || strcmp(frame, "RETROCEDER") == 0 ||
+                     strcmp(frame, "GIRAR_IZQUIERDA") == 0 || strcmp(frame, "GIRAR_DERECHA") == 0 ||
+                     strcmp(frame, "RESET") == 0 || strcmp(frame, "MANUAL") == 0) priority = 2U;
+            else if (strcmp(frame, "SENSORS") == 0 || strncmp(frame, "SENSORS Q=", 10U) == 0) priority = 0U;
             if (!uart->message_ready || priority > uart->message_priority) {
                 memcpy(uart->rx_buffer, uart->frame_buffer, uart->rx_index + 1U);
                 uart->message_tick = uart->frame_tick;

@@ -754,6 +754,7 @@ static void test_stop_b65(void) {
 }
 
 #include "test_log_producers.c"
+#include "test_sensor_telemetry.c"
 
 int main(void) {
     CHECK(TaskSafety_IsStopActive() && robot_state == ROBOT_STATE_IDLE);
@@ -1085,6 +1086,7 @@ int main(void) {
     test_motion_commands();
     test_stop_b65();
     test_log_producers();
+    test_sensor_telemetry();
     printf("RESULT %u tests passed; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n", tests);
     return 0;

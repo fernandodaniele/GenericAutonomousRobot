@@ -10,6 +10,7 @@ typedef void *TaskHandle_t;
 #define pdFALSE 0
 #define pdPASS 1
 #define tskIDLE_PRIORITY 0U
+#define configTICK_RATE_HZ 1000U
 #define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
 void test_enter(void);
 void test_exit(void);

@@ -77,6 +77,7 @@ void app_main(void)
         WebCommands_ProcessPending();
         WebManual_Process();
         if (Stm32Status_PollDue()) Uart_SendStatus();
+        else Uart_PollSensors(); /* STATUS primero; nunca dos consultas seguidas. */
         Uart_ReadResponse();
         vTaskDelay(pdMS_TO_TICKS(10));
     }

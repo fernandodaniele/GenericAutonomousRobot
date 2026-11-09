@@ -304,3 +304,12 @@ void WebManual_Process(void)
     if (halt) (void)Uart_SendPendingHalt();
     else if (pending) (void)Uart_SendLeasedMotion(direction, generation, sequence);
 }
+
+bool WebCommands_CanPollSensors(void)
+{
+    taskENTER_CRITICAL(&s_command_lock);
+    bool idle = !s_manual.active && !s_manual.pending && !s_manual.halt &&
+                s_pending < 0 && s_sending < 0 && s_manual_controls == 0U;
+    taskEXIT_CRITICAL(&s_command_lock);
+    return idle;
+}

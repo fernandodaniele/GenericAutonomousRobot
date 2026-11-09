@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
   <script src="/manual.js" defer></script>
+  <script src="/sensors.js" defer></script>
 </head>
 <body>
   <div class="page">
@@ -58,6 +59,31 @@
           <noscript><p>Activá JavaScript para el monitoreo automático.</p></noscript>
         </section>
       </div>
+
+      <section class="card sensor-card" aria-labelledby="sensors-title">
+        <p class="eyebrow">MEDICIONES REALES · SOLO LECTURA</p>
+        <h2 id="sensors-title">Sensores del robot</h2>
+        <div id="sensors-status" class="status" data-state="unknown" role="status" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span><span id="sensors-connection">Esperando telemetría</span>
+        </div>
+        <p id="sensors-age" class="description">Sin respuesta SENSORS válida</p>
+        <div class="sensor-grid">
+          <dl class="readings">
+            <div><dt>Distancia frontal</dt><dd id="sensor-front-distance">—</dd></div>
+            <div><dt>Estado frontal</dt><dd id="sensor-front-detail">Sin muestra</dd></div>
+            <div><dt>Distancia trasera</dt><dd id="sensor-rear-distance">—</dd></div>
+            <div><dt>Estado trasero</dt><dd id="sensor-rear-detail">Sin muestra</dd></div>
+          </dl>
+          <dl class="readings">
+            <div><dt>IR delantero izquierdo</dt><dd id="sensor-ir-front-left">Sin muestra</dd></div>
+            <div><dt>IR delantero derecho</dt><dd id="sensor-ir-front-right">Sin muestra</dd></div>
+            <div><dt>IR trasero izquierdo</dt><dd id="sensor-ir-rear-left">Sin muestra</dd></div>
+            <div><dt>IR trasero derecho</dt><dd id="sensor-ir-rear-right">Sin muestra</dd></div>
+          </dl>
+        </div>
+        <p id="sensor-ir-detail" class="description">Sin lectura IR disponible</p>
+        <p class="safety-note">El monitoreo conserva la última información y puede mostrar datos históricos entre consultas. Una lectura IR no diagnostica el cableado. Safety conserva la autoridad de parada.</p>
+      </section>
 
       <section class="card controls" aria-labelledby="controls-title">
         <p class="eyebrow">SOLICITUDES AL ROBOT</p>

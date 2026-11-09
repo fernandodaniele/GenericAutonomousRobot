@@ -97,6 +97,7 @@ void Stm32Status_GetSnapshot(Stm32StatusSnapshot *snapshot)
     snapshot->faults = s_status.faults;
     snapshot->stop = s_status.stop;
     received_us = s_status.received_us;
+    snapshot->received_us = received_us;
     taskEXIT_CRITICAL(&s_lock);
 
     const int64_t elapsed = esp_timer_get_time() - received_us;

@@ -8,6 +8,7 @@
 #define TAG uart_tag
 #include "uart_comm.c"
 #undef TAG
+#include "web_commands.c"
 #define TAG web_tag
 #include "web_server.c"
 #undef TAG
@@ -19,10 +20,18 @@ static int console_getchar(void);
 static LONG64 clock_us;
 static __thread int lock_depth;
 static unsigned cases, tx_count, rx_count, init_count, task_count, iterations;
-static char frames[64][32], reply[16384];
+static char frames[4096][32], reply[16384];
+static CRITICAL_SECTION tx_lock;
+static int tx_error;
+static void (*tx_hook)(void);
+static const char *request_type="text/plain", *request_origin="http://192.168.4.1", *request_host="192.168.4.1", *request_id;
+static const char *request_body, *response_status;
+static size_t body_offset, body_chunk=6;
+static int body_error;
+static int64_t body_delay;
 static const char *rx_data, *keys;
 static size_t rx_size;
-static httpd_uri_t routes[5];
+static httpd_uri_t routes[6];
 static unsigned route_count, server_count, server_stops, fail_route;
 static int http_error, network_error;
 static jmp_buf task_end;
@@ -41,9 +50,12 @@ int uart_set_pin(int p,int tx,int rx,int rts,int cts)
 { assert(p==2 && tx==17 && rx==16 && rts==-1 && cts==-1); return 0; }
 int uart_write_bytes(int port,const void *bytes,size_t size)
 {
-    assert(port==2 && !lock_depth && tx_count<64 && size<sizeof frames[0]);
+    EnterCriticalSection(&tx_lock); /* Mismo contrato por llamada que tx_mux del SDK. */
+    assert(port==2 && !lock_depth && tx_count<4096 && size<sizeof frames[0]);
     memcpy(frames[tx_count],bytes,size); frames[tx_count++][size]='\0';
-    assert(((const char *)bytes)[size-1]=='\n'); return (int)size;
+    assert(((const char *)bytes)[size-1]=='\n');
+    if(tx_hook) { void (*hook)(void)=tx_hook; tx_hook=NULL; hook(); }
+    LeaveCriticalSection(&tx_lock); return tx_error ? (int)size-1 : (int)size;
 }
 int uart_read_bytes(int port,void *bytes,uint32_t size,unsigned timeout)
 {
@@ -56,11 +68,25 @@ esp_err_t httpd_start(httpd_handle_t *out,const httpd_config_t *cfg)
 { assert(cfg->server_port==80 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
 esp_err_t httpd_stop(httpd_handle_t handle) { assert(handle); ++server_stops; return ESP_OK; }
 esp_err_t httpd_register_uri_handler(httpd_handle_t handle,const httpd_uri_t *r)
-{ assert(handle && r->method==HTTP_GET && route_count<5); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
+{ assert(handle && route_count<6); assert(r->method==HTTP_GET || (!strcmp(r->uri,"/api/command") && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type)
 { assert(r && type && !lock_depth); return http_error==1 ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value)
-{ assert(r && !strcmp(key,"Cache-Control") && !strcmp(value,"no-store") && !lock_depth); return http_error==2 ? ESP_FAIL : ESP_OK; }
+{ assert(r && !lock_depth); assert((!strcmp(key,"Cache-Control") && !strcmp(value,"no-store")) || (!strcmp(key,"Connection") && !strcmp(value,"close"))); return http_error==2 ? ESP_FAIL : ESP_OK; }
+esp_err_t httpd_resp_set_status(httpd_req_t *r,const char *value) { assert(r && !lock_depth); response_status=value; return ESP_OK; }
+static const char *header(const char *name)
+{
+    if(!strcmp(name,"Content-Type")) return request_type;
+    if(!strcmp(name,"Origin")) return request_origin;
+    if(!strcmp(name,"Host")) return request_host;
+    if(!strcmp(name,"X-Request-ID")) return request_id;
+    assert(0); return NULL;
+}
+size_t httpd_req_get_hdr_value_len(httpd_req_t *r,const char *name) { assert(r); const char *s=header(name); return s ? strlen(s) : 0; }
+esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *r,const char *name,char *out,size_t size)
+{ assert(r); const char *s=header(name); if(!s || strlen(s)>=size) return ESP_FAIL; strcpy(out,s); return ESP_OK; }
+int httpd_req_recv(httpd_req_t *r,char *out,size_t size)
+{ assert(r && !lock_depth); clock_us+=body_delay; if(body_error) return -1; size_t count=size<body_chunk ? size : body_chunk; memcpy(out,request_body+body_offset,count); body_offset+=count; return (int)count; }
 esp_err_t httpd_resp_send(httpd_req_t *r,const char *data,ptrdiff_t size)
 { assert(r && size>=0 && (size_t)size<sizeof reply && !lock_depth); memcpy(reply,data,size); reply[size]='\0'; return http_error==3 ? ESP_FAIL : ESP_OK; }
 BaseType_t xTaskCreate(void (*fn)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void *out)
@@ -78,6 +104,9 @@ static void reset(void)
     clock_us=0; tx_count=rx_count=init_count=task_count=iterations=0; rx_size=0;
     route_count=server_count=server_stops=fail_route=0; http_error=network_error=0;
     s_attempted=false; s_result=ESP_ERR_INVALID_STATE; s_server=NULL;
+    memset(s_receipts,0,sizeof s_receipts); s_pending=s_sending=s_latest=-1; s_next_receipt=0; tx_error=0; tx_hook=NULL;
+    request_type="text/plain"; request_origin="http://192.168.4.1"; request_host="192.168.4.1";
+    request_id="0123456789abcdef0123456789abcdef"; body_offset=0; body_chunk=6; body_error=0; body_delay=0;
 }
 static void feed(const char *text) { Stm32Status_Feed((const uint8_t *)text,strlen(text)); }
 static Stm32StatusSnapshot snapshot(void) { Stm32StatusSnapshot s; Stm32Status_GetSnapshot(&s); return s; }
@@ -91,9 +120,50 @@ static DWORD WINAPI writer(void *arg)
     return 0;
 }
 
+static esp_err_t post(const char *body,size_t length)
+{
+    request_body=body; body_offset=0;
+    httpd_req_t req={.content_len=length};
+    return WebServer_Command(&req);
+}
+static void stop_during_send(void)
+{
+    WebCommandReceipt receipt;
+    assert(WebCommands_Submit("11111111111111111111111111111111",UART_CONTROL_STOP,&receipt)==WEB_CMD_ACCEPTED);
+}
+static DWORD WINAPI tx_writer(void *arg)
+{
+    for(unsigned i=0;i<500;++i) {
+        if(arg) assert(Uart_SendControl(UART_CONTROL_STOP));
+        else Uart_SendStatus();
+    }
+    return 0;
+}
+static DWORD WINAPI submit_writer(void *arg)
+{
+    (void)arg;
+    for(unsigned i=0;i<1000;++i) {
+        WebCommandReceipt r;
+        WebCommandResult result=WebCommands_Submit("22222222222222222222222222222222",UART_CONTROL_STOP,&r);
+        assert((result==WEB_CMD_ACCEPTED || result==WEB_CMD_DUPLICATE) && r.command==UART_CONTROL_STOP);
+    }
+    return 0;
+}
+static DWORD WINAPI command_worker(void *arg)
+{
+    (void)arg;
+    for(unsigned i=0;i<2000;++i) {
+        WebCommands_ProcessPending(); WebCommandReceipt r;
+        if(WebCommands_GetLatest(&r)) assert(!strcmp(r.id,"22222222222222222222222222222222") && r.command==UART_CONTROL_STOP);
+    }
+    return 0;
+}
+
 int main(void)
 {
     InitializeCriticalSection(&s_lock.native);
+    InitializeCriticalSection(&s_command_lock.native);
+    InitializeCriticalSection(&tx_lock);
     reset(); assert(!snapshot().valid && !snapshot().connected); api();
     assert(!strcmp(reply,"{\"valid\":false,\"connected\":false,\"state\":null,\"faults\":null,\"stop\":null,\"age_ms\":null}"));
     pass("boot/no response: unknown fields are null, not safe defaults");
@@ -155,10 +225,10 @@ int main(void)
         assert(!strcmp(frames[0],"STATUS\n") && !strcmp(frames[1],"STATUS\n"));
     }
     pass("actual app_main polls at 1 Hz without new tasks, including AP failure");
-    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==5);
+    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==6);
     const char *paths[]={"/","/style.css","/app.js","/health","/api/status"};
     for(unsigned i=0;i<5;++i) {
-        assert(!strcmp(routes[i].uri,paths[i])); httpd_req_t r={routes[i].user_ctx}; assert(routes[i].handler(&r)==ESP_OK);
+        assert(!strcmp(routes[i].uri,paths[i])); httpd_req_t r={.user_ctx=routes[i].user_ctx}; assert(routes[i].handler(&r)==ESP_OK);
         if(i<3) assert(!memcmp(reply,resources[i].start,(size_t)(resources[i].end-resources[i].start)));
         if(i==3) assert(!strcmp(reply,"{\"status\":\"ok\",\"service\":\"esp32-web\"}"));
     }
@@ -173,5 +243,72 @@ int main(void)
         assert(faults==100+state && stop==state%2); }
     assert(WaitForSingleObject(thread,10000)==WAIT_OBJECT_0); CloseHandle(thread);
     pass("20,000 real parser publications concurrent with 20,000 snapshot/HTTP reads; no mixed tuples or locked E/S");
-    printf("RESULT %u native W2 test groups passed; no hardware validation\n",cases); return 0;
+    const char *commands[]={"STOP","RESET","MANUAL"};
+    for(unsigned i=0;i<3;++i) {
+        reset(); assert(post(commands[i],strlen(commands[i]))==ESP_OK);
+        assert(!strcmp(response_status,"202 Accepted") && strstr(reply,"\"accepted\":true") && strstr(reply,"\"confirmed\":false"));
+        assert(tx_count==0); api(); assert(strstr(reply,"\"phase\":\"queued\""));
+        WebCommands_ProcessPending(); assert(tx_count==1);
+        char frame[16]; snprintf(frame,sizeof frame,"%s\n",commands[i]); assert(!strcmp(frames[0],frame));
+        api(); assert(strstr(reply,"\"phase\":\"transmitted\"") && strstr(reply,"\"status_after_send\":false"));
+        WebCommands_ProcessPending(); assert(tx_count==1);
+    }
+    pass("three valid POST commands: API acceptance, one later UART dispatch, no operational confirmation");
+    reset(); body_chunk=1; assert(post("MANUAL",6)==ESP_OK && body_offset==6 && !tx_count);
+    WebCommands_ProcessPending(); assert(tx_count==1 && !strcmp(frames[0],"MANUAL\n"));
+    pass("fragmented POST body reassembled within fixed six-byte bound");
+    const char *bad[]={"AUTO","PING","STATUS","stop","STOP\n","RESET ","w","","STOP\nMANUAL","AVANZAR"};
+    for(unsigned i=0;i<sizeof bad/sizeof bad[0];++i) {
+        reset(); post(bad[i],strlen(bad[i])); WebCommands_ProcessPending(); assert(tx_count==0 && strstr(reply,"\"accepted\":false"));
+    }
+    reset(); const char nul_body[]={'S','T','O','P','\0'}; post(nul_body,5); WebCommands_ProcessPending(); assert(!tx_count);
+    pass("unknown, AUTO, movement, injected frames, whitespace, empty and NUL bodies never reach UART");
+    reset(); request_origin="http://foreign.example"; post("STOP",4); assert(!strcmp(response_status,"403 Forbidden") && !body_offset && !tx_count);
+    reset(); request_origin=NULL; post("STOP",4); assert(!strcmp(response_status,"403 Forbidden"));
+    reset(); request_type="application/json"; post("STOP",4); assert(!strncmp(response_status,"415",3));
+    reset(); request_id=NULL; post("STOP",4); assert(!strncmp(response_status,"400",3));
+    reset(); request_id="short"; post("STOP",4); assert(!strncmp(response_status,"400",3));
+    reset(); request_id="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"; post("STOP",4); assert(!strncmp(response_status,"400",3));
+    WebCommands_ProcessPending(); assert(!tx_count);
+    pass("Origin/content-type/id required, foreign origin and malformed identifiers rejected; no CORS headers");
+    reset(); body_error=1; post("STOP",4); assert(!strncmp(response_status,"408",3)); WebCommands_ProcessPending(); assert(!tx_count);
+    reset(); body_chunk=1; body_delay=1000000; post("MANUAL",6); assert(!strncmp(response_status,"408",3) && body_offset==1);
+    WebCommands_ProcessPending(); assert(!tx_count); pass("incomplete or slow POST times out without waiting on UART or retrying");
+    reset(); post("RESET",5); post("RESET",5); assert(strstr(reply,"\"duplicate\":true"));
+    WebCommands_ProcessPending(); post("RESET",5); WebCommands_ProcessPending(); assert(tx_count==1 && strstr(reply,"\"duplicate\":true"));
+    post("MANUAL",6); assert(!strncmp(response_status,"400",3)); assert(tx_count==1);
+    pass("same request ID is idempotent before/after dispatch and cannot change command");
+    reset(); post("RESET",5); request_id="11111111111111111111111111111111"; post("MANUAL",6);
+    assert(!strncmp(response_status,"409",3)); WebCommands_ProcessPending(); assert(tx_count==1 && !strcmp(frames[0],"RESET\n"));
+    pass("one pending slot: conflicting mode request rejected without extra frame");
+    reset(); post("RESET",5); request_id="11111111111111111111111111111111"; post("STOP",4);
+    WebCommands_ProcessPending(); assert(tx_count==1 && !strcmp(frames[0],"STOP\n"));
+    request_id="0123456789abcdef0123456789abcdef"; post("RESET",5); assert(strstr(reply,"\"phase\":\"cancelled\""));
+    WebCommands_ProcessPending(); assert(tx_count==1); pass("STOP replaces pending RESET; cancelled ID cannot reactivate it");
+    reset(); post("RESET",5); tx_hook=stop_during_send; WebCommands_ProcessPending();
+    assert(tx_count==1 && !strcmp(frames[0],"RESET\n")); WebCommands_ProcessPending(); assert(tx_count==2 && !strcmp(frames[1],"STOP\n"));
+    pass("STOP concurrent with in-flight dispatch remains pending and follows it; no lock held across UART");
+    reset(); post("RESET",5); tx_error=1; WebCommands_ProcessPending(); api(); assert(strstr(reply,"\"phase\":\"failed\""));
+    WebCommands_ProcessPending(); assert(tx_count==1); post("RESET",5); WebCommands_ProcessPending(); assert(tx_count==1);
+    assert(!Uart_SendControl((UartControlCommand)99) && tx_count==1); pass("short UART write and invalid enum fail without automatic retries");
+    reset(); feed("STATE=0 FAULTS=0 STOP=0\n"); post("RESET",5); WebCommands_ProcessPending();
+    api(); assert(strstr(reply,"\"status_after_send\":false"));
+    clock_us=1000; feed("RESET_QUEUED\n"); api(); assert(strstr(reply,"\"status_after_send\":false"));
+    feed("STATE=3 FAULTS=4 STOP=1\n"); api(); assert(strstr(reply,"\"status_after_send\":true") && strstr(reply,"\"faults\":4"));
+    clock_us=3001000; api(); assert(strstr(reply,"\"status_after_send\":false"));
+    pass("old/same-tick STATUS and RESET_QUEUED cannot confirm; later observation may still report blocked Safety; stale unconfirmed");
+    reset(); post("STOP",4); if(!setjmp(task_end)) app_main(); assert(tx_count==3 && !strcmp(frames[0],"STOP\n") && !strcmp(frames[1],"STATUS\n"));
+    assert(rx_count==15 && task_count==1); pass("actual main services STOP before periodic STATUS while retaining sole receiver and console task");
+    reset(); assert(WebServer_Start()==ESP_OK && routes[5].method==HTTP_POST && !strcmp(routes[5].uri,"/api/command"));
+    fail_route=6; s_attempted=false; s_server=NULL; route_count=server_count=0;
+    assert(WebServer_Start()==ESP_FAIL && server_stops==1); pass("command route only POST; registration errors stop partial server");
+    reset(); HANDLE a=CreateThread(NULL,0,tx_writer,NULL,0,NULL), b=CreateThread(NULL,0,tx_writer,(void *)1,0,NULL); assert(a && b);
+    assert(WaitForSingleObject(a,10000)==WAIT_OBJECT_0 && WaitForSingleObject(b,10000)==WAIT_OBJECT_0); CloseHandle(a); CloseHandle(b);
+    assert(tx_count==1000); for(unsigned i=0;i<tx_count;++i) assert(!strcmp(frames[i],"STATUS\n") || !strcmp(frames[i],"STOP\n"));
+    pass("1000 concurrent real UART API sends retain whole frames under SDK tx_mux contract mock");
+    reset(); a=CreateThread(NULL,0,submit_writer,NULL,0,NULL); b=CreateThread(NULL,0,command_worker,NULL,0,NULL); assert(a && b);
+    assert(WaitForSingleObject(a,10000)==WAIT_OBJECT_0 && WaitForSingleObject(b,10000)==WAIT_OBJECT_0); CloseHandle(a); CloseHandle(b);
+    WebCommands_ProcessPending(); assert(tx_count==1 && !strcmp(frames[0],"STOP\n"));
+    pass("1000 concurrent duplicate submissions vs 2000 dispatch/receipt reads: exactly one frame, consistent receipt, no deadlock");
+    printf("RESULT %u native W1/W2/W3 test groups passed; no hardware validation\n",cases); return 0;
 }

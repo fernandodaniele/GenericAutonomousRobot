@@ -46,16 +46,21 @@ int uart_write_bytes(int, const void *, size_t);
 int uart_read_bytes(int, void *, uint32_t, unsigned);
 
 typedef void *httpd_handle_t;
-typedef struct { void *user_ctx; } httpd_req_t;
+typedef struct { void *user_ctx; size_t content_len; } httpd_req_t;
 typedef esp_err_t (*http_handler_t)(httpd_req_t *);
 typedef struct { const char *uri; int method; http_handler_t handler; void *user_ctx; } httpd_uri_t;
-typedef struct { unsigned server_port, stack_size, task_priority; } httpd_config_t;
-#define HTTPD_DEFAULT_CONFIG() {80U, 4096U, 5U}
+typedef struct { unsigned server_port, stack_size, task_priority; int recv_wait_timeout; } httpd_config_t;
+#define HTTPD_DEFAULT_CONFIG() {80U, 4096U, 5U, 5}
 #define HTTP_GET 0
+#define HTTP_POST 1
 esp_err_t httpd_start(httpd_handle_t *, const httpd_config_t *);
 esp_err_t httpd_stop(httpd_handle_t);
 esp_err_t httpd_register_uri_handler(httpd_handle_t, const httpd_uri_t *);
 esp_err_t httpd_resp_set_type(httpd_req_t *, const char *);
 esp_err_t httpd_resp_set_hdr(httpd_req_t *, const char *, const char *);
 esp_err_t httpd_resp_send(httpd_req_t *, const char *, ptrdiff_t);
+esp_err_t httpd_resp_set_status(httpd_req_t *, const char *);
+size_t httpd_req_get_hdr_value_len(httpd_req_t *, const char *);
+esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *, const char *, char *, size_t);
+int httpd_req_recv(httpd_req_t *, char *, size_t);
 #endif

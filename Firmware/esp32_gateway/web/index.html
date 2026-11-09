@@ -15,7 +15,7 @@
         <span class="monogram" aria-hidden="true">GR</span>
         <span>INTERFAZ LOCAL</span>
       </a>
-      <span class="version">W2 · Monitoreo</span>
+      <span class="version">W3 · Control y monitoreo</span>
     </header>
 
     <main>
@@ -40,28 +40,43 @@
         </section>
 
         <section class="card" aria-labelledby="stm32-title">
-          <p class="eyebrow">MONITOREO UART</p>
-          <h2 id="stm32-title">Enlace STM32</h2>
+          <p class="eyebrow">ESTADO INFORMADO POR EL ROBOT</p>
+          <h2 id="stm32-title">Conexión con el robot</h2>
           <div id="stm32-status" class="status" data-state="unknown" role="status" aria-live="polite">
             <span class="status-dot" aria-hidden="true"></span>
             <span id="stm32-connection">Sin comprobar</span>
           </div>
           <p id="stm32-detail" class="description">Esperando la primera consulta de monitoreo.</p>
           <dl id="robot-values" class="readings" data-stale="true">
-            <div><dt>FSM</dt><dd id="robot-state">Desconocido</dd></div>
-            <div><dt>Fallas Safety enclavadas</dt><dd id="robot-faults">Desconocidas</dd></div>
-            <div><dt>Bloqueo STOP informado</dt><dd id="robot-stop">Desconocido</dd></div>
-            <div><dt>Edad del último STATUS</dt><dd id="robot-age">Sin datos</dd></div>
+            <div><dt>Estado del robot</dt><dd id="robot-state">Desconocido</dd></div>
+            <div><dt>Protecciones de seguridad activadas</dt><dd id="robot-faults">Desconocidas</dd></div>
+            <div><dt>Bloqueo de seguridad</dt><dd id="robot-stop">Desconocido</dd></div>
+            <div><dt>Tiempo desde la última respuesta</dt><dd id="robot-age">Sin datos</dd></div>
           </dl>
           <p class="endpoint">Consulta automática <code>GET /api/status</code></p>
           <noscript><p>Activá JavaScript para el monitoreo automático.</p></noscript>
         </section>
       </div>
 
+      <section class="card controls" aria-labelledby="controls-title">
+        <p class="eyebrow">SOLICITUDES AL ROBOT</p>
+        <h2 id="controls-title">Controles operativos</h2>
+        <p class="description">Estos botones solicitan acciones. El estado real se muestra arriba cuando el robot responde. Rearmar no inicia movimiento.</p>
+        <div class="command-buttons">
+          <button id="command-stop" class="stop-button" type="button" disabled>Detener (STOP)</button>
+          <button id="command-reset" type="button" disabled>Rearmar seguridad</button>
+          <button id="command-manual" type="button" disabled>Solicitar modo manual</button>
+        </div>
+        <p id="command-message" class="description" role="status" aria-live="polite">Controles disponibles al cargar JavaScript.</p>
+        <p class="description">Modo autónomo no disponible desde esta interfaz: el comando para activarlo no existe en el enlace actual.</p>
+        <p class="safety-note">STOP depende de Wi-Fi, ESP32, UART y STM32. No sustituye una parada de emergencia física certificada.</p>
+        <noscript><p>Los controles requieren JavaScript; no se envía ninguna solicitud automáticamente.</p></noscript>
+      </section>
+
       <aside class="local-note">
         <span class="note-title">Todo queda en la red local</span>
         <p>La página y sus recursos se alojan en la ESP32. Podés acceder desde tu computadora o celular sin conexión a Internet.</p>
-        <p>Solo monitoreo. Una respuesta web no demuestra conexión STM32 ni habilitación de Safety. Los valores desactualizados son históricos; no autorizan movimiento.</p>
+        <p>Una respuesta web no demuestra conexión con el robot ni autorización de movimiento. Los valores desactualizados son históricos. Esta interfaz no ofrece controles direccionales.</p>
       </aside>
     </main>
 

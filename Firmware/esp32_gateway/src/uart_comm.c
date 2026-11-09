@@ -54,32 +54,26 @@ void Uart_SendStatus(void)
     ESP_LOGI(TAG, "Enviado a STM32: STATUS");
 }
 
-void Uart_SendReset(void)
+bool Uart_SendControl(UartControlCommand command)
 {
-    const char *message = "RESET\n";
-
-    uart_write_bytes(UART_PORT, message, strlen(message));
-
-    ESP_LOGI(TAG, "Enviado a STM32: RESET");
+    const char *message;
+    switch (command) {
+        case UART_CONTROL_STOP: message = "STOP\n"; break;
+        case UART_CONTROL_RESET: message = "RESET\n"; break;
+        case UART_CONTROL_MANUAL: message = "MANUAL\n"; break;
+        default: return false;
+    }
+    const size_t length = strlen(message);
+    /* Una trama por llamada: tx_mux del SDK serializa consola y app_main. */
+    const bool sent = uart_write_bytes(UART_PORT, message, length) == (int)length;
+    if (sent) ESP_LOGI(TAG, "Entregado a UART: %s", message);
+    else ESP_LOGE(TAG, "Fallo de entrega UART; sin reintento");
+    return sent;
 }
 
-void Uart_SendStop(void)
-{
-    const char *message = "STOP\n";
-
-    uart_write_bytes(UART_PORT, message, strlen(message));
-
-    ESP_LOGI(TAG, "Enviado a STM32: STOP");
-}
-
-void Uart_SendManual(void)
-{
-    const char *message = "MANUAL\n";
-
-    uart_write_bytes(UART_PORT, message, strlen(message));
-
-    ESP_LOGI(TAG, "Enviado a STM32: MANUAL");
-}
+void Uart_SendReset(void) { (void)Uart_SendControl(UART_CONTROL_RESET); }
+void Uart_SendStop(void) { (void)Uart_SendControl(UART_CONTROL_STOP); }
+void Uart_SendManual(void) { (void)Uart_SendControl(UART_CONTROL_MANUAL); }
 
 /* Una pulsacion explicita = una trama; sin temporizador de renovacion. */
 static void Uart_SendMotion(const char *message) {

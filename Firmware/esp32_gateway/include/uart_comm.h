@@ -1,6 +1,11 @@
 #ifndef UART_COMM_H
 #define UART_COMM_H
 
+#include <stdbool.h>
+typedef enum { UART_CONTROL_STOP, UART_CONTROL_RESET, UART_CONTROL_MANUAL } UartControlCommand;
+/* Resultado de entrega al driver, no confirmacion de la STM32. Solo tareas. */
+bool Uart_SendControl(UartControlCommand command);
+
 /**
  * @file uart_comm.h
  * @brief Módulo de comunicación UART con STM32.

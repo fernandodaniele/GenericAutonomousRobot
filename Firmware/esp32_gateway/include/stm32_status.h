@@ -15,6 +15,7 @@ typedef struct {
     uint32_t faults;
     uint32_t stop;
     uint64_t age_ms;
+    int64_t received_us; /* Solo ESP32: orden de observacion respecto del envio. */
 } Stm32StatusSnapshot;
 
 /* Unico productor: el lector UART existente. Solo acepta lineas completas. */

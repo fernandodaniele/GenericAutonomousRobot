@@ -5,6 +5,7 @@
 #include "wifi_ap.h"
 #include "web_server.h"
 #include "stm32_status.h"
+#include "web_commands.h"
 
 // Tarea encargada de leer comandos del monitor serial.
 static void ConsoleInputTask(void *parameters)
@@ -73,6 +74,7 @@ void app_main(void)
 
     // Recepcion UART independiente del monitor serial.
     while (1) {
+        WebCommands_ProcessPending();
         if (Stm32Status_PollDue()) Uart_SendStatus();
         Uart_ReadResponse();
         vTaskDelay(pdMS_TO_TICKS(10));

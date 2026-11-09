@@ -1,5 +1,8 @@
 # Monitoreo STM32 W2
 
+Documento historico del alcance W2. Los controles incorporados en W3 y el campo
+opcional de seguimiento se describen en `README_W3.md`.
+
 W2 consulta STATUS y muestra exclusivamente informacion recibida de la STM32.
 No agrega comandos operativos HTTP ni modifica el firmware STM32. La consola
 mantiene `p/s/r/t/m/w/x/a/d/e` y sus tramas originales.

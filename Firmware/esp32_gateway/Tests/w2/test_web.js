@@ -51,27 +51,27 @@ async function runWebTests(source) {
   assert(node("stm32-connection").textContent === "Sin datos desde el arranque" && node("robot-state").textContent === "Desconocido", "unknown boot state");
   assert(requests.length === 2 && timers.size === 1, "initial one health and one status request");
   pass("initial health isolated from unknown STM32; null data not rendered as safe");
-  const names = ["ROBOT_STATE_IDLE", "ROBOT_STATE_AUTONOMOUS", "ROBOT_STATE_MANUAL", "ROBOT_STATE_SAFETY_STOP"];
+  const names = ["En espera", "Modo autónomo", "Modo manual", "Detenido por seguridad"];
   for (let state = 0; state < 4; state++) {
     await poll({ valid: true, connected: true, state, faults: state, stop: state % 2, age_ms: 100 });
     assert(node("robot-state").textContent.includes(names[state]), "real FSM label");
     assert(node("robot-values").dataset.stale === "false", "fresh values");
   }
   pass("all four firmware FSM names and recent communication");
-  for (const [bit, label] of [[1, "CLIFF"], [2, "OBSTACLE"], [4, "SENSOR"], [8, "EMERGENCY"]]) {
-    assert(api.describeFaults(bit).includes("SAFETY_FAULT_" + label), "firmware fault label");
+  for (const [bit, label] of [[1, "Caída"], [2, "Obstáculo"], [4, "Sensores"], [8, "Emergencia"]]) {
+    assert(api.describeFaults(bit).includes(label), "firmware fault label");
   }
-  assert(api.describeFaults(15).includes("CLIFF") && api.describeFaults(15).includes("EMERGENCY"), "combined bits");
+  assert(api.describeFaults(15).includes("Caída") && api.describeFaults(15).includes("Emergencia"), "combined bits");
   assert(api.describeFaults(0).includes("Sin fallas informadas"), "zero mask");
   assert(api.describeFaults(2147483664).includes("2147483664"), "unknown bits not signed or dropped");
   pass("all four real Safety bits, combined masks, zero and unknown unsigned bits");
   const safe = { valid: true, connected: true, state: 2, faults: 0, stop: 0, age_ms: 0 };
-  await poll(safe); assert(node("robot-stop").textContent === "0 · Sin bloqueo informado", "STOP zero");
-  await poll({ ...safe, stop: 1 }); assert(node("robot-stop").textContent === "1 · Bloqueo activo", "STOP one");
+  await poll(safe); assert(node("robot-stop").textContent === "Sin bloqueo informado", "STOP zero");
+  await poll({ ...safe, stop: 1 }); assert(node("robot-stop").textContent === "Bloqueo activo", "STOP one");
   pass("STOP active/inactive rendered without issuing commands");
   await poll({ ...safe, connected: false, faults: 4, age_ms: 3000 });
   assert(node("robot-values").dataset.stale === "true" && node("stm32-connection").textContent === "Comunicación desactualizada", "stale visible");
-  assert(node("robot-faults").textContent.includes("SENSOR") && node("robot-age").textContent === "3000 ms", "last fault retained");
+  assert(node("robot-faults").textContent.includes("Sensores") && node("robot-age").textContent === "3000 ms", "last fault retained");
   pass("stale data explicitly historical and last faults retained");
   await poll(safe); const previousWrites = writes; await poll(safe);
   assert(writes === previousWrites, "unchanged text not rewritten");

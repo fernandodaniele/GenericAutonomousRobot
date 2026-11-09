@@ -5,6 +5,8 @@
 #include "main.h"
 #include "task_safety.h"
 #include "task_control_robot.h"
+#include "mid_navigation.h"
+#include "mid_motion.h"
 
 #define MOTOR_CONTROL_PERIOD_MS 10U
 #define MOTOR_CONTROL_STACK_SIZE 256U
@@ -22,6 +24,8 @@ typedef struct {
     int32_t right_speed_cps;
     TickType_t issued_tick;
     uint32_t generation;
+    RobotControlState_t mode;
+    uint32_t navigation_session;
 } TaskMotorControlTarget_t;
 
 typedef struct {
@@ -41,6 +45,8 @@ typedef struct {
     int16_t right_pwm_command;
     TickType_t command_tick;
     uint32_t command_generation;
+    RobotControlState_t command_mode;
+    uint32_t navigation_session;
 } TaskMotorControlContext_t;
 
 static TaskMotorControlContext_t task_context;
@@ -60,10 +66,13 @@ static void TaskMotorControl_ClearTargets(TaskMotorControlContext_t *context) {
     context->right_pwm_command = 0;
     context->command_tick = 0U;
     context->command_generation = command_generation;
+    context->command_mode = ROBOT_STATE_IDLE;
+    context->navigation_session = 0U;
 }
 
 void TaskMotorControl_Stop(void) {
     taskENTER_CRITICAL();
+    Navigation_Cancel();
     last_stop_tick = xTaskGetTickCount();
     has_stop = true;
     ++command_generation;
@@ -163,7 +172,26 @@ static void TaskMotorControl_Run(void *parameters) {
         context->left_speed_cps = TaskMotorControl_DeltaToCps(left_delta);
         context->right_speed_cps = TaskMotorControl_DeltaToCps(right_delta);
 
+        /* Tambien termina una autorizacion vencida recibida antes de haber
+         * aplicado su primer objetivo. Un mensaje de otra fase no la cancela.
+         */
+        if (received == pdTRUE && target.mode == ROBOT_STATE_AUTONOMOUS &&
+            target.generation == command_generation &&
+            (!Navigation_IsCommandCurrent(target.navigation_session, now) ||
+             (TickType_t)(now - target.issued_tick) >= pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS))) {
+            bool complete = false;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+            complete = enabled && state == ROBOT_STATE_AUTONOMOUS &&
+                (TickType_t)(now - target.issued_tick) < pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS) &&
+                Navigation_CompleteCommand(target.navigation_session, now);
+#endif
+            if (!complete) Navigation_CancelSession(target.navigation_session);
+        }
+
         if (enabled && received == pdTRUE &&
+            target.mode == state &&
+            (state == ROBOT_STATE_MANUAL ||
+             Navigation_IsCommandCurrent(target.navigation_session, now)) &&
             target.generation == command_generation &&
             (TickType_t)(now - target.issued_tick) <
             pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS)) {
@@ -171,11 +199,33 @@ static void TaskMotorControl_Run(void *parameters) {
             context->right_target_cps = target.right_speed_cps;
             context->command_tick = target.issued_tick;
             context->command_generation = target.generation;
+            context->command_mode = target.mode;
+            context->navigation_session = target.navigation_session;
         }
 
-        if (!enabled || context->command_generation != command_generation ||
+        if (!enabled || context->command_mode != state ||
+            (state == ROBOT_STATE_AUTONOMOUS &&
+             !Navigation_IsCommandCurrent(context->navigation_session, now)) ||
+            context->command_generation != command_generation ||
             (TickType_t)(now - context->command_tick) >=
             pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS)) {
+            /* Un timeout/cambio de permiso termina AUTO. El desfase transitorio
+             * de generacion durante una renovacion no cancela otra sesion.
+             * Solo estado; la ruta normal de abajo escribe ambos PWM cero.
+             */
+            if (context->command_mode == ROBOT_STATE_AUTONOMOUS &&
+                (!enabled || state != ROBOT_STATE_AUTONOMOUS ||
+                 !Navigation_IsCommandCurrent(context->navigation_session, now) ||
+                 (TickType_t)(now - context->command_tick) >=
+                 pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS))) {
+                bool complete = false;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+                complete = enabled && state == ROBOT_STATE_AUTONOMOUS &&
+                    (TickType_t)(now - context->command_tick) < pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS) &&
+                    Navigation_CompleteCommand(context->navigation_session, now);
+#endif
+                if (!complete) Navigation_CancelSession(context->navigation_session);
+            }
             TaskMotorControl_ClearTargets(context);
         }
 
@@ -200,6 +250,11 @@ static void TaskMotorControl_Run(void *parameters) {
                 Motor_GetPwmLimit(context->motor_right));
             Motor_SetSpeed(context->motor_right, context->right_pwm_command);
         }
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+        if (context->command_mode == ROBOT_STATE_AUTONOMOUS) {
+            Navigation_CommandApplied(context->navigation_session, now);
+        }
+#endif
         taskEXIT_CRITICAL();
     }
 }
@@ -245,7 +300,8 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
 
 static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed_cps,
                                      bool dated, TickType_t issued_tick,
-                                     RobotControlState_t required_mode) {
+                                     RobotControlState_t required_mode,
+                                     bool from_navigation, uint32_t navigation_session) {
     TaskMotorControlTarget_t target;
     // Admision y epoca atomicas. La API clasica fecha esta llamada; la variante
     // fechada conserva el origen UART y comprueba las barreras de parada/modo.
@@ -253,11 +309,20 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
     RobotControlState_t state = TaskControlRobot_GetState();
     TickType_t now = xTaskGetTickCount();
 
-    // Rechaza ordenes si existe una parada de seguridad
-    // o si el robot no esta en un modo de movimiento.
+    // La API manual no puede seleccionar AUTO mediante un parametro.
+    NavigationState_t phase = NAV_DETENIDO;
+    if (left_speed_cps == MOTION_DRIVE_CPS && right_speed_cps == MOTION_DRIVE_CPS) phase = NAV_AVANZAR;
+    if (left_speed_cps == -MOTION_DRIVE_CPS && right_speed_cps == -MOTION_DRIVE_CPS) phase = NAV_RETROCEDER_ACOTADO;
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    if (left_speed_cps == NAV_TURN_LEFT_CPS && right_speed_cps == NAV_TURN_RIGHT_CPS) phase = NAV_GIRAR_ACOTADO;
+#endif
+    bool authorized_source = from_navigation ?
+        (dated && required_mode == ROBOT_STATE_AUTONOMOUS &&
+         state == ROBOT_STATE_AUTONOMOUS && TaskControlRobot_IsCurrentTask() &&
+         phase != NAV_DETENIDO) :
+        state == ROBOT_STATE_MANUAL;
     if (TaskSafety_IsStopActive() || TaskControlRobot_IsStopPending() ||
-        (state != ROBOT_STATE_MANUAL &&
-        state != ROBOT_STATE_AUTONOMOUS) || target_speed_queue == NULL) {
+        !authorized_source || target_speed_queue == NULL) {
         taskEXIT_CRITICAL();
         return false;
     }
@@ -272,10 +337,17 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
         taskEXIT_CRITICAL();
         return true;
     }
+    if (from_navigation &&
+        !Navigation_ConsumeEmission(navigation_session, issued_tick, now, phase)) {
+        taskEXIT_CRITICAL();
+        return false;
+    }
     target.left_speed_cps = left_speed_cps;
     target.right_speed_cps = right_speed_cps;
     target.issued_tick = dated ? issued_tick : now;
     target.generation = ++command_generation;
+    target.mode = state;
+    target.navigation_session = from_navigation ? navigation_session : 0U;
     taskEXIT_CRITICAL();
 
     // Sin colas dentro de la seccion critica. Si hubo STOP, se rechazara la epoca.
@@ -283,10 +355,18 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
 }
 
 void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps, int32_t right_speed_cps) {
-    (void)TaskMotorControl_Publish(left_speed_cps, right_speed_cps, false, 0U, ROBOT_STATE_IDLE);
+    (void)TaskMotorControl_Publish(left_speed_cps, right_speed_cps, false, 0U,
+                                 ROBOT_STATE_IDLE, false, 0U);
 }
 
 bool TaskMotorControl_TrySetTargetSpeedsAt(int32_t left_speed_cps, int32_t right_speed_cps,
                                          TickType_t issued_tick, RobotControlState_t required_mode) {
-    return TaskMotorControl_Publish(left_speed_cps, right_speed_cps, true, issued_tick, required_mode);
+    return TaskMotorControl_Publish(left_speed_cps, right_speed_cps, true, issued_tick,
+                                    required_mode, false, 0U);
+}
+
+bool TaskMotorControl_TrySetNavigationSpeedsAt(int32_t left_speed_cps, int32_t right_speed_cps,
+                                             TickType_t issued_tick, uint32_t session) {
+    return TaskMotorControl_Publish(left_speed_cps, right_speed_cps, true, issued_tick,
+                                    ROBOT_STATE_AUTONOMOUS, true, session);
 }

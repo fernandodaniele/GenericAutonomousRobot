@@ -1,5 +1,6 @@
 #include "mid_motion.h"
 #include "task_motor_control.h"
+#include "mid_navigation.h"
 
 bool Motion_Execute(MotionCommand_t command, RobotControlState_t required_mode,
                     TickType_t issued_tick) {
@@ -13,4 +14,24 @@ bool Motion_Execute(MotionCommand_t command, RobotControlState_t required_mode,
         default: return false;
     }
     return TaskMotorControl_TrySetTargetSpeedsAt(left, right, issued_tick, required_mode);
+}
+
+bool Motion_NavigationAdvance(TickType_t issued_tick, uint32_t session) {
+    return TaskMotorControl_TrySetNavigationSpeedsAt(MOTION_DRIVE_CPS, MOTION_DRIVE_CPS,
+                                                    issued_tick, session);
+}
+
+bool Motion_NavigationReverse(TickType_t issued_tick, uint32_t session) {
+    return TaskMotorControl_TrySetNavigationSpeedsAt(-MOTION_DRIVE_CPS, -MOTION_DRIVE_CPS,
+                                                    issued_tick, session);
+}
+
+bool Motion_NavigationTurn(TickType_t issued_tick, uint32_t session) {
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    return TaskMotorControl_TrySetNavigationSpeedsAt(NAV_TURN_LEFT_CPS, NAV_TURN_RIGHT_CPS,
+                                                    issued_tick, session);
+#else
+    (void)issued_tick; (void)session;
+    return false;
+#endif
 }

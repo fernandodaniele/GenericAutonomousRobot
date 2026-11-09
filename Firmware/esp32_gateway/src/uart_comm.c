@@ -110,13 +110,15 @@ bool Uart_SendControl(UartControlCommand command)
         case UART_CONTROL_STOP: message = "STOP\n"; break;
         case UART_CONTROL_RESET: message = "RESET\n"; break;
         case UART_CONTROL_MANUAL: message = "MANUAL\n"; break;
+        case UART_CONTROL_AUTO: message = "AUTO\n"; break;
         default: return false;
     }
     WebManual_ControlBegin(command);
     bool sent = false;
     if (TxBegin()) {
         const bool halted = !WebManual_TakeHalt() || TxWrite("DETENER\n");
-        if (halted || command == UART_CONTROL_STOP) sent = TxWrite(message);
+        if ((halted || command == UART_CONTROL_STOP) &&
+            (command != UART_CONTROL_AUTO || WebCommands_ClaimAuto())) sent = TxWrite(message);
         xSemaphoreGive(s_tx_gate);
     }
     WebManual_ControlEnd();
@@ -128,6 +130,12 @@ bool Uart_SendControl(UartControlCommand command)
 void Uart_SendReset(void) { (void)Uart_SendControl(UART_CONTROL_RESET); }
 void Uart_SendStop(void) { (void)Uart_SendControl(UART_CONTROL_STOP); }
 void Uart_SendManual(void) { (void)Uart_SendControl(UART_CONTROL_MANUAL); }
+
+void Uart_SendAuto(void)
+{
+    if (WebCommands_RequestConsoleAuto()) ESP_LOGI(TAG, "AUTO encolado; pendiente de validar y transmitir");
+    else ESP_LOGW(TAG, "AUTO rechazado: estado no seguro, antiguo o control pendiente");
+}
 
 /* Una pulsacion explicita = una trama; sin temporizador de renovacion. */
 static void Uart_SendMotion(const char *message) {

@@ -3,6 +3,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "task_sensores.h"
+
+/* Criterios temporales existentes, compartidos sin duplicar valores. */
+#define TASK_SAFETY_SENSOR_TIMEOUT_MS 100U
+/* PROVISIONAL: solo desarrollo/validacion sin potencia de motores. */
+#define TASK_SAFETY_ULTRASOUND_MAX_AGE_MS 200U
 
 /**
  * @brief Motivos que pueden provocar una parada de seguridad.
@@ -38,6 +44,9 @@ bool TaskSafety_IsStopActive(void);
  * @return Mascara de fallas activas.
  */
 uint32_t TaskSafety_GetFaults(void);
+
+/* Consulta pura de los criterios existentes; no bloquea, enclava ni rearma. */
+uint32_t TaskSafety_EvaluateSnapshot(const SensoresDatos_t *data, TickType_t now);
 
 /**
  * @brief Solicita el rearme del sistema de seguridad.

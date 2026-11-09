@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-typedef enum { UART_CONTROL_STOP, UART_CONTROL_RESET, UART_CONTROL_MANUAL } UartControlCommand;
+typedef enum { UART_CONTROL_STOP, UART_CONTROL_RESET, UART_CONTROL_MANUAL, UART_CONTROL_AUTO } UartControlCommand;
 /* Resultado de entrega al driver, no confirmacion de la STM32. Solo tareas. */
 bool Uart_SendControl(UartControlCommand command);
 typedef enum { UART_MOTION_FORWARD, UART_MOTION_REVERSE, UART_MOTION_LEFT, UART_MOTION_RIGHT } UartMotionCommand;
@@ -35,6 +35,7 @@ void Uart_SendReset(void);
 void Uart_SendStop(void);
 
 void Uart_SendManual(void);
+void Uart_SendAuto(void);
 
 void Uart_SendForward(void);
 void Uart_SendReverse(void);

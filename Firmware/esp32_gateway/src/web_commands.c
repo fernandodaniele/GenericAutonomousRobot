@@ -12,6 +12,23 @@ static portMUX_TYPE s_command_lock = portMUX_INITIALIZER_UNLOCKED;
 static WebCommandReceipt s_receipts[WEB_COMMAND_HISTORY];
 static unsigned s_next_receipt;
 static int s_pending = -1, s_sending = -1, s_latest = -1;
+static uint64_t s_auto_epoch;
+static int64_t s_auto_barrier;
+static bool s_auto_has_barrier;
+
+static void AutoInvalidateLocked(int64_t now)
+{
+    ++s_auto_epoch;
+    s_auto_barrier = now;
+    s_auto_has_barrier = true;
+}
+
+static bool AutoSafeLocked(const Stm32StatusSnapshot *status, int64_t now)
+{
+    return status->valid && status->state == 0U && status->faults == 0U && status->stop == 0U &&
+        now >= status->received_us && now - status->received_us < (int64_t)WEB_AUTO_STATUS_MS * 1000 &&
+        (!s_auto_has_barrier || status->received_us > s_auto_barrier);
+}
 
 /* Mismo cerrojo que W3: no se anidan secciones criticas entre arbitros. */
 static struct {
@@ -42,6 +59,7 @@ const char *WebCommands_Name(UartControlCommand command)
         case UART_CONTROL_STOP: return "STOP";
         case UART_CONTROL_RESET: return "RESET";
         case UART_CONTROL_MANUAL: return "MANUAL";
+        case UART_CONTROL_AUTO: return "AUTO";
         default: return "";
     }
 }
@@ -59,6 +77,7 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
         if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) return WEB_CMD_INVALID;
 
     WebCommandResult result;
+    Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
     const int64_t manual_now = esp_timer_get_time();
     taskENTER_CRITICAL(&s_command_lock);
     for (unsigned i = 0; i < WEB_COMMAND_HISTORY; ++i) {
@@ -73,6 +92,11 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
         taskEXIT_CRITICAL(&s_command_lock);
         return WEB_CMD_BUSY;
     }
+    if (command == UART_CONTROL_AUTO &&
+        (!AutoSafeLocked(&status, manual_now) || s_manual_controls != 0U)) {
+        taskEXIT_CRITICAL(&s_command_lock);
+        return WEB_CMD_UNSAFE;
+    }
     /* STOP reemplaza solo lo que aun no fue tomado para transmitir. Nunca
      * promete deshacer una trama ya enviada por la consola u otro cliente. */
     if (s_pending >= 0) s_receipts[s_pending].phase = WEB_CMD_CANCELLED;
@@ -81,15 +105,50 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
     s_next_receipt = (slot + 1U) % WEB_COMMAND_HISTORY;
     WebCommandReceipt *entry = &s_receipts[slot];
     ManualRevokeLocked(command != UART_CONTROL_STOP, manual_now);
+    if (command != UART_CONTROL_AUTO) AutoInvalidateLocked(manual_now);
     if (command == UART_CONTROL_STOP) s_manual.halt = false;
     memcpy(entry->id, id, WEB_COMMAND_ID_LENGTH + 1U);
     entry->command = command;
     entry->phase = WEB_CMD_QUEUED;
     entry->sent_us = 0;
+    entry->requested_us = manual_now;
+    entry->auto_epoch = s_auto_epoch;
     s_latest = s_pending = (int)slot;
     *receipt = *entry;
     taskEXIT_CRITICAL(&s_command_lock);
     return WEB_CMD_ACCEPTED;
+}
+
+bool WebCommands_RequestConsoleAuto(void)
+{
+    uint8_t random[16]; char id[33];
+    static const char hex[] = "0123456789abcdef";
+    esp_fill_random(random, sizeof(random));
+    for (unsigned i = 0; i < sizeof(random); ++i) {
+        id[2*i] = hex[random[i] >> 4]; id[2*i+1] = hex[random[i] & 15U];
+    }
+    id[32] = '\0';
+    WebCommandReceipt receipt;
+    return WebCommands_Submit(id, UART_CONTROL_AUTO, &receipt) == WEB_CMD_ACCEPTED;
+}
+
+bool WebCommands_ClaimAuto(void)
+{
+    Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
+    const int64_t now = esp_timer_get_time();
+    taskENTER_CRITICAL(&s_command_lock);
+    bool allowed = false;
+    if (s_sending >= 0) {
+        WebCommandReceipt *entry = &s_receipts[s_sending];
+        allowed = entry->command == UART_CONTROL_AUTO && entry->auto_epoch == s_auto_epoch &&
+            entry->phase == WEB_CMD_SENDING && now >= entry->requested_us &&
+            now - entry->requested_us < (int64_t)WEB_AUTO_REQUEST_MS * 1000 &&
+            AutoSafeLocked(&status, now) && s_manual_controls == 1U && !s_manual.active && !s_manual.pending;
+        /* Permiso de un solo uso, incluso si luego falla la UART. */
+        if (allowed) ++s_auto_epoch;
+    }
+    taskEXIT_CRITICAL(&s_command_lock);
+    return allowed;
 }
 
 void WebCommands_ProcessPending(void)
@@ -205,7 +264,7 @@ WebManualResult WebManual_End(const char *token)
     taskENTER_CRITICAL(&s_command_lock);
     ManualExpireLocked(&status, now);
     const bool owner = s_manual.active && strcmp(token, s_manual.token) == 0;
-    if (owner) ManualRevokeLocked(true, now);
+    if (owner) { ManualRevokeLocked(true, now); AutoInvalidateLocked(now); }
     taskEXIT_CRITICAL(&s_command_lock);
     return owner ? WEB_MANUAL_OK : WEB_MANUAL_EXPIRED;
 }
@@ -214,7 +273,7 @@ void WebManual_RequestHalt(void)
 {
     const int64_t now = esp_timer_get_time();
     taskENTER_CRITICAL(&s_command_lock);
-    ManualRevokeLocked(true, now); s_manual.halt = true;
+    ManualRevokeLocked(true, now); s_manual.halt = true; AutoInvalidateLocked(now);
     taskEXIT_CRITICAL(&s_command_lock);
 }
 
@@ -224,7 +283,7 @@ WebManualResult WebManual_Halt(const char *id)
     const int64_t now = esp_timer_get_time();
     taskENTER_CRITICAL(&s_command_lock);
     bool fresh = ManualRememberLocked(id);
-    if (fresh) { ManualRevokeLocked(true, now); s_manual.halt = true; }
+    if (fresh) { ManualRevokeLocked(true, now); s_manual.halt = true; AutoInvalidateLocked(now); }
     taskEXIT_CRITICAL(&s_command_lock);
     return fresh ? WEB_MANUAL_OK : WEB_MANUAL_REPLAY;
 }
@@ -269,6 +328,7 @@ void WebManual_ControlBegin(UartControlCommand command)
     const int64_t now = esp_timer_get_time();
     taskENTER_CRITICAL(&s_command_lock);
     ++s_manual_controls; ManualRevokeLocked(command != UART_CONTROL_STOP, now);
+    if (command != UART_CONTROL_AUTO) AutoInvalidateLocked(now);
     if (command == UART_CONTROL_STOP) s_manual.halt = false;
     taskEXIT_CRITICAL(&s_command_lock);
 }
@@ -278,6 +338,7 @@ void WebManual_ControlEnd(void)
     const int64_t now = esp_timer_get_time();
     taskENTER_CRITICAL(&s_command_lock);
     --s_manual_controls; s_manual_barrier = now; s_manual_has_barrier = true;
+    AutoInvalidateLocked(now);
     taskEXIT_CRITICAL(&s_command_lock);
 }
 

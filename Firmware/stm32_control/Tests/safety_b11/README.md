@@ -1,6 +1,6 @@
-# Control de motores y seguridad: B5 y comandos B6
+# Control de motores, seguridad y navegacion B7.7
 
-Base B6: rama G1-add/ComandosMovimiento, HEAD feda552.
+Base B7.7: rama G1-add/NavegacionAutonoma, HEAD bc00bbd.
 Este README describe el comportamiento permanente y las pruebas actuales.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
@@ -16,7 +16,15 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
 - Edad <500 ms desde emision se admite; edad >=500 ms se rechaza o vence.
   El consumo o reenqueued no rejuvenece el mensaje. El plazo de 200 ms era
   exclusivo de los ensayos retirados: NO es el timeout permanente de consignas.
-- Solo MANUAL/AUTONOMOUS y Safety sin bloqueo admiten consignas y actuacion.
+- Las APIs genericas siguen siendo exclusivas de MANUAL. B7.5 conserva avance
+  AUTO y agrega retroceso acotado con sesion/fase, direccion y permiso de un uso.
+  Consulta, arquitectura, compilacion y validacion sin potencia:
+  [B7_5_RETROCESO.md](../../../../Docs/B7_5_RETROCESO.md).
+  Regresion normal actual: 354 casos (350 anteriores +4 de giro deshabilitado),
+  mas 19 ultrasonicos. El giro experimental esta deshabilitado por defecto.
+  Su cobertura adicional ejecuta 55 casos host con giro izquierdo y otros 55
+  con giro derecho, sobre los mismos fuentes de produccion:
+  [B7_7_GIRO_EXPERIMENTAL.md](../../../../Docs/B7_7_GIRO_EXPERIMENTAL.md).
   Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
 - No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas
   ni registros historicos de ensayo en RAM.
@@ -25,6 +33,73 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
   la publicacion y consumo, con barreras de STOP/entrada al modo.
   Protocolo, arquitectura, compilacion B6 y ensayo fisico propuesto:
   [B6_MOVIMIENTO.md](../../../../Docs/B6_MOVIMIENTO.md).
+
+## B7.2 historica: AUTO sin movimiento
+
+El bloqueo total de actuacion AUTO descrito en esta seccion fue reemplazado
+por la ruta controlada B7.3. No interpretar n como un ensayo sin movimiento.
+
+La consola ESP32 agrega n, que envia AUTO seguido de LF. La STM32 responde
+AUTO_QUEUED si pudo admitir y encolar la solicitud, o AUTO_REJECTED si el modo,
+Safety, STOP pendiente, antiguedad o disponibilidad de la cola lo impiden.
+La respuesta de encolado no garantiza la transicion: confirmar mediante STATUS.
+Solo IDLE permite entrar en AUTONOMOUS (STATE=1). No se cambia directamente
+entre MANUAL y AUTO. RESET conserva su semantica: solo rearma SAFETY_STOP hacia
+IDLE; en AUTO sano no cambia el modo ni genera objetivos.
+
+| Tecla | Trama | Funcion |
+|---|---|---|
+| p | PING | PONG existente |
+| s | STATUS | STATE, FAULTS y STOP existentes |
+| r | RESET | Rearme explicito; nunca activa AUTO |
+| m | MANUAL | Solicitud MANUAL desde IDLE |
+| t | STOP | Anulacion y salida a IDLE si Safety lo permite |
+| n | AUTO | Solicitud AUTO desde IDLE, sin movimiento |
+| w | AVANZAR | Movimiento manual; rechazado en AUTO |
+| x | RETROCEDER | Movimiento manual; rechazado en AUTO |
+| a | GIRAR_IZQUIERDA | Movimiento manual; rechazado en AUTO |
+| d | GIRAR_DERECHA | Movimiento manual; rechazado en AUTO |
+| e | DETENER | Parada manual; rechazada en AUTO, usar STOP |
+
+Se conserva la misma cola de ocho eventos. Su mensaje privado agrega fecha de
+origen y epoca de solicitudes AUTO; no se agrega otra cola ni tarea. La fecha
+del primer byte UART no se rejuvenece al consumir. Se exige edad <500 ms y
+origen estrictamente posterior a STOP/RESET y entrada al modo actual, usando
+resta modular de ticks. Igual tick se rechaza conservadoramente.
+
+STOP/RESET invalidan AUTO al solicitarse y al procesarse, incluso si la cola
+esta llena. La epoca tambien protege un encolado tardio despues de la barrera.
+La transicion revalida dentro de una seccion critica breve; las operaciones de
+cola quedan fuera. RESET/STOP mantienen sus efectos B1 y las IRQ siguen activas.
+
+Entrar en AUTO invalida objetivos anteriores mediante TaskMotorControl_Stop.
+El backend admite y ejecuta objetivos solo en MANUAL en esta etapa; por eso ni
+la API clasica ni la fechada pueden accionar motores en AUTO. No hay navegador,
+mid_navigation, renovacion periodica, cambios de PI, PWM, drivers ni sensores.
+La ventana de 500 ms limita la solicitud de entrada, no la permanencia en AUTO.
+
+Regresion actual: 215 casos, base de 172 (B6/B6.5) mas 43 de B7.2. Se ajustaron
+dos expectativas antiguas a la autorizacion actual: AUTO no admite movimiento,
+y START_AUTO se rechaza durante STOP pendiente. El resto de regresiones se
+conserva. Las pruebas ejercitan UART, cola, FSM y backend reales, con HAL/RTOS
+sustituidos: mismo tick, wrap, cola llena, eventos antiguos, carreras de
+STOP/RESET/Safety, rearme, persistencia sin objetivos/PWM y rechazo manual.
+Los 19 casos ultrasonicos permanecen sin cambios.
+
+Compilar STM32 desde Firmware/stm32_control, creando primero build/b72/firmware:
+mingw32-make -B -o build/b72/firmware -j4 BUILD_DIR=build/b72/firmware.
+Compilar ESP32 desde la raiz: pio run -d Firmware/esp32_gateway -e esp32.
+ELF STM32: Firmware/stm32_control/build/b72/firmware/stm32_control.elf.
+ELF ESP32: Firmware/esp32_gateway/.pio/build/esp32/firmware.elf.
+run.bat ejecuta las 215 pruebas sin variantes ni bancos temporales.
+
+Validacion posterior propuesta, inicialmente sin potencia: RESET y confirmar
+STATE=0 FAULTS=0 STOP=0; pulsar n y confirmar STATE=1. Ambos objetivos y CCR2/CCR3
+deben permanecer cero, incluso al esperar mas de 500 ms. w/x/a/d/e deben responder
+MOVE_REJECTED. Pulsar t: IDLE, sin fallas nuevas. Desde MANUAL, n debe rechazarse.
+Con una falla Safety, STOP no debe borrar el enclavamiento; al recuperar sensores
+y hacer RESET debe quedar IDLE sin restaurar AUTO. Cualquier programacion o
+prueba fisica requiere autorizacion; no pausar CPU con potencia conectada.
 
 ## Limite PWM y controlador PI
 
@@ -108,11 +183,19 @@ Desde la raiz, con GCC nativo/MinGW disponible:
 & .\Firmware\stm32_control\Tests\ultrasound\run.bat 'C:\MinGW\bin\gcc.exe'
 ~~~
 
-El ejecutor de seguridad compila UNA variante, sin opciones de banco, con C11,
-Wall/Wextra/Werror y conteo de invocaciones PI solo en host. Salidas:
+El ejecutor de seguridad compila con C11, Wall/Wextra/Werror y conteo de
+invocaciones PI solo en host. Ejecuta primero todas las 350 regresiones
+anteriores y 4 casos nuevos con la configuracion normal. Luego ejecuta 55 casos
+experimentales para cada sentido, con NAV_EXPERIMENTAL_TURN_ENABLED=1 y
+NAV_TURN_LEFT=1/0. Son variantes nativas de prueba, no nuevos firmware de banco.
+Las expectativas historicas de finalizar el retroceso sin giro se comprueban
+en la variante normal; no se eliminan ni se relajan para habilitar el giro.
+Salidas:
 
 - Firmware/stm32_control/build/safety_tests/test_safety.exe
 - Firmware/stm32_control/build/safety_tests/results.log
+- Firmware/stm32_control/build/safety_tests/test_turn_left_results.log
+- Firmware/stm32_control/build/safety_tests/test_turn_right_results.log
 - Firmware/stm32_control/build/ultrasound_tests/results.log
 
 Base B5 de seguridad/control: 123 casos. Se preservaron los 99 de B1/B1.1.1 y
@@ -125,8 +208,9 @@ mid_motion.c, drv_uart.c y task_comms.c, con HAL UART sustituida. Comprueba
 las cinco traducciones, admision por modo/Safety, STOP inmediato aun con cola
 llena, DETENER, rearme, mismo tick, generaciones y carreras, vencimiento desde
 origen, ausencia de renovacion, wrap/tick cero, prioridad STOP en el mailbox,
-CRLF, overflow, NUL embebido y comandos desconocidos. run.bat ejecuta todo el
-conjunto permanente; no hay variantes de banco.
+CRLF, overflow, NUL embebido y comandos desconocidos. run.bat conserva todo el
+conjunto permanente y agrega las pruebas experimentales host descriptas arriba;
+no hay productores ni instrumentacion de banco en ARM.
 
 La cobertura incluye arranque, validez/antiguedad individual, obstaculos e IR,
 rearme/fallas concurrentes, STOP/consignas pendientes/generaciones/mismo tick,

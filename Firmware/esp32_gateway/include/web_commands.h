@@ -11,8 +11,16 @@ typedef struct {
     UartControlCommand command;
     WebCommandPhase phase;
     int64_t sent_us;
+    int64_t requested_us;
+    uint64_t auto_epoch;
 } WebCommandReceipt;
-typedef enum { WEB_CMD_ACCEPTED, WEB_CMD_DUPLICATE, WEB_CMD_BUSY, WEB_CMD_CONFLICT, WEB_CMD_INVALID } WebCommandResult;
+typedef enum { WEB_CMD_ACCEPTED, WEB_CMD_DUPLICATE, WEB_CMD_BUSY, WEB_CMD_CONFLICT, WEB_CMD_INVALID, WEB_CMD_UNSAFE } WebCommandResult;
+
+#define WEB_AUTO_STATUS_MS 2000U
+#define WEB_AUTO_REQUEST_MS 500U
+/* AUTO usa la misma cola desde web y consola; revalidar bajo el turno UART. */
+bool WebCommands_RequestConsoleAuto(void);
+bool WebCommands_ClaimAuto(void);
 
 WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, WebCommandReceipt *receipt);
 /* Solo app_main; ninguna E/S se realiza dentro del bloqueo. */

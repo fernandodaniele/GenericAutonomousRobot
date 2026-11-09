@@ -29,6 +29,7 @@ void TaskMotorControl_Create(EncoderHandle_t *encoder_left,
  *       El PI aplica PWM solo en modo habilitado y sin bloqueo de seguridad.
  *       Solo desde tareas; cada llamada aceptada emite una consigna nueva.
  *       Emisiones/paradas se ordenan por generacion, incluso dentro de un tick.
+ *       Esta API sigue siendo exclusiva de MANUAL, tambien en B7.3.
  */
 void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
                                       int32_t right_speed_cps);
@@ -41,6 +42,11 @@ void TaskMotorControl_SetTargetSpeeds(int32_t left_speed_cps,
  */
 bool TaskMotorControl_TrySetTargetSpeedsAt(int32_t left_speed_cps, int32_t right_speed_cps,
                                          TickType_t issued_tick, RobotControlState_t required_mode);
+
+/* Solo mid_motion para navegacion: TaskControlRobot, permiso de un uso y sesion
+ * vigente; solo vectores fijos de la fase autorizada. Giro deshabilitado por defecto. */
+bool TaskMotorControl_TrySetNavigationSpeedsAt(int32_t left_speed_cps, int32_t right_speed_cps,
+                                             TickType_t issued_tick, uint32_t session);
 
 /**
  * @brief Invalida consignas previas, reinicia PI y pone ambos PWM a cero.

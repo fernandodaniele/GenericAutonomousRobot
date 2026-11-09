@@ -134,6 +134,7 @@ static void reset(void)
     request_id="0123456789abcdef0123456789abcdef"; body_offset=0; body_chunk=6; body_error=0; body_delay=0;
     memset(&s_manual,0,sizeof s_manual); memset(s_manual_ids,0,sizeof s_manual_ids);
     s_manual_next=s_manual_controls=0; s_manual_has_barrier=false; s_manual_barrier=0;
+    s_auto_epoch=0; s_auto_barrier=0; s_auto_has_barrier=false;
     wait_delay=0; wait_hook=NULL; gate_fail=false; request_token=request_sequence=NULL;
 }
 static void feed(const char *text) { Stm32Status_Feed((const uint8_t *)text,strlen(text)); }
@@ -203,6 +204,7 @@ static esp_err_t manual_post(unsigned op,const char *body)
 
 static unsigned frame_count(const char *frame) { unsigned count=0; for(unsigned i=0;i<tx_count;++i) if(!strcmp(frame,frames[i])) ++count; return count; }
 #include "test_sensors.c"
+#include "test_auto.c"
 
 int main(void)
 {
@@ -304,12 +306,12 @@ int main(void)
     reset(); body_chunk=1; assert(post("MANUAL",6)==ESP_OK && body_offset==6 && !tx_count);
     WebCommands_ProcessPending(); assert(tx_count==1 && !strcmp(frames[0],"MANUAL\n"));
     pass("fragmented POST body reassembled within fixed six-byte bound");
-    const char *bad[]={"AUTO","PING","STATUS","stop","STOP\n","RESET ","w","","STOP\nMANUAL","AVANZAR"};
+    const char *bad[]={"AUTOS","AUTO\n","PING","STATUS","stop","STOP\n","RESET ","w","","STOP\nMANUAL","AVANZAR"};
     for(unsigned i=0;i<sizeof bad/sizeof bad[0];++i) {
         reset(); post(bad[i],strlen(bad[i])); WebCommands_ProcessPending(); assert(tx_count==0 && strstr(reply,"\"accepted\":false"));
     }
     reset(); const char nul_body[]={'S','T','O','P','\0'}; post(nul_body,5); WebCommands_ProcessPending(); assert(!tx_count);
-    pass("unknown, AUTO, movement, injected frames, whitespace, empty and NUL bodies never reach UART");
+    pass("unknown commands, movement, injected frames, whitespace, empty and NUL bodies never reach UART");
     reset(); request_origin="http://foreign.example"; post("STOP",4); assert(!strcmp(response_status,"403 Forbidden") && !body_offset && !tx_count);
     reset(); request_origin=NULL; post("STOP",4); assert(!strcmp(response_status,"403 Forbidden"));
     reset(); request_type="application/json"; post("STOP",4); assert(!strncmp(response_status,"415",3));
@@ -436,5 +438,6 @@ int main(void)
     request_origin="http://foreign"; manual_post(0,"OPEN"); assert(!strncmp(response_status,"403",3));
     pass("four POST endpoints use bounded shared validation, safe tokens/sequences and no direct HTTP UART writes");
     test_sensors();
-    printf("RESULT %u native W1/W2/W3/W4/W5 test groups passed; no hardware validation\n",cases); return 0;
+    test_auto();
+    printf("RESULT %u native W1-W6 test groups passed; no hardware validation\n",cases); return 0;
 }

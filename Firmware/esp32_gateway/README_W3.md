@@ -2,6 +2,8 @@
 
 Alcance historico W3. La autorizacion temporal y los controles direccionales
 posteriores se documentan en `README_W4.md`.
+La integración posterior de AUTO está documentada en `../../Docs/W6_INTEGRACION_WEB_AUTO.md`;
+las limitaciones sobre ausencia de AUTO que siguen describen exclusivamente W3.
 
 Solo ESP32. Se reutiliza el protocolo presente en
 `Firmware/stm32_control/Core/Src/task_comms.c`: STOP, RESET y MANUAL. AUTO no

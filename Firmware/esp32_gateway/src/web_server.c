@@ -184,10 +184,13 @@ static esp_err_t WebServer_Command(httpd_req_t *request)
     if (used == 4U && memcmp(body, "STOP", 4U) == 0) command = UART_CONTROL_STOP;
     else if (used == 5U && memcmp(body, "RESET", 5U) == 0) command = UART_CONTROL_RESET;
     else if (used == 6U && memcmp(body, "MANUAL", 6U) == 0) command = UART_CONTROL_MANUAL;
+    else if (used == 4U && memcmp(body, "AUTO", 4U) == 0) command = UART_CONTROL_AUTO;
     else return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"unsupported_command\"}", false);
 
     WebCommandReceipt receipt;
     const WebCommandResult result = WebCommands_Submit(id, command, &receipt);
+    if (result == WEB_CMD_UNSAFE)
+        return CommandReply(request, "412 Precondition Failed", "{\"accepted\":false,\"error\":\"auto_requires_safe_idle\"}", false);
     if (result == WEB_CMD_BUSY)
         return CommandReply(request, "409 Conflict", "{\"accepted\":false,\"error\":\"command_busy\"}", false);
     if (result == WEB_CMD_CONFLICT || result == WEB_CMD_INVALID)

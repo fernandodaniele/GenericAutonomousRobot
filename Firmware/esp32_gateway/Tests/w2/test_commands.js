@@ -4,6 +4,7 @@ async function runCommandTests(source) {
   const results = [], timers = new Map(), nodes = new Map(), requests = [];
   let nextTimer = 1, nextId = 1, now = 0, mode = "ok", pendingResolve, pendingReject;
   let currentId = "", currentName = "";
+  let statusFailure = false;
   const snapshot = { valid: true, connected: true, state: 3, faults: 4, stop: 1, age_ms: 0 };
   function node(id) {
     if (!nodes.has(id)) nodes.set(id, { dataset: {}, textContent: "", disabled: false,
@@ -18,9 +19,12 @@ async function runCommandTests(source) {
   async function fetchMock(url, options) {
     requests.push({ url, options });
     if (url === "/health") return { ok: true, json: async () => ({ status: "ok", service: "esp32-web" }) };
-    if (url === "/api/status") return { ok: true, json: async () => snapshot };
+    if (url === "/api/status") {
+      if (statusFailure) throw new Error("offline");
+      return { ok: true, json: async () => snapshot };
+    }
     assert(url === "/api/command" && options.method === "POST", "only command POST");
-    assert(["STOP", "RESET", "MANUAL"].includes(options.body), "closed body list");
+    assert(["STOP", "RESET", "MANUAL", "AUTO"].includes(options.body), "closed body list");
     currentId = options.headers["X-Request-ID"]; currentName = options.body;
     assert(/^[a-f0-9]{32}$/.test(currentId) && options.headers["Content-Type"] === "text/plain", "ID/body headers");
     if (mode === "pending") return new Promise((resolve, reject) => {
@@ -32,7 +36,7 @@ async function runCommandTests(source) {
       { accepted: true, confirmed: false, id: currentId, command: currentName, phase: "queued" } };
   }
   const create = new Function("document", "fetch", "AbortController", "setTimeout", "clearTimeout", "performance", "crypto",
-    source + "\nreturn {sendCommand, observeCommand};");
+    source + "\nreturn {sendCommand, observeCommand, renderStatus, pollStatus};");
   const api = create({ getElementById: node }, fetchMock, Controller,
     (fn, delay) => { const id = nextTimer++; timers.set(id, { fn, delay }); return id; },
     id => timers.delete(id), { now: () => now }, cryptoMock);
@@ -49,7 +53,7 @@ async function runCommandTests(source) {
   await flush();
   assert(commandCount() === 0 && !node("command-stop").disabled && !node("command-reset").disabled, "no startup command");
   await api.sendCommand("AUTO"); await api.sendCommand("AVANZAR"); assert(commandCount() === 0, "unsupported UI call rejected");
-  results.push("no command on load; AUTO, movement and arbitrary UI strings rejected");
+  results.push("no command on load; AUTO rejected with unsafe STATUS; movement and arbitrary UI strings rejected");
   await click("reset"); const resetId = currentId;
   assert(commandCount() === 1 && node("command-message").textContent.includes("aceptada por la API"), "API accepted only");
   await node("command-reset").click(); await node("command-manual").click(); assert(commandCount() === 1, "double-click gated");
@@ -97,6 +101,54 @@ async function runCommandTests(source) {
   assert(commandCount() === beforePoll && requests.filter(r => r.url === "/api/status").length === 2, "W2 polling independent");
   assert(typeof pendingReject === "function", "timeout exercise");
   results.push("periodic STATUS remains read-only and independent of command execution");
+  for (const unsafe of [
+    { valid: false, connected: false, state: null, faults: null, stop: null, age_ms: null },
+    { state: 2, faults: 0, stop: 0 }, { state: 1, faults: 0, stop: 0 },
+    { state: 0, faults: 1, stop: 0 }, { state: 0, faults: 0, stop: 1 },
+    { state: 0, faults: 0, stop: 0, connected: false },
+    { state: 0, faults: 0, stop: 0, age_ms: 2000 }
+  ]) {
+    api.renderStatus({ ...snapshot, ...unsafe });
+    const before = commandCount(); await api.sendCommand("AUTO");
+    assert(node("command-auto").disabled && commandCount() === before && !node("command-stop").disabled, "AUTO unsafe state gated");
+  }
+  results.push("W6 AUTO disabled for unknown, MANUAL, AUTO, fault, STOP, disconnected or stale STATUS; STOP stays available");
+  const safeIdle = { valid: true, connected: true, state: 0, faults: 0, stop: 0, age_ms: 0 };
+  mode = "ok"; api.renderStatus(safeIdle);
+  assert(!node("command-auto").disabled, "safe IDLE allows explicit AUTO");
+  const beforeAuto = commandCount(); await node("command-auto").click();
+  assert(commandCount() === beforeAuto + 1 && currentName === "AUTO", "one explicit AUTO POST");
+  await node("command-auto").click(); assert(commandCount() === beforeAuto + 1, "no double AUTO");
+  observe("transmitted", { ...safeIdle, state: 1, command: { status_after_send: false } });
+  assert(node("command-auto").disabled && !node("command-stop").disabled, "TX alone not confirmation");
+  observe("transmitted", safeIdle); assert(node("command-auto").disabled, "IDLE does not confirm AUTO");
+  api.renderStatus({ ...safeIdle, state: 1 }); observe("transmitted", { ...safeIdle, state: 1 });
+  assert(node("command-message").textContent.includes("Modo autónomo") && node("command-auto").disabled, "later actual AUTO observed");
+  results.push("W6 explicit AUTO accepted once and confirmed only by a recent posterior AUTO STATUS");
+  api.renderStatus(safeIdle); now += 2000;
+  const beforeAged = commandCount(); await api.sendCommand("AUTO");
+  assert(commandCount() === beforeAged && node("command-auto").disabled, "cached STATUS age continues advancing");
+  results.push("W6 browser elapsed time cannot make old IDLE actionable");
+  now += 1001; api.renderStatus(safeIdle); mode = "rejected";
+  await node("command-auto").click();
+  assert(!node("command-message").textContent.includes("Estado posterior observado"), "AUTO rejection not success");
+  const rejectedCount = commandCount(); now += 1001;
+  api.renderStatus({ ...safeIdle, connected: false }); await api.sendCommand("AUTO");
+  api.renderStatus(safeIdle); await flush(); assert(commandCount() === rejectedCount, "recovery has no AUTO replay");
+  results.push("W6 AUTO rejection and telemetry recovery do not replay requests or claim success");
+  statusFailure = true; await api.pollStatus();
+  const beforeLost = commandCount(); await api.sendCommand("AUTO");
+  assert(node("command-auto").disabled && !node("command-stop").disabled && commandCount() === beforeLost, "HTTP loss disables cached AUTO");
+  results.push("W6 HTTP monitoring failure disables AUTO even if the cached IDLE was safe");
+  now += 1001; api.renderStatus(safeIdle); mode = "pending";
+  const lateAuto = node("command-auto").click(); await flush();
+  const autoResolve = pendingResolve, lateId = currentId;
+  mode = "ok"; await click("stop"); const newerStop = currentId;
+  autoResolve({ ok: true, json: async () => ({ accepted: true, confirmed: false, id: lateId, command: "AUTO", phase: "queued" }) });
+  await lateAuto;
+  assert(currentId === newerStop && node("command-stop").disabled, "late AUTO cannot replace STOP observation");
+  observe("transmitted", { ...safeIdle });
+  results.push("W6 STOP preempts pending AUTO and ignores its late HTTP completion without restarting it");
   return results;
 }
 if (typeof module !== "undefined" && require.main === module) {

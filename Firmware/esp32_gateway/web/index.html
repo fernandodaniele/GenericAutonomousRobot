@@ -93,9 +93,10 @@
           <button id="command-stop" class="stop-button" type="button" disabled>Detener (STOP)</button>
           <button id="command-reset" type="button" disabled>Rearmar seguridad</button>
           <button id="command-manual" type="button" disabled>Solicitar modo manual</button>
+          <button id="command-auto" type="button" disabled>Solicitar modo autónomo</button>
         </div>
         <p id="command-message" class="description" role="status" aria-live="polite">Controles disponibles al cargar JavaScript.</p>
-        <p class="description">Modo autónomo no disponible desde esta interfaz: el comando para activarlo no existe en el enlace actual.</p>
+        <p class="description">AUTO inicia una sesión de navegación de hasta 2 segundos, con avance y posible retroceso acotado. El giro experimental está deshabilitado por defecto. Solo se solicita desde En espera, sin fallas ni bloqueo. STOP cancela la sesión.</p>
         <p class="safety-note">STOP depende de Wi-Fi, ESP32, UART y STM32. No sustituye una parada de emergencia física certificada.</p>
         <noscript><p>Los controles requieren JavaScript; no se envía ninguna solicitud automáticamente.</p></noscript>
       </section>

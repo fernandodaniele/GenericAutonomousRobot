@@ -53,6 +53,7 @@ const faultNames = [
 ];
 let lastStatus = null;
 let lastStatusAt = 0;
+let statusAvailable = false;
 
 function setText(id, value) {
   const element = document.getElementById(id);
@@ -77,6 +78,7 @@ function describeFaults(mask) {
 }
 
 function renderStatus(status) {
+  statusAvailable = true;
   lastStatus = status;
   lastStatusAt = performance.now();
   connectionBox.dataset.state = !status.valid ? "unknown" : status.connected ? "ok" : "error";
@@ -90,6 +92,7 @@ function renderStatus(status) {
   setText("robot-faults", status.valid ? describeFaults(status.faults) : "Desconocidas");
   setText("robot-stop", status.valid ? status.stop === 1 ? "Bloqueo activo" : "Sin bloqueo informado" : "Desconocido");
   setText("robot-age", status.valid ? `${status.age_ms} ms` : "Sin datos");
+  updateCommandButtons();
 }
 
 async function pollStatus() {
@@ -105,6 +108,8 @@ async function pollStatus() {
     observeCommand(status);
   } catch {
     connectionBox.dataset.state = "error";
+    statusAvailable = false;
+    updateCommandButtons();
     manualControl?.cancel("Monitoreo no disponible; se cerró la autorización manual.");
     readings.dataset.stale = "true";
     setText("stm32-connection", "Monitoreo sin respuesta");
@@ -126,14 +131,22 @@ pollStatus();
 const commandButtons = {
   STOP: document.getElementById("command-stop"),
   RESET: document.getElementById("command-reset"),
-  MANUAL: document.getElementById("command-manual")
+  MANUAL: document.getElementById("command-manual"),
+  AUTO: document.getElementById("command-auto")
 };
 let activeCommand = null;
-const lastCommandAt = { STOP: -Infinity, RESET: -Infinity, MANUAL: -Infinity };
+const lastCommandAt = { STOP: -Infinity, RESET: -Infinity, MANUAL: -Infinity, AUTO: -Infinity };
+
+function canRequestAuto() {
+  return statusAvailable && lastStatus?.valid && lastStatus.connected && lastStatus.state === 0 &&
+    lastStatus.faults === 0 && lastStatus.stop === 0 &&
+    lastStatus.age_ms + Math.max(0, performance.now() - lastStatusAt) < 2000;
+}
 
 function updateCommandButtons() {
   for (const [command, button] of Object.entries(commandButtons)) {
-    button.disabled = Boolean(activeCommand) && !(command === "STOP" && activeCommand.name !== "STOP");
+    button.disabled = (Boolean(activeCommand) && !(command === "STOP" && activeCommand.name !== "STOP")) ||
+      (command === "AUTO" && !canRequestAuto());
   }
 }
 
@@ -158,7 +171,7 @@ function observeCommand(status) {
     if (status.valid && status.connected && receipt.status_after_send === true) {
       const matches = operation.name === "STOP" ? status.state === 0 || status.state === 3 :
         operation.name === "RESET" ? status.state === 0 && status.faults === 0 && status.stop === 0 :
-          status.state === 2 && status.faults === 0 && status.stop === 0;
+          status.state === (operation.name === "AUTO" ? 1 : 2) && status.faults === 0 && status.stop === 0;
       if (matches) finishCommand(operation, `Estado posterior observado: ${stateNames[status.state]}. Revisá las protecciones y el bloqueo. Es una observación de estado, no un acuse correlacionado del comando.`);
     }
   }
@@ -166,6 +179,11 @@ function observeCommand(status) {
 
 async function sendCommand(name) {
   if (!Object.prototype.hasOwnProperty.call(commandButtons, name)) return;
+  if (name === "AUTO" && !canRequestAuto()) {
+    setText("command-message", "AUTO requiere un estado reciente En espera, sin fallas ni bloqueo.");
+    updateCommandButtons();
+    return;
+  }
   if (activeCommand && !(name === "STOP" && activeCommand.name !== "STOP")) return;
   manualControl?.cancel("Solicitud operativa: se cerró la autorización manual.");
   const requestedAt = performance.now();

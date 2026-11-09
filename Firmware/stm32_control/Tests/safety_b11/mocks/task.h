@@ -3,6 +3,7 @@
 #include "FreeRTOS.h"
 TickType_t xTaskGetTickCount(void);
 TickType_t xTaskGetTickCountFromISR(void);
+TaskHandle_t xTaskGetCurrentTaskHandle(void);
 void vTaskDelayUntil(TickType_t *, TickType_t);
 void vTaskSuspendAll(void);
 BaseType_t xTaskResumeAll(void);

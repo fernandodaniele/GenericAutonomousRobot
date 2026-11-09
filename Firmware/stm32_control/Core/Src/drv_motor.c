@@ -116,7 +116,7 @@ void Motors_InitAll(void) {
     g_motor_right.channel  = TIM_CHANNEL_3;
     g_motor_right.dir_port = MOTOR_R_DIR_GPIO_Port;
     g_motor_right.dir_pin  = MOTOR_R_DIR_Pin;
-    g_motor_right.inverted = 0;
+    g_motor_right.inverted = 1;
     Motor_Init(&g_motor_right);
 }
 

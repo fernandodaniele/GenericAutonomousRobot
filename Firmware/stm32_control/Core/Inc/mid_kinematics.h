@@ -22,10 +22,10 @@
 // PWM proporcional a la velocidad pedida, con un piso de arranque: una rueda
 // recibe 0 o un PWM de al menos este valor (en modulo), porque por debajo los
 // motores no arrancan desde parado.
-// Valor inicial 4200 (50 %): CALIBRAR en el granito como el menor PWM con el
+// Valor inicial 4200 (65 %): CALIBRAR en el granito como el menor PWM con el
 // que ambas ruedas arrancan desde parado.
 #ifndef ROBOT_WHEEL_MIN_PWM
-#define ROBOT_WHEEL_MIN_PWM 4200
+#define ROBOT_WHEEL_MIN_PWM 5460
 #endif
 // Pedidos por debajo de esto (en cuentas de PWM) se toman como 0: rueda parada.
 #ifndef ROBOT_WHEEL_ZERO_PWM

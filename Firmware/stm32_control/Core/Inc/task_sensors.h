@@ -20,7 +20,7 @@ extern "C" {
 #include <stdbool.h>
 #include "drv_ultrasound.h"
 
-#define TASK_SENSORS_PERIOD_MS   30
+#define TASK_SENSORS_PERIOD_MS   20
 
 /**
  * @brief Foto de sensores publicada por task_sensors.

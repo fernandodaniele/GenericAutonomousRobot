@@ -26,10 +26,10 @@ extern "C" {
 
 /* ===== Parametros (ajustar con la distancia de frenado medida) ===== */
 #ifndef NAV_OBSTACLE_MM
-#define NAV_OBSTACLE_MM        50    // De frente: maniobra evasiva por debajo de esto
+#define NAV_OBSTACLE_MM        180    // De frente: maniobra evasiva por debajo de esto
 #endif
 #ifndef NAV_CLEAR_MM
-#define NAV_CLEAR_MM           150   // Frente libre: termina el giro o la evasiva
+#define NAV_CLEAR_MM           250   // Frente libre: termina el giro o la evasiva
 #endif
 #ifndef NAV_WALL_MM
 #define NAV_WALL_MM            100   // Distancia a mantener con la pared
@@ -53,7 +53,7 @@ extern "C" {
 #define NAV_EVADE_TURN_MIN_MS  1450  // Giro minimo antes de volver a avanzar (mismo angulo a 0,35 rad/s)
 #endif
 #ifndef NAV_EVADE_TURN_MAX_MS
-#define NAV_EVADE_TURN_MAX_MS  8600  // Si sigue bloqueado: retrocede otra vez
+#define NAV_EVADE_TURN_MAX_MS  5000  // Si sigue bloqueado: retrocede otra vez
 #endif
 #ifndef NAV_FWD_SPEED_MMS
 #define NAV_FWD_SPEED_MMS      35.0f    // ~70 % de PWM (proporcional, ver mid_kinematics.h)

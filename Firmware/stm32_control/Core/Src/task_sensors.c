@@ -4,9 +4,9 @@
  *  Created on: Nov 2, 2026
  *      Author: Grupo 2
  *
- *  Lee un HC-SR04 por turno (cada 30 ms), los dos TCRT5000 y el giro Z del
- *  MPU6050 en I2C3, y publica la foto en una cola de un elemento
- *  (xQueueOverwrite / xQueuePeek): nadie espera a nadie.
+ *  Lee un HC-SR04 por turno (cada 30 ms) priorizando el frente mediante intercalado,
+ *  los dos TCRT5000 y el giro Z del MPU6050 en I2C3, y publica la foto en una cola
+ *  de un elemento (xQueueOverwrite / xQueuePeek): nadie espera a nadie.
  */
 
 #include "task_sensors.h"
@@ -19,21 +19,24 @@
 #include "drv_gyro.h"
 #include <string.h>
 
-/* El MPU6050 no se usa por ahora: 0 = no se inicializa ni se lee.
- * Poner en 1 para volver a usarlo (I2C3: PA8 SCL / PC9 SDA). */
+/* El MPU6050 no se usa por ahora: 0 = no se inicializa ni se lee. */
 #ifndef SENSORS_USE_IMU
 #define SENSORS_USE_IMU          0
 #endif
-/* TCRT5000 habilitados: 0 = ese sensor nunca informa precipicio.
- * El derecho (PC2) esta anulado porque falla; poner en 1 cuando se repare. */
+
+/* TCRT5000 habilitados */
 #ifndef SENSORS_USE_TCRT_LEFT
 #define SENSORS_USE_TCRT_LEFT    1
 #endif
 #ifndef SENSORS_USE_TCRT_RIGHT
-#define SENSORS_USE_TCRT_RIGHT   0
+#define SENSORS_USE_TCRT_RIGHT   1
 #endif
+
 #define SENSORS_IMU_I2C          (&hi2c3)
 #define SENSORS_IMU_INIT_RETRIES 3
+
+/* Configuración del filtro de promedio móvil para el frente */
+#define FRONT_MAX_SAMPLES        3
 
 static osThreadId_t sensors_task_handle;
 static const osThreadAttr_t sensors_task_attributes = {
@@ -43,6 +46,13 @@ static const osThreadAttr_t sensors_task_attributes = {
 };
 
 static QueueHandle_t snapshot_queue;
+
+/* SECUENCIA DE PRIORIDAD: El frente se lee una vez por medio, intercalado con los demás */
+static const UltrasoundIndex_t us_sequence[] = {
+    ULTRASOUND_FRONT, ULTRASOUND_LEFT,
+    ULTRASOUND_FRONT, ULTRASOUND_RIGHT,
+};
+#define SEQUENCE_LENGTH (sizeof(us_sequence) / sizeof(us_sequence[0]))
 
 static void SensorsTask(void* argument);
 
@@ -86,6 +96,8 @@ static void SensorsTask(void* argument)
 
     SensorSnapshot_t snap;
     memset(&snap, 0, sizeof(snap));
+
+    // Inicializar estados por defecto
     for (uint8_t i = 0; i < ULTRASOUND_COUNT; i++) {
         snap.us_status[i] = ULTRASOUND_STATUS_NO_ECHO;
     }
@@ -102,16 +114,36 @@ static void SensorsTask(void* argument)
     snap.imu_ok = false;
 #endif
 
-    UltrasoundIndex_t turn = ULTRASOUND_FRONT;
+    /* Variables de control para el orden secuencial prioritario */
+    uint8_t seq_idx = 0;
+
+    /* Variables locales para el filtro de promedio móvil del frente */
+    uint32_t front_samples[FRONT_MAX_SAMPLES] = {0};
+    uint8_t front_sample_idx = 0;
+    uint8_t front_samples_count = 0;
+
     TickType_t last_wake = xTaskGetTickCount();
 
     for (;;)
     {
-        /* Un ultrasonido por turno para que los ecos no se crucen */
+        /* 1. OBLIGATORIO: Limpiamos los estados de TODOS los ultrasonidos en este ciclo.
+         * Así, el mapeador sabrá que el único sensor con información NUEVA en este milisegundo
+         * es el que marque "ULTRASOUND_STATUS_OK" o "NO_ECHO". Los demás quedan invalidados. */
+        for (uint8_t i = 0; i < ULTRASOUND_COUNT; i++) {
+            snap.us_status[i] = ULTRASOUND_STATUS_NO_ECHO;
+        }
+
+        /* 2. Determinar a quién le toca según nuestra secuencia de prioridad */
+        UltrasoundIndex_t turn = us_sequence[seq_idx];
+
+        /* 3. Realizar la lectura física del sensor de este turno */
         uint32_t mm = 0;
         UltrasoundStatus_t st = Ultrasound_ReadStatusIndex(turn, &mm);
+
         snap.us_status[turn] = st;
         snap.dist_mm[turn] = mm;
+
+        /* 4. Lógica especial con Promedio Móvil si es el turno del SENSOR FRONTAL */
         if (turn == ULTRASOUND_FRONT) {
             if (st == ULTRASOUND_STATUS_NO_ECHO) {
                 if (snap.front_no_echo_count < UINT8_MAX) {
@@ -119,11 +151,29 @@ static void SensorsTask(void* argument)
                 }
             } else {
                 snap.front_no_echo_count = 0;
+
+                // Insertar nueva muestra en el buffer circular
+                front_samples[front_sample_idx] = mm;
+                front_sample_idx = (front_sample_idx + 1) % FRONT_MAX_SAMPLES;
+                if (front_samples_count < FRONT_MAX_SAMPLES) {
+                    front_samples_count++;
+                }
+
+                // Calcular el promedio acumulado
+                uint32_t sum = 0;
+                for (uint8_t s = 0; s < front_samples_count; s++) {
+                    sum += front_samples[s];
+                }
+
+                // Sobrescribimos el valor instantáneo por la media filtrada
+                snap.dist_mm[ULTRASOUND_FRONT] = sum / front_samples_count;
             }
         }
-        turn = (UltrasoundIndex_t)((turn + 1) % ULTRASOUND_COUNT);
 
-        /* TCRT5000: filtro de promedio movil del driver */
+        /* 5. Avanzar el índice de la secuencia de prioridad de forma circular */
+        seq_idx = (uint8_t)((seq_idx + 1) % SEQUENCE_LENGTH);
+
+        /* 6. Leer los TCRT5000 (Filtro interno del driver) */
         drv_tcrt5000_update();
         tcrt_reading_t l = drv_tcrt5000_get_left();
         tcrt_reading_t r = drv_tcrt5000_get_right();
@@ -132,7 +182,7 @@ static void SensorsTask(void* argument)
         snap.cliff_left = SENSORS_USE_TCRT_LEFT && (l.state == TCRT_STATE_CLIFF);
         snap.cliff_right = SENSORS_USE_TCRT_RIGHT && (r.state == TCRT_STATE_CLIFF);
 
-        /* MPU6050: solo el giro, no hace falta el angulo */
+        /* 7. Leer el Giroscopio MPU6050 */
 #if SENSORS_USE_IMU
         if (snap.imu_ok) {
             MPU6050_Read_Gyro(SENSORS_IMU_I2C, &imu);
@@ -140,9 +190,11 @@ static void SensorsTask(void* argument)
         }
 #endif
 
+        /* 8. Estampa de tiempo y publicación en la cola */
         snap.timestamp_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
         xQueueOverwrite(snapshot_queue, &snap);
 
+        /* 9. Espera determinista de FreeRTOS para liberar la CPU */
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(TASK_SENSORS_PERIOD_MS));
     }
 }

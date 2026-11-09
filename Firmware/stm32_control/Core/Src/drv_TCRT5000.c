@@ -27,10 +27,10 @@
  *   minimo del vacio; LINE por debajo del minimo del suelo. Si los rangos se
  *   solapan, no hay umbral confiable. */
 #ifndef TCRT_THRESHOLD_LINE
-#define TCRT_THRESHOLD_LINE    800
+#define TCRT_THRESHOLD_LINE    100
 #endif
 #ifndef TCRT_THRESHOLD_CLIFF
-#define TCRT_THRESHOLD_CLIFF   2000
+#define TCRT_THRESHOLD_CLIFF   500
 #endif
 /* 1 = el precipicio es un valor BAJO: el LED del modulo se enciende al llegar
  * al borde y su salida va a nivel bajo. 0 = precipicio con valor alto. */

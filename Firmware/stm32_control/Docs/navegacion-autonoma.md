@@ -54,13 +54,42 @@ ultrasonido ni infrarrojo. La opción `NAV_NO_ECHO_AS_UNKNOWN = 1` permite girar
 derecha cuando la izquierda tiene menos de `NAV_CLEAR_MM`, pero eso lleva al robot hacia
 el lado ciego: activarla solo cuando el ultrasonido derecho funcione.
 
+### Avance por tramos con escaneo
+Con `NAV_STEP_SCAN_ENABLE = 1` (valor actual, `Core/Inc/mid_nav.h`) el robot recorre por
+tramos en lugar de seguir la pared. Con `0` vuelve el seguimiento de pared continuo.
+
+1. Avanza recto `NAV_STEP_MM` (200 mm). Sin encoders, el tramo se controla por tiempo
+   con `NAV_STEP_MS`. Si aparece algo a menos de `NAV_OBSTACLE_MM`, corta el tramo.
+2. Frena, espera quieto (`NAV_BRAKE_MS` + `NAV_SETTLE_MS`) y toma `NAV_SCAN_SAMPLES`
+   lecturas por ultrasonido, con un máximo de `NAV_SCAN_MAX_MS`. Usa la mediana.
+3. Decide con esas medianas:
+
+| Frente | Lados | Acción |
+|---|---|---|
+| Libre (≥ `NAV_CLEAR_MM`) | Cualquiera | Otro tramo recto |
+| Bloqueado | Uno libre | Dobla 90° hacia ese lado |
+| Bloqueado | Ambos libres | Dobla 90° hacia el más amplio |
+| Bloqueado | Ambos bloqueados | Retrocede unos 10 cm |
+
+Después de doblar o retroceder vuelve a medir antes de moverse. El borde (TCRT5000)
+sigue teniendo prioridad y al terminar la recuperación también vuelve a medir. El frontal
+sin ninguna lectura válida cuenta como bloqueado: el robot no avanza a ciegas.
+
+Con `NAV_SCAN_STUCK_MAX` (6) maniobras seguidas sin avanzar 2 s, entra en `FAULT` frenado
+(4 destellos, salir con `STOP` y `START`).
+
+**Calibrar en el piso:** medir cuánto recorre realmente y ajustar `NAV_STEP_MS`, y lo mismo
+con `NAV_SCAN_TURN_MS` para que el giro sea de 90°. Los valores actuales salen de las
+velocidades nominales, que no están medidas.
+
 ### LED naranja (LD3)
 | LED | Estado |
 |---|---|
 | Apagado | `IDLE` |
 | Fijo | `FORWARD` |
+| Parpadeo lento | `SCAN`: midiendo o maniobrando entre tramos |
 | Parpadeo rápido | Evasiva o borde |
-| 1 / 2 / 3 / 4 destellos | `FAULT`: MPU6050 / frontal sin eco / sensores sin actualizar / bucle de retroceso |
+| 1 / 2 / 3 / 4 destellos | `FAULT`: MPU6050 / frontal sin eco / sensores sin actualizar / atrapado (bucle de retroceso o de escaneo) |
 
 ## Pendiente antes de probar en el robot
 
@@ -80,5 +109,6 @@ el lado ciego: activarla solo cuando el ultrasonido derecho funcione.
 
 ```bash
 cd Firmware/stm32_control
-gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav.c Core/Src/mid_nav.c -o test_mid_nav && ./test_mid_nav
+gcc -Wall -Wextra -DNAV_STEP_SCAN_ENABLE=0 -ICore/Inc Test/test_mid_nav.c Core/Src/mid_nav.c -o test_mid_nav && ./test_mid_nav
+gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav_scan.c Core/Src/mid_nav.c -o test_mid_nav_scan && ./test_mid_nav_scan
 ```

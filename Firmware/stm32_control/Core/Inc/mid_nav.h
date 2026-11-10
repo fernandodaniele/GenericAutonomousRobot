@@ -4,14 +4,19 @@
  *  Created on: Nov 2, 2026
  *      Author: Grupo 2
  *
- *  Modulo de decision de la navegacion autonoma. Maquina de cinco estados
- *  SIN dependencias de HAL ni de FreeRTOS: se puede compilar y probar en la PC
- *  (ver Test/test_mid_nav.c).
+ *  Modulo de decision de la navegacion autonoma. Maquina de estados SIN
+ *  dependencias de HAL ni de FreeRTOS: se puede compilar y probar en la PC
+ *  (ver Test/test_mid_nav.c y Test/test_mid_nav_scan.c).
  *
- *  Reglas: recorrer la habitacion a velocidad suave siguiendo la pared a
- *  NAV_WALL_MM; en las esquinas girar en el lugar. A menos de NAV_OBSTACLE_MM
- *  de frente: maniobra evasiva (frenar, retroceder y girar). Esquivar el
- *  precipicio y emitir una alerta ante un giro brusco.
+ *  Modo por defecto (NAV_STEP_SCAN_ENABLE = 1): avanzar recto NAV_STEP_MM,
+ *  frenar, medir con el robot quieto y decidir si seguir, doblar o retroceder.
+ *
+ *  Modo continuo (NAV_STEP_SCAN_ENABLE = 0): seguir la pared a NAV_WALL_MM y
+ *  girar en las esquinas; a menos de NAV_OBSTACLE_MM de frente, maniobra
+ *  evasiva.
+ *
+ *  En ambos modos se esquiva el precipicio y se emite una alerta ante un giro
+ *  brusco.
  */
 
 #ifndef CORE_INC_MID_NAV_H_
@@ -125,12 +130,49 @@ extern "C" {
 #define NAV_ALERT_HOLDOFF_MS   500
 #endif
 
+/* ===== Avance por tramos con escaneo =====
+ * 1 = avanza recto NAV_STEP_MM, frena, mide con el robot quieto y decide:
+ *     adelante, doblar hacia el lado libre o retroceder.
+ * 0 = seguimiento de pared continuo (comportamiento anterior). */
+#ifndef NAV_STEP_SCAN_ENABLE
+#define NAV_STEP_SCAN_ENABLE   1
+#endif
+/* Sin encoders el tramo se mide por tiempo: si el robot no recorre 20 cm,
+ * ajustar NAV_STEP_MS con lo medido en el piso. */
+#ifndef NAV_STEP_MM
+#define NAV_STEP_MM            200
+#endif
+#ifndef NAV_STEP_MS
+#define NAV_STEP_MS            ((uint32_t)((float)NAV_STEP_MM * 1000.0f / NAV_FWD_SPEED_MMS))
+#endif
+/* Giro de 90 grados: (pi / 2) / NAV_TURN_RAD_S. Calibrar en el piso. */
+#ifndef NAV_SCAN_TURN_MS
+#define NAV_SCAN_TURN_MS       4488
+#endif
+/* Retroceso con todo bloqueado: unos 10 cm a 35 mm/s (atras no hay sensores) */
+#ifndef NAV_SCAN_BACK_MS
+#define NAV_SCAN_BACK_MS       2857
+#endif
+/* Lecturas validas por sensor; se usa la mediana */
+#ifndef NAV_SCAN_SAMPLES
+#define NAV_SCAN_SAMPLES       3
+#endif
+/* Tiempo maximo midiendo: un sensor sin eco no traba la decision */
+#ifndef NAV_SCAN_MAX_MS
+#define NAV_SCAN_MAX_MS        800
+#endif
+/* Giros o retrocesos seguidos sin avanzar antes de FAULT (salir con STOP y START) */
+#ifndef NAV_SCAN_STUCK_MAX
+#define NAV_SCAN_STUCK_MAX     6
+#endif
+
 typedef enum {
     NAV_STATE_IDLE = 0,
     NAV_STATE_FORWARD,
     NAV_STATE_AVOID_OBSTACLE,
     NAV_STATE_CLIFF_RECOVER,
-    NAV_STATE_FAULT
+    NAV_STATE_FAULT,
+    NAV_STATE_SCAN
 } NavState_t;
 
 typedef enum {
@@ -194,6 +236,9 @@ typedef struct {
     uint8_t cliff_hits;            // Lecturas seguidas con borde
     uint8_t cliff_streak;          // CLIFF_RECOVER seguidos sin avanzar
     bool fault_latched;            // FAULT que no se recupera solo
+    uint16_t scan_samples[3][NAV_SCAN_SAMPLES]; // Espacio libre (mm) ordenado: frente, izquierda, derecha
+    uint8_t scan_n[3];             // Lecturas validas por sensor en este escaneo
+    uint8_t scan_streak;           // Giros o retrocesos seguidos sin avanzar
 } NavContext_t;
 
 void Nav_Init(NavContext_t* ctx);

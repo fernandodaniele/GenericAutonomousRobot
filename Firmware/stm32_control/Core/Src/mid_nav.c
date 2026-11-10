@@ -15,10 +15,19 @@
  *  CLIFF_RECOVER  -> FORWARD         : ambos TCRT5000 ven suelo tras la maniobra
  *  activo         -> FAULT           : frontal sin eco N veces, foto vieja o sin MPU6050
  *  cualquiera     -> IDLE            : comando STOP
+ *
+ *  Con NAV_STEP_SCAN_ENABLE = 1 el recorrido es por tramos:
+ *  IDLE           -> SCAN            : comando START (mide antes de moverse)
+ *  FORWARD        -> SCAN            : termino el tramo o hay obstaculo de frente
+ *  SCAN           -> FORWARD         : frente libre
+ *  SCAN (gira o retrocede) -> SCAN   : vuelve a medir despues de cada maniobra
+ *  SCAN           -> FAULT           : NAV_SCAN_STUCK_MAX maniobras seguidas sin avanzar
+ *  CLIFF_RECOVER  -> SCAN            : ambos TCRT5000 ven suelo tras la maniobra
  */
 
 #include "mid_nav.h"
 #include <stddef.h>
+#include <string.h>
 
 /* Sub-fases de las maniobras (AVOID_OBSTACLE y CLIFF_RECOVER):
  * frenar -> pausa -> retroceder -> pausa -> girar -> pausa -> FORWARD */
@@ -30,6 +39,17 @@ enum {
     MPHASE_TURN,
     MPHASE_SETTLE_FWD     // pausa antes de volver a avanzar
 };
+
+/* Sub-fases de SCAN: quieto -> medir -> (girar o retroceder -> quieto ...) */
+enum {
+    SPHASE_SETTLE = 0,
+    SPHASE_COLLECT,
+    SPHASE_TURN,
+    SPHASE_BACKUP
+};
+
+/* Indices de NavContext_t.scan_samples */
+enum { SCAN_FRONT = 0, SCAN_LEFT, SCAN_RIGHT, SCAN_SENSORS };
 
 static void enter_state(NavContext_t* ctx, NavState_t s, uint32_t now)
 {
@@ -103,6 +123,15 @@ static void set_brake(NavOutput_t* out)
     out->angular_rads = 0.0f;
 }
 
+/* Robot atrapado: FAULT frenado que no se recupera solo */
+static void latch_fault(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
+{
+    enter_state(ctx, NAV_STATE_FAULT, now);
+    ctx->fault_latched = true;
+    out->events |= NAV_EVT_FAULT;
+    set_brake(out);
+}
+
 /* Cuenta un retroceso del borde. Con NAV_CLIFF_LOOP_MAX seguidos sin haber
  * avanzado, el robot esta atrapado: FAULT frenado en vez de seguir.
  * Devuelve true si entro en FAULT. */
@@ -110,13 +139,119 @@ static bool cliff_count(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
 {
     if (ctx->cliff_streak < UINT8_MAX) ctx->cliff_streak++;
     if (ctx->cliff_streak >= NAV_CLIFF_LOOP_MAX) {
-        enter_state(ctx, NAV_STATE_FAULT, now);
-        ctx->fault_latched = true;
-        out->events |= NAV_EVT_FAULT;
-        set_brake(out);
+        latch_fault(ctx, out, now);
         return true;
     }
     return false;
+}
+
+/* Estado con el que se empieza a recorrer: en el modo por tramos, midiendo */
+static NavState_t run_state(void)
+{
+    return NAV_STEP_SCAN_ENABLE ? NAV_STATE_SCAN : NAV_STATE_FORWARD;
+}
+
+/* Guarda una lectura ordenada. Sin eco no aporta: task_sensors publica un
+ * solo ultrasonido valido por foto y marca los demas como NO_ECHO. */
+static void scan_add(NavContext_t* ctx, uint8_t sensor, NavRange_t r, uint32_t mm)
+{
+    if (r == NAV_RANGE_NO_ECHO || ctx->scan_n[sensor] >= NAV_SCAN_SAMPLES) {
+        return;
+    }
+    const uint16_t value = (uint16_t)free_space(r, mm);
+    uint8_t k = ctx->scan_n[sensor]++;
+    for (; k > 0u && ctx->scan_samples[sensor][k - 1u] > value; k--) {
+        ctx->scan_samples[sensor][k] = ctx->scan_samples[sensor][k - 1u];
+    }
+    ctx->scan_samples[sensor][k] = value;
+}
+
+static bool scan_complete(const NavContext_t* ctx)
+{
+    for (uint8_t i = 0; i < SCAN_SENSORS; i++) {
+        if (ctx->scan_n[i] < NAV_SCAN_SAMPLES) return false;
+    }
+    return true;
+}
+
+/* Mediana del espacio libre. Sin lecturas, el frente cuenta como bloqueado
+ * (no avanza a ciegas) y los lados siguen NAV_NO_ECHO_AS_UNKNOWN. */
+static uint32_t scan_median(const NavContext_t* ctx, uint8_t sensor)
+{
+    const uint8_t n = ctx->scan_n[sensor];
+    if (n == 0u) {
+        return (sensor == SCAN_FRONT) ? 0u : free_space(NAV_RANGE_NO_ECHO, 0u);
+    }
+    return ctx->scan_samples[sensor][(n - 1u) / 2u];
+}
+
+/* Decide con las medianas: frente libre -> tramo nuevo; si no, doblar hacia
+ * el lado libre (con ambos libres, el mas amplio); todo bloqueado -> atras. */
+static void scan_decide(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
+{
+    const uint32_t front = scan_median(ctx, SCAN_FRONT);
+    const uint32_t left = scan_median(ctx, SCAN_LEFT);
+    const uint32_t right = scan_median(ctx, SCAN_RIGHT);
+
+    if (front >= NAV_CLEAR_MM) {
+        enter_state(ctx, NAV_STATE_FORWARD, now);
+        return;
+    }
+    if (ctx->scan_streak < UINT8_MAX) ctx->scan_streak++;
+    if (ctx->scan_streak >= NAV_SCAN_STUCK_MAX) {
+        latch_fault(ctx, out, now);
+    } else if (left >= NAV_CLEAR_MM || right >= NAV_CLEAR_MM) {
+        ctx->turn_dir = (left >= right) ? 1 : -1;
+        enter_phase(ctx, SPHASE_TURN, now);
+    } else {
+        enter_phase(ctx, SPHASE_BACKUP, now);
+    }
+}
+
+/* Escaneo: frenar y esperar quieto -> medir -> decidir. Tras girar o
+ * retroceder vuelve a medir antes de moverse otra vez. */
+static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out, bool fresh)
+{
+    const uint32_t now = in->now_ms;
+    const uint32_t t = elapsed(now, ctx->phase_enter_ms);
+
+    switch (ctx->phase) {
+        case SPHASE_SETTLE:
+            set_brake(out);
+            if (t >= (NAV_BRAKE_MS + NAV_SETTLE_MS)) {
+                memset(ctx->scan_n, 0, sizeof(ctx->scan_n));
+                enter_phase(ctx, SPHASE_COLLECT, now);
+            }
+            break;
+        case SPHASE_COLLECT:
+            set_brake(out);
+            if (fresh) {
+                scan_add(ctx, SCAN_FRONT, in->front, in->front_mm);
+                scan_add(ctx, SCAN_LEFT, in->left, in->left_mm);
+                scan_add(ctx, SCAN_RIGHT, in->right, in->right_mm);
+            }
+            if (scan_complete(ctx) || t >= NAV_SCAN_MAX_MS) {
+                scan_decide(ctx, out, now);
+            }
+            break;
+        case SPHASE_TURN:
+            if (t >= NAV_SCAN_TURN_MS) {
+                set_brake(out);
+                enter_phase(ctx, SPHASE_SETTLE, now);
+            } else {
+                out->angular_rads = (float)ctx->turn_dir * NAV_TURN_RAD_S;
+            }
+            break;
+        case SPHASE_BACKUP:
+        default:
+            if (t >= NAV_SCAN_BACK_MS) {
+                set_brake(out);
+                enter_phase(ctx, SPHASE_SETTLE, now);
+            } else {
+                out->linear_mms = NAV_BACK_SPEED_MMS;
+            }
+            break;
+    }
 }
 
 /* Repite el retroceso del borde (si no es un bucle) */
@@ -221,9 +356,11 @@ static void cliff_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out
         default:
             set_brake(out);
             if (t >= NAV_SETTLE_MS) {
-                enter_state(ctx, NAV_STATE_FORWARD, now);
-                out->brake = false;
-                out->linear_mms = NAV_FWD_SPEED_MMS;
+                enter_state(ctx, run_state(), now);
+                if (ctx->state == NAV_STATE_FORWARD) {
+                    out->brake = false;
+                    out->linear_mms = NAV_FWD_SPEED_MMS;
+                }
             }
             break;
     }
@@ -296,6 +433,8 @@ void Nav_Init(NavContext_t* ctx)
     ctx->cliff_hits = 0;
     ctx->cliff_streak = 0;
     ctx->fault_latched = false;
+    memset(ctx->scan_n, 0, sizeof(ctx->scan_n));
+    ctx->scan_streak = 0;
 }
 
 NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
@@ -319,7 +458,8 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
     }
 
     /* --- Confirmacion del borde: cuenta lecturas nuevas seguidas --- */
-    if (in->sensor_ms != ctx->last_sensor_ms) {
+    const bool fresh = (in->sensor_ms != ctx->last_sensor_ms);
+    if (fresh) {
         ctx->last_sensor_ms = in->sensor_ms;
         if (in->cliff_left || in->cliff_right) {
             if (ctx->cliff_hits < UINT8_MAX) ctx->cliff_hits++;
@@ -333,13 +473,14 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
         enter_state(ctx, NAV_STATE_IDLE, now);
         ctx->fault_latched = false;
         ctx->cliff_streak = 0;
+        ctx->scan_streak = 0;
     } else if (in->command == NAV_CMD_START && ctx->state == NAV_STATE_IDLE) {
-        enter_state(ctx, NAV_STATE_FORWARD, now);
+        enter_state(ctx, run_state(), now);
     }
 
     /* --- Falla resuelta: vuelve a andar solo (salvo el bucle de retroceso) --- */
     if (ctx->state == NAV_STATE_FAULT && !ctx->fault_latched && !fault_condition(in)) {
-        enter_state(ctx, NAV_STATE_FORWARD, now);
+        enter_state(ctx, run_state(), now);
     }
 
     /* --- Fallas: tienen prioridad sobre cualquier maniobra --- */
@@ -349,7 +490,8 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
     }
 
     /* --- Precipicio: prioridad sobre el obstaculo --- */
-    if ((ctx->state == NAV_STATE_FORWARD || ctx->state == NAV_STATE_AVOID_OBSTACLE)
+    if ((ctx->state == NAV_STATE_FORWARD || ctx->state == NAV_STATE_AVOID_OBSTACLE
+         || ctx->state == NAV_STATE_SCAN)
         && (in->cliff_left || in->cliff_right) && ctx->cliff_hits >= NAV_CLIFF_CONFIRM
         && !cliff_count(ctx, &out, now)) {
         enter_state(ctx, NAV_STATE_CLIFF_RECOVER, now);
@@ -370,8 +512,17 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
             /* Avanzo lo suficiente: ya no es un bucle de retroceso */
             if (elapsed(now, ctx->state_enter_ms) >= NAV_CLIFF_LOOP_RESET_MS) {
                 ctx->cliff_streak = 0;
+                ctx->scan_streak = 0;
             }
-            if (ctx->corner && elapsed(now, ctx->corner_enter_ms) >= NAV_CORNER_MAX_MS) {
+            if (NAV_STEP_SCAN_ENABLE) {
+                /* Tramo recto: frena al completarlo o si aparece algo de frente */
+                if (front_blocked(in) || elapsed(now, ctx->state_enter_ms) >= NAV_STEP_MS) {
+                    enter_state(ctx, NAV_STATE_SCAN, now);
+                    set_brake(&out);
+                } else {
+                    out.linear_mms = NAV_FWD_SPEED_MMS;
+                }
+            } else if (ctx->corner && elapsed(now, ctx->corner_enter_ms) >= NAV_CORNER_MAX_MS) {
                 /* Esquina que no termina: rutina evasiva */
                 enter_state(ctx, NAV_STATE_AVOID_OBSTACLE, now);
                 ctx->corner = false;
@@ -394,6 +545,10 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
             cliff_step(ctx, in, &out);
             break;
 
+        case NAV_STATE_SCAN:
+            scan_step(ctx, in, &out, fresh);
+            break;
+
         case NAV_STATE_FAULT:
         default:
             set_brake(&out);
@@ -413,6 +568,7 @@ const char* Nav_StateName(NavState_t s)
         case NAV_STATE_AVOID_OBSTACLE: return "AVOID";
         case NAV_STATE_CLIFF_RECOVER:  return "CLIFF";
         case NAV_STATE_FAULT:          return "FAULT";
+        case NAV_STATE_SCAN:           return "SCAN";
         default:                       return "?";
     }
 }

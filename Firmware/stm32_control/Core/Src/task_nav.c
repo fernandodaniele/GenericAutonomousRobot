@@ -92,17 +92,21 @@ static int16_t ramp(int16_t current, int16_t target)
 /* Indicador en LD3 (naranja):
  *   apagado            -> IDLE (esperando START)
  *   encendido fijo     -> FORWARD
+ *   parpadeo lento     -> SCAN (midiendo o maniobrando entre tramos)
  *   parpadeo rapido    -> esquivando obstaculo o precipicio
  *   N destellos + pausa -> FAULT: 1 = MPU6050 no responde,
  *                         2 = ultrasonido frontal sin eco,
  *                         3 = sensores sin actualizar,
- *                         4 = bucle de retroceso en el borde (salir con STOP y START) */
+ *                         4 = atrapado: bucle de retroceso o de escaneo (salir con STOP y START) */
 static void status_led(NavState_t state, bool fault_latched, const NavInput_t* in, uint32_t now)
 {
     GPIO_PinState on = GPIO_PIN_RESET;
     switch (state) {
         case NAV_STATE_FORWARD:
             on = GPIO_PIN_SET;
+            break;
+        case NAV_STATE_SCAN:
+            on = ((now / 500u) % 2u) ? GPIO_PIN_SET : GPIO_PIN_RESET;
             break;
         case NAV_STATE_AVOID_OBSTACLE:
         case NAV_STATE_CLIFF_RECOVER:

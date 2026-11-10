@@ -1,7 +1,7 @@
 /*
- * test_mid_nav.c - Prueba de mid_nav en la PC con secuencias simuladas.
+ * test_mid_nav.c - Prueba de mid_nav en la PC con secuencias simuladas (modo continuo).
  * Compilar y correr desde Firmware/stm32_control:
- *   gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav.c Core/Src/mid_nav.c -o test_mid_nav && ./test_mid_nav
+ *   gcc -Wall -Wextra -DNAV_STEP_SCAN_ENABLE=0 -ICore/Inc Test/test_mid_nav.c Core/Src/mid_nav.c -o test_mid_nav && ./test_mid_nav
  */
 #include <stdio.h>
 #include <string.h>

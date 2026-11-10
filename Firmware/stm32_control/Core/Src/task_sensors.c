@@ -100,6 +100,7 @@ static void SensorsTask(void* argument)
     // Inicializar estados por defecto
     for (uint8_t i = 0; i < ULTRASOUND_COUNT; i++) {
         snap.us_status[i] = ULTRASOUND_STATUS_NO_ECHO;
+        snap.us_last_status[i] = ULTRASOUND_STATUS_NO_ECHO;
     }
 
 #if SENSORS_USE_IMU
@@ -141,6 +142,7 @@ static void SensorsTask(void* argument)
         UltrasoundStatus_t st = Ultrasound_ReadStatusIndex(turn, &mm);
 
         snap.us_status[turn] = st;
+        snap.us_last_status[turn] = st;
         snap.dist_mm[turn] = mm;
 
         /* 4. Lógica especial con Promedio Móvil si es el turno del SENSOR FRONTAL */

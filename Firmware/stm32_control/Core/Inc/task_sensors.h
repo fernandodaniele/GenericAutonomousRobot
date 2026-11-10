@@ -28,7 +28,8 @@ extern "C" {
 typedef struct {
     uint32_t timestamp_ms;                         // Tick de la ultima actualizacion
     uint32_t dist_mm[ULTRASOUND_COUNT];            // Ultima distancia por sensor
-    UltrasoundStatus_t us_status[ULTRASOUND_COUNT];// Motivo de la ultima lectura
+    UltrasoundStatus_t us_status[ULTRASOUND_COUNT];// Motivo de la lectura de este ciclo (solo el sensor de turno)
+    UltrasoundStatus_t us_last_status[ULTRASOUND_COUNT]; // Motivo de la ultima lectura de cada sensor
     uint8_t front_no_echo_count;                   // Lecturas frontales sin eco seguidas
     uint16_t tcrt_left;                            // Valor ADC filtrado
     uint16_t tcrt_right;

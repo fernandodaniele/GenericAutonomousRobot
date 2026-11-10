@@ -62,6 +62,7 @@ const osThreadAttr_t defaultTask_attributes = {
 /* USER CODE BEGIN FunctionPrototypes */
 static void send_nav_event(DrvUart_t *uart, const NavEventMsg_t *ev);
 static void send_map_line(DrvUart_t *uart, uint32_t ms);
+static void send_tel_line(DrvUart_t *uart, uint32_t ms);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -156,6 +157,7 @@ void StartDefaultTask(void *argument)
     if (now_ms - last_map_ms >= 200u) {
         last_map_ms = now_ms;
         send_map_line(&esp_uart, now_ms);
+        send_tel_line(&esp_uart, now_ms);
     }
     osDelay(10);
   }
@@ -220,6 +222,50 @@ static void send_map_line(DrvUart_t *uart, uint32_t ms)
   send_int(uart, map_range(&snap, ULTRASOUND_FRONT));
   send_int(uart, map_range(&snap, ULTRASOUND_LEFT));
   send_int(uart, map_range(&snap, ULTRASOUND_RIGHT));
+  DrvUart_SendString(uart, "\n");
+}
+
+static void send_range(DrvUart_t *uart, const SensorSnapshot_t *s, UltrasoundIndex_t i)
+{
+  const char *status;
+  switch (s->us_last_status[i]) {
+    case ULTRASOUND_STATUS_OK:        status = ",O"; break;
+    case ULTRASOUND_STATUS_FAR:       status = ",F"; break;
+    case ULTRASOUND_STATUS_TOO_CLOSE: status = ",C"; break;
+    default:                          status = ",N"; break;
+  }
+  DrvUart_SendString(uart, status);
+  send_int(uart, (int32_t)s->dist_mm[i]);
+}
+
+/* Telemetria para la pagina web del ESP32, siempre (tambien en IDLE y FAULT):
+ * TEL,<ms>,<estado>,<pwm_izq>,<pwm_der>,<freno>,
+ *     <est_frente>,<mm_frente>,<est_izq>,<mm_izq>,<est_der>,<mm_der>,
+ *     <tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>
+ * Estados de ultrasonido: O = valido, F = libre, C = pegado, N = sin eco */
+static void send_tel_line(DrvUart_t *uart, uint32_t ms)
+{
+  NavStatus_t st = TaskNav_GetStatus();
+  SensorSnapshot_t snap;
+  if (!TaskSensors_GetSnapshot(&snap)) {
+    return;
+  }
+  DrvUart_SendString(uart, "TEL");
+  send_int(uart, (int32_t)ms);
+  DrvUart_SendString(uart, ",");
+  DrvUart_SendString(uart, Nav_StateName(st.state));
+  send_int(uart, st.pwm_left);
+  send_int(uart, st.pwm_right);
+  send_int(uart, st.brake ? 1 : 0);
+  send_range(uart, &snap, ULTRASOUND_FRONT);
+  send_range(uart, &snap, ULTRASOUND_LEFT);
+  send_range(uart, &snap, ULTRASOUND_RIGHT);
+  send_int(uart, snap.tcrt_left);
+  send_int(uart, snap.tcrt_right);
+  send_int(uart, snap.cliff_left ? 1 : 0);
+  send_int(uart, snap.cliff_right ? 1 : 0);
+  send_int(uart, snap.gyro_z_dps);
+  send_int(uart, snap.imu_ok ? 1 : 0);
   DrvUart_SendString(uart, "\n");
 }
 

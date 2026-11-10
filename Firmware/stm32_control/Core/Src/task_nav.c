@@ -64,6 +64,7 @@ NavStatus_t TaskNav_GetStatus(void)
     s.state = nav_status.state;
     s.pwm_left = nav_status.pwm_left;
     s.pwm_right = nav_status.pwm_right;
+    s.brake = nav_status.brake;
     s.x_mm = nav_status.x_mm;
     s.y_mm = nav_status.y_mm;
     s.theta_mrad = nav_status.theta_mrad;
@@ -230,6 +231,7 @@ static void NavTask(void* argument)
         nav_status.state = out.state;
         nav_status.pwm_left = pwm_l;
         nav_status.pwm_right = pwm_r;
+        nav_status.brake = out.brake;
         nav_status.x_mm = (int32_t)x_mm;
         nav_status.y_mm = (int32_t)y_mm;
         nav_status.theta_mrad = (int32_t)(theta * 1000.0f);

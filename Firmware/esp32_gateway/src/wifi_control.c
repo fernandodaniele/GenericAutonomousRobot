@@ -7,32 +7,33 @@
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "nvs_flash.h"
+#include "telemetry.h"
 #include "uart_comm.h"
+
+#define STATUS_JSON_SIZE 1024
 
 static const char *TAG = "WIFI_CTRL";
 
-/* Pagina de control: dos botones grandes, pensada para el celular */
-static const char INDEX_HTML[] =
-    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>GAR Robot</title><style>"
-    "body{font-family:sans-serif;text-align:center;margin:0;padding:24px;background:#111;color:#eee}"
-    "button{display:block;width:100%;max-width:360px;margin:20px auto;padding:36px 0;"
-    "font-size:32px;font-weight:bold;border:0;border-radius:16px;color:#fff}"
-    "#start{background:#1b8a3a}#stop{background:#c62828}"
-    "#msg{min-height:1.5em;font-size:18px}"
-    "</style></head><body><h1>GAR Robot</h1>"
-    "<button id='start' onclick=\"send('start')\">START</button>"
-    "<button id='stop' onclick=\"send('stop')\">STOP</button>"
-    "<p id='msg'></p><script>"
-    "function send(c){fetch('/'+c,{method:'POST'})"
-    ".then(r=>r.text()).then(t=>{document.getElementById('msg').textContent=t})"
-    ".catch(()=>{document.getElementById('msg').textContent='Sin conexion'})}"
-    "</script></body></html>";
+/* Pagina del panel: web/index.html, embebida en el firmware */
+extern const char index_html_start[] asm("_binary_index_html_start");
+extern const char index_html_end[]   asm("_binary_index_html_end");
 
 static esp_err_t index_handler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, INDEX_HTML, HTTPD_RESP_USE_STRLEN);
+    // EMBED_TXTFILES agrega un '\0' al final que no forma parte de la pagina
+    return httpd_resp_send(req, index_html_start, index_html_end - index_html_start - 1);
+}
+
+static esp_err_t status_handler(httpd_req_t *req) {
+    static char json[STATUS_JSON_SIZE];   // El servidor atiende de a un pedido
+
+    size_t length = Telemetry_ToJson(json, sizeof(json));
+    if (length == 0) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Sin datos");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, length);
 }
 
 static esp_err_t start_handler(httpd_req_t *req) {
@@ -49,6 +50,7 @@ static esp_err_t stop_handler(httpd_req_t *req) {
 
 static void start_web_server(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.lru_purge_enable = true;   // Un celular que se fue no deja ocupadas las conexiones
     httpd_handle_t server = NULL;
 
     if (httpd_start(&server, &config) != ESP_OK) {
@@ -59,6 +61,8 @@ static void start_web_server(void) {
     const httpd_uri_t index_uri = { .uri = "/",      .method = HTTP_GET,  .handler = index_handler };
     const httpd_uri_t start_uri = { .uri = "/start", .method = HTTP_POST, .handler = start_handler };
     const httpd_uri_t stop_uri  = { .uri = "/stop",  .method = HTTP_POST, .handler = stop_handler };
+    const httpd_uri_t status_uri = { .uri = "/api/status", .method = HTTP_GET, .handler = status_handler };
+    httpd_register_uri_handler(server, &status_uri);
     httpd_register_uri_handler(server, &index_uri);
     httpd_register_uri_handler(server, &start_uri);
     httpd_register_uri_handler(server, &stop_uri);

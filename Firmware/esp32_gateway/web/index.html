@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GAR Robot</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6d68;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, .10);
+  --body: #e1e0d9;
+  --front: #2a78d6;
+  --left: #eb6834;
+  --right: #1baf7a;
+  --good: #0ca30c;
+  --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #a5a39b;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, .10);
+    --body: #383835;
+    --front: #3987e5;
+    --left: #d95926;
+    --right: #199e70;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--page);
+  color: var(--ink);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 960px; margin: 0 auto; display: grid; gap: 12px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 14px; margin: 0 0 8px; color: var(--ink-2); font-weight: 600; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; min-width: 0; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.pill i { width: 9px; height: 9px; border-radius: 50%; background: var(--critical); }
+.pill.on i { background: var(--good); }
+#hero { display: grid; gap: 12px; }
+#state { font-size: 30px; font-weight: 700; line-height: 1.15; }
+#action { color: var(--ink-2); }
+.buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+button { padding: 16px 0; font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+#start { background: #0b7a0b; }
+#stop { background: var(--critical); }
+#msg { min-height: 1.4em; font-size: 13px; color: var(--ink-2); margin: 0; }
+.grid { display: grid; gap: 12px; }
+#robot svg { display: block; width: 100%; max-width: 420px; height: auto; margin: 0 auto; }
+svg text { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink); }
+svg text.sub { font-size: 11px; fill: var(--ink-2); }
+.row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 12px; padding: 7px 0; border-top: 1px solid var(--grid); }
+.row:first-of-type { border-top: 0; }
+.row b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.row small { grid-column: 1 / -1; color: var(--ink-2); font-size: 13px; }
+.name { display: inline-flex; align-items: center; gap: 7px; }
+.name i { width: 10px; height: 10px; border-radius: 3px; }
+.row small.alert { color: var(--critical); font-weight: 600; }
+.bar { grid-column: 1 / -1; position: relative; height: 6px; margin-top: 3px; background: var(--grid); border-radius: 3px; overflow: hidden; }
+.bar span { position: absolute; top: 0; bottom: 0; background: var(--ink-2); }
+.bar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--surface); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; }
+#charts { position: relative; touch-action: pan-y; }
+canvas { display: block; width: 100%; height: 130px; }
+#tip {
+  position: absolute; top: 0; z-index: 2; display: none; pointer-events: none;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--axis); border-radius: 8px;
+  padding: 6px 9px; font-size: 12px; line-height: 1.5; white-space: nowrap;
+  font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+}
+#log { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 14px; }
+#log li { display: flex; gap: 10px; padding: 4px 0; border-top: 1px solid var(--grid); }
+#log li:first-child { border-top: 0; }
+#log time { color: var(--ink-2); font-variant-numeric: tabular-nums; min-width: 62px; }
+.note { margin: 0; font-size: 12px; color: var(--ink-2); }
+.stale .live { opacity: .45; }
+@media (min-width: 720px) {
+  .grid.two { grid-template-columns: 1fr 1fr; }
+  .buttons { max-width: 360px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>GAR Robot</h1>
+    <span class="pill" id="link"><i></i><span id="linkText">Conectando…</span></span>
+  </header>
+
+  <section class="card" id="hero">
+    <div class="live">
+      <div id="state">—</div>
+      <div id="action">Esperando datos</div>
+    </div>
+    <div class="buttons">
+      <button id="start" type="button">START</button>
+      <button id="stop" type="button">STOP</button>
+    </div>
+    <p id="msg" role="status"></p>
+  </section>
+
+  <div class="grid two">
+    <section class="card live" id="robot">
+      <h2>Vista superior</h2>
+      <svg viewBox="0 -16 340 286" role="img" aria-label="Robot visto desde arriba con la distancia medida por cada sensor">
+        <line id="beamF" x1="170" y1="118" x2="170" y2="118" stroke="var(--front)" stroke-width="4" stroke-linecap="round"/>
+        <line id="beamL" x1="126" y1="132" x2="126" y2="132" stroke="var(--left)" stroke-width="4" stroke-linecap="round"/>
+        <line id="beamR" x1="214" y1="132" x2="214" y2="132" stroke="var(--right)" stroke-width="4" stroke-linecap="round"/>
+        <text id="labelF" x="180" y="0">—</text>
+        <text id="labelL" x="26" y="122">—</text>
+        <text id="labelR" x="314" y="122" text-anchor="end">—</text>
+        <rect x="138" y="118" width="64" height="88" rx="10" fill="var(--body)" stroke="var(--axis)"/>
+        <rect id="wheelL" x="126" y="146" width="10" height="44" rx="3" fill="var(--axis)"/>
+        <rect id="wheelR" x="204" y="146" width="10" height="44" rx="3" fill="var(--axis)"/>
+        <circle id="edgeL" cx="150" cy="128" r="6" fill="var(--good)"/>
+        <circle id="edgeR" cx="190" cy="128" r="6" fill="var(--good)"/>
+        <text id="motorL" x="118" y="174" text-anchor="end">—</text>
+        <text id="motorR" x="222" y="174">—</text>
+        <text class="sub" x="170" y="228" text-anchor="middle">Círculos: sensores de piso (verde = piso, rojo = borde)</text>
+        <text class="sub" x="170" y="246" text-anchor="middle">Líneas: distancia, escala hasta 1 m</text>
+      </svg>
+    </section>
+
+    <div class="grid">
+      <section class="card live">
+        <h2>Motores</h2>
+        <div id="motors"></div>
+        <p class="note">Es lo que ordena el STM32. Sin encoders no se puede confirmar que la rueda gire.</p>
+      </section>
+      <section class="card live">
+        <h2>Sensores de piso e IMU</h2>
+        <div id="floor"></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card live">
+    <h2>Ultrasonidos</h2>
+    <div id="sonars"></div>
+  </section>
+
+  <section class="card">
+    <h2>Últimos 60 segundos</h2>
+    <div id="charts">
+      <div class="legend">
+        <span><i style="background:var(--front)"></i>Frente</span>
+        <span><i style="background:var(--left)"></i>Izquierda</span>
+        <span><i style="background:var(--right)"></i>Derecha</span>
+        <span style="color:var(--muted)">Distancia (cm)</span>
+      </div>
+      <canvas id="chartDist"></canvas>
+      <div class="legend" style="margin-top:8px">
+        <span><i style="background:var(--left)"></i>Motor izquierdo</span>
+        <span><i style="background:repeating-linear-gradient(90deg,var(--right) 0 5px,transparent 5px 8px)"></i>Motor derecho</span>
+        <span style="color:var(--muted)">PWM (%)</span>
+      </div>
+      <canvas id="chartPwm"></canvas>
+      <div id="tip"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Registro</h2>
+    <ul id="log"><li><span>Sin novedades</span></li></ul>
+  </section>
+</main>
+
+<script>
+'use strict';
+const PWM_MAX = 8399;       // MOTOR_MAX_SPEED en la STM32
+const CLEAR_CM = 25;        // NAV_CLEAR_MM: desde aca el frente cuenta como libre
+const BEAM_MAX_CM = 100;    // Escala de la vista superior y del grafico
+const HISTORY_MS = 60000;
+const GAP_MS = 1500;
+const POLL_MS = 250;
+const LOG_MAX = 40;
+
+const STATES = {
+  IDLE: 'En espera', FORWARD: 'Avanzando', SCAN: 'Escaneo',
+  AVOID: 'Esquivando', CLIFF: 'Borde detectado', FAULT: 'Falla'
+};
+const EVENTS = { ALERTA: 'Giro brusco', CLIFF: 'Borde detectado', FAULT: 'Falla' };
+const SONAR_NAMES = ['Frente', 'Izquierda', 'Derecha'];
+const SONAR_COLORS = ['--front', '--left', '--right'];
+
+const $ = id => document.getElementById(id);
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+let history = [];
+let hoverX = null;
+let lastEventId = 0;
+let lastState = null;
+let logEmpty = true;
+
+function sonarCm(u) {
+  if (u.s === 'O') return u.mm / 10;
+  if (u.s === 'F') return BEAM_MAX_CM;
+  if (u.s === 'C') return 1;
+  return null;
+}
+
+function sonarValue(u) {
+  if (u.s === 'O') return (u.mm / 10).toFixed(1) + ' cm';
+  if (u.s === 'F') return 'Libre';
+  if (u.s === 'C') return '< 2 cm';
+  return 'Sin eco';
+}
+
+function sonarDetail(u) {
+  if (u.s === 'N') return 'El sensor no respondió';
+  if (u.s === 'C') return 'Obstáculo pegado';
+  if (u.s === 'F') return 'Nada al alcance';
+  return u.mm / 10 >= CLEAR_CM ? 'Camino libre' : 'Detecta un obstáculo';
+}
+
+function motorText(pwm, brake) {
+  if (pwm > 0) return 'Adelante';
+  if (pwm < 0) return 'Atrás';
+  return brake ? 'Freno' : 'Detenido';
+}
+
+function pct(pwm) { return Math.round(Math.abs(pwm) * 100 / PWM_MAX); }
+
+function action(d) {
+  const [l, r] = d.pwm;
+  if (d.state === 'FAULT') return 'Motores frenados. Salir con STOP y START';
+  if (d.state === 'IDLE') return 'Apretá START para arrancar';
+  if (l > 0 && r > 0) return l === r ? 'Avanzando recto' : 'Avanzando con corrección';
+  if (l < 0 && r < 0) return 'Retrocediendo';
+  if (l < 0 && r > 0) return 'Girando a la izquierda';
+  if (l > 0 && r < 0) return 'Girando a la derecha';
+  if (l !== 0 || r !== 0) return 'Moviendo un solo motor';
+  return d.state === 'SCAN' ? 'Quieto, midiendo' : 'Motores detenidos';
+}
+
+function setRow(host, i, name, color, value, detail, alert, bar) {
+  let row = host.children[i];
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<span class="name"></span><b></b><small></small>';
+    if (color) {
+      const dot = document.createElement('i');
+      dot.style.background = 'var(' + color + ')';
+      row.firstChild.append(dot);
+    }
+    row.firstChild.append(document.createTextNode(name));
+    if (bar !== undefined) {
+      const track = document.createElement('div');
+      track.className = 'bar';
+      track.append(document.createElement('span'));
+      row.append(track);
+    }
+    host.append(row);
+  }
+  row.children[1].textContent = value;
+  row.children[2].textContent = detail;
+  row.children[2].className = alert ? 'alert' : '';
+  if (bar !== undefined) {
+    const span = row.querySelector('.bar span');
+    const half = Math.min(Math.abs(bar), 1) * 50;
+    span.style.left = (bar < 0 ? 50 - half : 50) + '%';
+    span.style.width = half + '%';
+  }
+}
+
+function setBeam(id, labelId, dx, dy, u) {
+  const beam = $(id);
+  const cm = sonarCm(u);
+  const len = cm === null ? BEAM_MAX_CM : Math.min(cm, BEAM_MAX_CM);
+  beam.setAttribute('x2', +beam.getAttribute('x1') + dx * len);
+  beam.setAttribute('y2', +beam.getAttribute('y1') + dy * len);
+  beam.style.strokeDasharray = cm === null ? '2 8' : '';
+  beam.style.opacity = cm === null ? '.5' : '1';
+  $(labelId).textContent = sonarValue(u);
+}
+
+function setMotor(id, wheel, pwm, brake) {
+  const arrow = pwm > 0 ? '▲ ' : pwm < 0 ? '▼ ' : '';
+  $(id).textContent = pwm !== 0 ? arrow + pct(pwm) + ' %' : motorText(pwm, brake);
+  $(wheel).style.fill = pwm !== 0 ? 'var(--ink)' : 'var(--axis)';
+}
+
+function addLog(ms, text) {
+  const log = $('log');
+  if (logEmpty) { log.textContent = ''; logEmpty = false; }
+  const li = document.createElement('li');
+  const time = document.createElement('time');
+  const body = document.createElement('span');
+  time.textContent = (ms / 1000).toFixed(1) + ' s';
+  body.textContent = text;
+  li.append(time, body);
+  log.prepend(li);
+  while (log.children.length > LOG_MAX) log.lastChild.remove();
+}
+
+function setLink(on, text) {
+  $('link').classList.toggle('on', on);
+  $('linkText').textContent = text;
+  document.body.classList.toggle('stale', !on);
+}
+
+function record(d) {
+  const last = history[history.length - 1];
+  if (last && d.ms < last.ms) history = [];
+  if (last && d.ms === last.ms) return;
+  history.push({ ms: d.ms, us: d.us.map(sonarCm), raw: d.us, pwm: d.pwm, state: d.state });
+  while (history.length && d.ms - history[0].ms > HISTORY_MS) history.shift();
+}
+
+function render(d) {
+  if (!d.link) {
+    setLink(false, d.age < 0 ? 'Sin datos del STM32' : 'STM32 sin responder');
+    return;
+  }
+  setLink(true, 'Conectado');
+
+  $('state').textContent = STATES[d.state] || d.state;
+  $('action').textContent = action(d);
+
+  setBeam('beamF', 'labelF', 0, -1, d.us[0]);
+  setBeam('beamL', 'labelL', -1, 0, d.us[1]);
+  setBeam('beamR', 'labelR', 1, 0, d.us[2]);
+  setMotor('motorL', 'wheelL', d.pwm[0], d.brake);
+  setMotor('motorR', 'wheelR', d.pwm[1], d.brake);
+  $('edgeL').style.fill = d.cliff[0] ? 'var(--critical)' : 'var(--good)';
+  $('edgeR').style.fill = d.cliff[1] ? 'var(--critical)' : 'var(--good)';
+
+  d.us.forEach((u, i) => setRow($('sonars'), i, SONAR_NAMES[i], SONAR_COLORS[i],
+    sonarValue(u), sonarDetail(u), u.s === 'N' || u.s === 'C'));
+
+  ['Izquierdo', 'Derecho'].forEach((name, i) => {
+    const pwm = d.pwm[i];
+    setRow($('motors'), i, name, i ? '--right' : '--left', pct(pwm) + ' %',
+      motorText(pwm, d.brake) + (pwm !== 0 ? ', en movimiento' : ''), false, pwm / PWM_MAX);
+  });
+
+  ['Piso izquierdo', 'Piso derecho'].forEach((name, i) => {
+    setRow($('floor'), i, name, null, String(d.tcrt[i]),
+      d.cliff[i] ? 'Borde detectado' : 'Ve piso', !!d.cliff[i]);
+  });
+  setRow($('floor'), 2, 'Giro Z', null, d.imu ? d.gyro + ' °/s' : '—',
+    d.imu ? 'IMU activa' : 'IMU desactivada', false);
+
+  if (lastState !== null && d.state !== lastState) {
+    addLog(d.ms, (STATES[lastState] || lastState) + ' → ' + (STATES[d.state] || d.state));
+  }
+  lastState = d.state;
+
+  d.events.slice().sort((a, b) => a.id - b.id).forEach(e => {
+    if (e.id > lastEventId) {
+      lastEventId = e.id;
+      addLog(e.ms, EVENTS[e.t] || e.t);
+    }
+  });
+
+  record(d);
+  drawAll();
+}
+
+function setupCanvas(canvas) {
+  const ratio = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * ratio) || canvas.height !== Math.round(h * ratio)) {
+    canvas.width = Math.round(w * ratio);
+    canvas.height = Math.round(h * ratio);
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+
+const MARGIN = { l: 36, r: 8, t: 8, b: 20 };
+
+function timeToX(ms, end, w) {
+  return w - MARGIN.r - (end - ms) / HISTORY_MS * (w - MARGIN.l - MARGIN.r);
+}
+
+function drawChart(canvas, min, max, ticks, series) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const plotH = h - MARGIN.t - MARGIN.b;
+  const toY = v => MARGIN.t + (max - Math.min(Math.max(v, min), max)) / (max - min) * plotH;
+
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right';
+  ctx.lineWidth = 1;
+  ticks.forEach(t => {
+    ctx.strokeStyle = css(t === 0 ? '--axis' : '--grid');
+    ctx.beginPath();
+    ctx.moveTo(MARGIN.l, toY(t));
+    ctx.lineTo(w - MARGIN.r, toY(t));
+    ctx.stroke();
+    ctx.fillStyle = css('--muted');
+    ctx.fillText(String(t), MARGIN.l - 6, toY(t));
+  });
+
+  ctx.textBaseline = 'alphabetic';
+  [['-60 s', 'left', MARGIN.l], ['-30 s', 'center', (MARGIN.l + w - MARGIN.r) / 2], ['ahora', 'right', w - MARGIN.r]]
+    .forEach(([text, align, x]) => {
+      ctx.textAlign = align;
+      ctx.fillText(text, x, h - 5);
+    });
+
+  if (!history.length) return;
+  const end = history[history.length - 1].ms;
+
+  series.forEach(s => {
+    ctx.strokeStyle = css(s.color);
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.setLineDash(s.dash ? [6, 5] : []);
+    ctx.beginPath();
+    let prev = null;
+    history.forEach(p => {
+      const v = s.get(p);
+      if (v === null) { prev = null; return; }
+      const x = timeToX(p.ms, end, w);
+      if (prev === null || p.ms - prev > GAP_MS) ctx.moveTo(x, toY(v));
+      else ctx.lineTo(x, toY(v));
+      prev = p.ms;
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  if (hoverX !== null) {
+    const p = nearest(w);
+    if (p) {
+      const x = timeToX(p.ms, end, w);
+      ctx.strokeStyle = css('--axis');
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, MARGIN.t);
+      ctx.lineTo(x, h - MARGIN.b);
+      ctx.stroke();
+      series.forEach(s => {
+        const v = s.get(p);
+        if (v === null) return;
+        ctx.fillStyle = css('--surface');
+        ctx.beginPath(); ctx.arc(x, toY(v), 6, 0, 7); ctx.fill();
+        ctx.fillStyle = css(s.color);
+        ctx.beginPath(); ctx.arc(x, toY(v), 4, 0, 7); ctx.fill();
+      });
+    }
+  }
+}
+
+function nearest(w) {
+  if (!history.length) return null;
+  const end = history[history.length - 1].ms;
+  let best = null;
+  let bestDist = 1e9;
+  history.forEach(p => {
+    const dist = Math.abs(timeToX(p.ms, end, w) - hoverX);
+    if (dist < bestDist) { bestDist = dist; best = p; }
+  });
+  return bestDist <= 24 ? best : null;
+}
+
+function updateTip() {
+  const tip = $('tip');
+  const canvas = $('chartDist');
+  const p = hoverX === null ? null : nearest(canvas.clientWidth);
+  if (!p) { tip.style.display = 'none'; return; }
+  const end = history[history.length - 1].ms;
+  tip.textContent = '';
+  [
+    'Hace ' + ((end - p.ms) / 1000).toFixed(1) + ' s · ' + (STATES[p.state] || p.state),
+    SONAR_NAMES.map((n, i) => n + ': ' + sonarValue(p.raw[i])).join(' · '),
+    'Motores: ' + Math.round(p.pwm[0] * 100 / PWM_MAX) + ' % / ' + Math.round(p.pwm[1] * 100 / PWM_MAX) + ' %'
+  ].forEach(line => {
+    const div = document.createElement('div');
+    div.textContent = line;
+    tip.append(div);
+  });
+  tip.style.display = 'block';
+  const max = canvas.clientWidth - tip.offsetWidth;
+  tip.style.left = Math.max(0, Math.min(hoverX + 12, max)) + 'px';
+}
+
+function drawAll() {
+  drawChart($('chartDist'), 0, BEAM_MAX_CM, [0, 25, 50, 75, 100], [
+    { color: '--front', get: p => p.us[0] },
+    { color: '--left', get: p => p.us[1] },
+    { color: '--right', get: p => p.us[2] }
+  ]);
+  drawChart($('chartPwm'), -100, 100, [-100, 0, 100], [
+    { color: '--left', get: p => p.pwm[0] * 100 / PWM_MAX },
+    { color: '--right', dash: true, get: p => p.pwm[1] * 100 / PWM_MAX }
+  ]);
+  updateTip();
+}
+
+async function poll() {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 1500);
+  try {
+    const response = await fetch('/api/status', { signal: abort.signal, cache: 'no-store' });
+    render(await response.json());
+  } catch (e) {
+    setLink(false, 'Sin conexión con la ESP32');
+  }
+  clearTimeout(timer);
+  setTimeout(poll, POLL_MS);
+}
+
+async function send(command) {
+  try {
+    const response = await fetch('/' + command, { method: 'POST' });
+    $('msg').textContent = await response.text();
+  } catch (e) {
+    $('msg').textContent = 'Sin conexión con la ESP32';
+  }
+}
+
+$('start').onclick = () => send('start');
+$('stop').onclick = () => send('stop');
+
+const charts = $('charts');
+charts.addEventListener('pointermove', e => {
+  hoverX = e.clientX - charts.getBoundingClientRect().left;
+  drawAll();
+});
+charts.addEventListener('pointerleave', () => { hoverX = null; drawAll(); });
+window.addEventListener('resize', drawAll);
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
+}
+
+poll();
+</script>
+</body>
+</html>

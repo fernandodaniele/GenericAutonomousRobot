@@ -13,7 +13,7 @@
 #define UART_TX_PIN         GPIO_NUM_17
 #define UART_RX_PIN         GPIO_NUM_16
 #define UART_BAUD_RATE      115200
-#define UART_RX_BUFFER_SIZE 256
+#define UART_RX_BUFFER_SIZE 1024
 #define UART_TX_BUFFER_SIZE 0
 
 static const char *TAG = "ESP32_UART";

@@ -91,6 +91,24 @@ velocidades nominales, que no están medidas.
 | Parpadeo rápido | Evasiva o borde |
 | 1 / 2 / 3 / 4 destellos | `FAULT`: MPU6050 / frontal sin eco / sensores sin actualizar / atrapado (bucle de retroceso o de escaneo) |
 
+## Panel web de verificación
+
+Conectarse a la red WiFi `GAR-Robot` (clave `robot1234`) y abrir `http://192.168.4.1`.
+La página muestra el estado de la navegación, los ultrasonidos, los TCRT5000, el giro Z y
+los motores, con gráficos de los últimos 60 s, un registro de cambios y los botones
+`START` y `STOP`. Se edita en `Firmware/esp32_gateway/web/index.html` y queda embebida en
+el firmware de la ESP32, que la actualiza consultando `GET /api/status`.
+
+La STM32 manda esta línea por USART2 cada 200 ms, en todos los estados:
+
+```text
+TEL,<ms>,<estado>,<pwm_izq>,<pwm_der>,<freno>,<est_frente>,<mm_frente>,<est_izq>,<mm_izq>,<est_der>,<mm_der>,<tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>
+```
+
+Estados de ultrasonido: `O` = distancia válida, `F` = nada al alcance, `C` = pegado,
+`N` = sin eco. El PWM es el que ordena la STM32: sin encoders, el panel no puede confirmar
+que la rueda realmente gire.
+
 ## Pendiente antes de probar en el robot
 
 1. **`.ioc`**: declarar FreeRTOS (CMSIS_V2, heap 32 768) y ADC1 en PC1/PC2 en CubeMX

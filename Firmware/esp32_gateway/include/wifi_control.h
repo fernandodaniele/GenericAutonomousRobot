@@ -2,11 +2,12 @@
 #define WIFI_CONTROL_H
 
 /*
- * Control del robot desde el celular.
+ * Panel y control del robot desde el celular.
  *
  * El ESP32 levanta su propia red WiFi (modo punto de acceso). Al conectarse
- * con el celular y abrir http://192.168.4.1 aparece una pagina con los
- * botones START y STOP, que se reenvian a la STM32 por UART como lineas
+ * con el celular y abrir http://192.168.4.1 aparece una pagina con los datos
+ * de sensores y motores en vivo (web/index.html, consulta GET /api/status) y
+ * los botones START y STOP, que se reenvian a la STM32 por UART como lineas
  * "START\n" y "STOP\n".
  */
 

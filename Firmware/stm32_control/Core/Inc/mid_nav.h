@@ -157,9 +157,10 @@ extern "C" {
 #ifndef NAV_SCAN_SAMPLES
 #define NAV_SCAN_SAMPLES       3
 #endif
-/* Tiempo maximo midiendo: un sensor sin eco no traba la decision */
+/* Tiempo maximo midiendo: un sensor sin eco no traba la decision.
+ * Cada lateral se lee cada 240 ms: 3 lecturas entran con margen. */
 #ifndef NAV_SCAN_MAX_MS
-#define NAV_SCAN_MAX_MS        800
+#define NAV_SCAN_MAX_MS        1200
 #endif
 /* Giros o retrocesos seguidos sin avanzar antes de FAULT (salir con STOP y START) */
 #ifndef NAV_SCAN_STUCK_MAX

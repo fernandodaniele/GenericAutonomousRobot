@@ -4,9 +4,9 @@
  *  Created on: Nov 2, 2026
  *      Author: Grupo 2
  *
- *  Lee un HC-SR04 por turno (cada 30 ms) priorizando el frente mediante intercalado,
- *  los dos TCRT5000 y el giro Z del MPU6050 en I2C3, y publica la foto en una cola
- *  de un elemento (xQueueOverwrite / xQueuePeek): nadie espera a nadie.
+ *  Lee un HC-SR04 por turno (cada 60 ms) priorizando el frente mediante intercalado,
+ *  y cada 20 ms los dos TCRT5000 y el giro Z del MPU6050 en I2C3. Publica la foto en
+ *  una cola de un elemento (xQueueOverwrite / xQueuePeek): nadie espera a nadie.
  */
 
 #include "task_sensors.h"
@@ -37,6 +37,10 @@
 
 /* Configuración del filtro de promedio móvil para el frente */
 #define FRONT_MAX_SAMPLES        3
+
+/* Un disparo de ultrasonido cada 3 ciclos de 20 ms: el HC-SR04 necesita unos
+ * 60 ms entre mediciones para que el eco de un sensor no lo lea el siguiente. */
+#define SENSORS_CYCLES_PER_PING  3
 
 static osThreadId_t sensors_task_handle;
 static const osThreadAttr_t sensors_task_attributes = {
@@ -117,6 +121,7 @@ static void SensorsTask(void* argument)
 
     /* Variables de control para el orden secuencial prioritario */
     uint8_t seq_idx = 0;
+    uint8_t ping_cycle = 0;
 
     /* Variables locales para el filtro de promedio móvil del frente */
     uint32_t front_samples[FRONT_MAX_SAMPLES] = {0};
@@ -134,46 +139,55 @@ static void SensorsTask(void* argument)
             snap.us_status[i] = ULTRASOUND_STATUS_NO_ECHO;
         }
 
-        /* 2. Determinar a quién le toca según nuestra secuencia de prioridad */
-        UltrasoundIndex_t turn = us_sequence[seq_idx];
+        if (ping_cycle == 0u) {
+            /* 2. Determinar a quién le toca según nuestra secuencia de prioridad */
+            UltrasoundIndex_t turn = us_sequence[seq_idx];
 
-        /* 3. Realizar la lectura física del sensor de este turno */
-        uint32_t mm = 0;
-        UltrasoundStatus_t st = Ultrasound_ReadStatusIndex(turn, &mm);
+            /* 3. Realizar la lectura física del sensor de este turno */
+            uint32_t mm = 0;
+            UltrasoundStatus_t st = Ultrasound_ReadStatusIndex(turn, &mm);
 
-        snap.us_status[turn] = st;
-        snap.us_last_status[turn] = st;
-        snap.dist_mm[turn] = mm;
+            snap.us_status[turn] = st;
+            snap.us_last_status[turn] = st;
+            snap.dist_mm[turn] = mm;
 
-        /* 4. Lógica especial con Promedio Móvil si es el turno del SENSOR FRONTAL */
-        if (turn == ULTRASOUND_FRONT) {
-            if (st == ULTRASOUND_STATUS_NO_ECHO) {
-                if (snap.front_no_echo_count < UINT8_MAX) {
-                    snap.front_no_echo_count++;
-                }
-            } else {
-                snap.front_no_echo_count = 0;
-
-                // Insertar nueva muestra en el buffer circular
-                front_samples[front_sample_idx] = mm;
-                front_sample_idx = (front_sample_idx + 1) % FRONT_MAX_SAMPLES;
-                if (front_samples_count < FRONT_MAX_SAMPLES) {
-                    front_samples_count++;
+            /* 4. Lógica especial con Promedio Móvil si es el turno del SENSOR FRONTAL */
+            if (turn == ULTRASOUND_FRONT) {
+                if (st == ULTRASOUND_STATUS_NO_ECHO) {
+                    if (snap.front_no_echo_count < UINT8_MAX) {
+                        snap.front_no_echo_count++;
+                    }
+                } else {
+                    snap.front_no_echo_count = 0;
                 }
 
-                // Calcular el promedio acumulado
-                uint32_t sum = 0;
-                for (uint8_t s = 0; s < front_samples_count; s++) {
-                    sum += front_samples[s];
-                }
+                if (st == ULTRASOUND_STATUS_OK) {
+                    // Insertar nueva muestra en el buffer circular
+                    front_samples[front_sample_idx] = mm;
+                    front_sample_idx = (front_sample_idx + 1) % FRONT_MAX_SAMPLES;
+                    if (front_samples_count < FRONT_MAX_SAMPLES) {
+                        front_samples_count++;
+                    }
 
-                // Sobrescribimos el valor instantáneo por la media filtrada
-                snap.dist_mm[ULTRASOUND_FRONT] = sum / front_samples_count;
+                    // Calcular el promedio acumulado
+                    uint32_t sum = 0;
+                    for (uint8_t s = 0; s < front_samples_count; s++) {
+                        sum += front_samples[s];
+                    }
+
+                    // Sobrescribimos el valor instantáneo por la media filtrada
+                    snap.dist_mm[ULTRASOUND_FRONT] = sum / front_samples_count;
+                } else {
+                    // Sin distancia valida (libre: mm = 0): no debe entrar al promedio
+                    front_samples_count = 0;
+                    front_sample_idx = 0;
+                }
             }
-        }
 
-        /* 5. Avanzar el índice de la secuencia de prioridad de forma circular */
-        seq_idx = (uint8_t)((seq_idx + 1) % SEQUENCE_LENGTH);
+            /* 5. Avanzar el índice de la secuencia de prioridad de forma circular */
+            seq_idx = (uint8_t)((seq_idx + 1) % SEQUENCE_LENGTH);
+        }
+        ping_cycle = (uint8_t)((ping_cycle + 1u) % SENSORS_CYCLES_PER_PING);
 
         /* 6. Leer los TCRT5000 (Filtro interno del driver) */
         drv_tcrt5000_update();

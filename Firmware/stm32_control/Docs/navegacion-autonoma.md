@@ -11,7 +11,7 @@ El ESP32 y el datalogger no se tocan: USART2, la SD y el SPI1 quedan igual.
 | 0 | `HAL_UART_ErrorCallback` rearma la recepción (una ráfaga ya no deja muerta la UART) | `Core/Src/main.c` (USER CODE 4) |
 | 0 | CI también en `Pruebas_Grupo2` | `.github/workflows/main_ci.yml` |
 | 1 | `Ultrasound_ReadStatus()`: OK / sin eco / eco largo (libre) / demasiado cerca | `drv_ultrasound.c/.h` |
-| 1 | `task_sensors`: un HC-SR04 por turno cada 30 ms, TCRT5000 y giro Z del MPU6050 (I2C3, 3 reintentos) | `task_sensors.c/.h` |
+| 1 | `task_sensors`: un HC-SR04 por turno cada 60 ms; TCRT5000 y giro Z del MPU6050 (I2C3, 3 reintentos) cada 20 ms | `task_sensors.c/.h` |
 | 1 | Umbrales del TCRT5000 redefinibles con `-D` para calibrar | `drv_TCRT5000.c` |
 | 2 | `mid_nav`: máquina de 5 estados sin HAL | `mid_nav.c/.h` |
 | 2 | `Kinematics_Compute`: mm/s y rad/s → PWM | `mid_kinematics.c/.h` |

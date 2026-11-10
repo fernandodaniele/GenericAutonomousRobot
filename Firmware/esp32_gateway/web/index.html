@@ -117,6 +117,21 @@
         <p class="safety-note">La autorización temporal no confirma desplazamiento físico ni garantiza frenado ante una falla total. STOP global permanece separado arriba.</p>
       </section>
 
+      <section class="card" aria-labelledby="map-title">
+        <p class="eyebrow">LOCALIZACIÓN RELATIVA</p>
+        <h2 id="map-title">Mapa 2D</h2>
+        <p id="map-state" role="status" aria-live="polite">Sin datos de localización</p>
+        <p id="map-calibration" class="description">Sin información de calibración</p>
+        <p id="map-pose">Posición métrica no disponible</p>
+        <p id="map-age">Sin muestra</p>
+        <div class="map-frame"><canvas id="map-canvas" width="640" height="640" aria-label="Grilla de ocupación relativa del robot">El mapa requiere Canvas.</canvas></div>
+        <p class="map-legend">Gris: desconocido · Blanco: libre observado · Rojo: ocupación posible · Azul: pose y trayectoria</p>
+        <p id="map-scale" class="description">Esperando configuración del mapa.</p>
+        <p id="map-counts" class="description">Sin conteos</p>
+        <p id="map-rays" class="description">Sin ecos asociados</p>
+        <p class="safety-note">Estimación relativa, sujeta a deriva y calibración. Los ecos ultrasónicos tienen incertidumbre angular y no cubren los laterales. Este mapa no autoriza movimiento ni representa espacio libre garantizado.</p>
+      </section>
+
       <aside class="local-note">
         <span class="note-title">Todo queda en la red local</span>
         <p>La página y sus recursos se alojan en la ESP32. Podés acceder desde tu computadora o celular sin conexión a Internet.</p>
@@ -126,5 +141,6 @@
 
     <footer><span>GenericAutonomousRobot</span><span>ESP32 · Wi-Fi AP · HTTP</span></footer>
   </div>
+  <script src="/map.js" defer></script>
 </body>
 </html>

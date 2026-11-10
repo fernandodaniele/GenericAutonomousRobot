@@ -374,3 +374,13 @@ bool WebCommands_CanPollSensors(void)
     taskEXIT_CRITICAL(&s_command_lock);
     return idle;
 }
+
+bool WebCommands_CanPollMapping(void)
+{
+    const int64_t now=esp_timer_get_time();
+    taskENTER_CRITICAL(&s_command_lock);
+    bool allowed=!s_manual.pending&&!s_manual.halt&&s_pending<0&&s_sending<0&&s_manual_controls==0U&&
+        (!s_manual.active||s_manual.expires_us-now>150000);
+    taskEXIT_CRITICAL(&s_command_lock);
+    return allowed;
+}

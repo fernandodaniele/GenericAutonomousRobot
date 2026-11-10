@@ -41,6 +41,9 @@ void WebManual_Process(void); /* Solo app_main. */
 bool WebManual_Active(void);
 /* Consulta opcional: false ante cualquier control operativo o sesion manual. */
 bool WebCommands_CanPollSensors(void);
+/* W7: telemetria tambien durante MANUAL, solo con margen de lease y sin
+ * direccion/parada/control pendiente. Revalidar tras esperar el mutex TX. */
+bool WebCommands_CanPollMapping(void);
 /* Arbitraje TX: invocadas con el mutex UART adquirido; ninguna realiza E/S. */
 bool WebManual_Claim(uint64_t generation, uint32_t sequence, UartMotionCommand direction);
 bool WebManual_TakeHalt(void);

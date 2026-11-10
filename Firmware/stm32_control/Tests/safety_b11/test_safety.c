@@ -43,6 +43,8 @@ static jmp_buf finish;
 #include "../../Core/Src/drv_uart.c"
 #include "../../Core/Src/task_comms.c"
 #include "../../Core/Src/mid_navigation.c"
+#include "../../Core/Src/mid_odometry.c"
+#include "../../Core/Src/mid_mapping.c"
 static TaskControlRobotEventMessage_t events[8];
 
 /* Real encoder driver under distinct host-only names; task injection remains
@@ -1036,6 +1038,32 @@ static void test_w6_integration(void) {
     producer_logging_enabled = false;
 }
 
+static void test_w7_integration(void) {
+    setup();left_encoder_delta=-13;right_encoder_delta=24;run_motor(2);
+    OdometrySnapshot od;Odometry_GetSnapshot(&od);
+    CHECK(od.left_count==-26&&od.right_count==48&&od.state==1U);
+    CHECK(left_encoder_reads==3U&&right_encoder_reads==3U);
+    CHECK(task_context.left_speed_cps==-1300&&task_context.right_speed_cps==2400);
+    PASS("W7 real MotorControl feeds both deltas to odometry once, after PWM, without changing speed conversion");
+    TaskMotorControl_Stop();Odometry_GetSnapshot(&od);CHECK(od.left_count==-26&&od.right_count==48);
+    CHECK(task_context.left_integral==0&&task_context.right_integral==0);expect_zero();
+    PASS("W7 STOP preserves measured odometry counts while clearing PI targets and PWM");
+    DrvUart_t uart;UART_HandleTypeDef peripheral={0};DrvUart_Init(&uart,&peripheral);
+    uart_feed(&uart,"MAPPING Q=24 S=0\n");CHECK(uart_consume(&uart));
+    CHECK(strncmp(uart_response,"POSE,2,24,",10U)==0&&strstr(uart_response,",1,0,-26,48,-,-,-,-,-,0\n"));
+    CHECK(!target_pending&&robot_state==ROBOT_STATE_MANUAL);expect_zero();
+    PASS("W7 actual TaskComms reads a consistent uncalibrated pose without issuing movement or changing STATUS/SENSORS");
+    uart_feed(&uart,"MAPPING Q=25 S=1\nSTATUS\n");CHECK(uart_consume(&uart)&&strncmp(uart_response,"STATE=",6U)==0);
+    uart_feed(&uart,"MAPPING Q=26 S=0\nSTOP\n");CHECK(uart_consume(&uart)&&strcmp(uart_response,"STOP_QUEUED\n")==0);
+    run_fsm(1);expect_zero();CHECK(robot_state==ROBOT_STATE_IDLE);
+    PASS("W7 UART telemetry cannot displace STATUS or STOP and leaves no reactivation target");
+    uart_feed(&uart,"MAPPING Q=27 S=0\nSENSORS Q=28\n");
+    CHECK(uart_consume(&uart)&&strncmp(uart_response,"SENSORS,1,28,",13U)==0);
+    uart_feed(&uart,"SENSORS Q=29\nMAPPING Q=30 S=0\n");
+    CHECK(uart_consume(&uart)&&strncmp(uart_response,"SENSORS,1,29,",13U)==0);
+    PASS("W7 SENSORS outranks mapping in either burst order without changing operational priority classes");
+}
+
 int run_permanent_regressions(void) {
 
     CHECK(TaskSafety_IsStopActive() && robot_state == ROBOT_STATE_IDLE);
@@ -1373,6 +1401,7 @@ int run_permanent_regressions(void) {
     test_navigation_b73();
     test_navigation_b75();
     test_w6_integration();
+    test_w7_integration();
     return 0;
 }
 

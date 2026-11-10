@@ -5,6 +5,7 @@
 #include "wifi_ap.h"
 #include "web_server.h"
 #include "stm32_status.h"
+#include "stm32_sensors.h"
 #include "web_commands.h"
 
 // Tarea encargada de leer comandos del monitor serial.
@@ -80,7 +81,8 @@ void app_main(void)
         WebCommands_ProcessPending();
         WebManual_Process();
         if (Stm32Status_PollDue()) Uart_SendStatus();
-        else Uart_PollSensors(); /* STATUS primero; nunca dos consultas seguidas. */
+        else if (Stm32Sensors_PollDue()) Uart_PollSensors();
+        else Uart_PollMapping(); /* Ultima prioridad, nunca dos consultas juntas. */
         Uart_ReadResponse();
         vTaskDelay(pdMS_TO_TICKS(10));
     }

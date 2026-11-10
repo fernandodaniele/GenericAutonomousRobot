@@ -7,6 +7,7 @@
 #include "task_control_robot.h"
 #include "mid_navigation.h"
 #include "mid_motion.h"
+#include "mid_odometry.h"
 
 #define MOTOR_CONTROL_PERIOD_MS 10U
 #define MOTOR_CONTROL_STACK_SIZE 256U
@@ -151,6 +152,7 @@ static void TaskMotorControl_Run(void *parameters) {
 
     (void)Encoder_ReadDelta(context->encoder_left);
     (void)Encoder_ReadDelta(context->encoder_right);
+    Odometry_Init(xTaskGetTickCount());
 
     for (;;) {
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(MOTOR_CONTROL_PERIOD_MS));
@@ -159,6 +161,7 @@ static void TaskMotorControl_Run(void *parameters) {
         BaseType_t received = xQueueReceive(target_speed_queue, &target, 0U);
         int32_t left_delta = Encoder_ReadDelta(context->encoder_left);
         int32_t right_delta = Encoder_ReadDelta(context->encoder_right);
+        TickType_t encoder_tick = xTaskGetTickCount();
 
         /* Serializa objetivos, PI y salida con STOP/ReportFault. Solo calculos
          * acotados y escrituras GPIO/CCR: sin colas, encoder, esperas ni retardos.
@@ -256,6 +259,9 @@ static void TaskMotorControl_Run(void *parameters) {
         }
 #endif
         taskEXIT_CRITICAL();
+        /* Observador W7: reutiliza las lecturas, despues de aplicar PWM y sin
+         * extender la transaccion de seguridad. Ninguna E/S ni nuevo encoder. */
+        Odometry_Update(left_delta, right_delta, encoder_tick);
     }
 }
 

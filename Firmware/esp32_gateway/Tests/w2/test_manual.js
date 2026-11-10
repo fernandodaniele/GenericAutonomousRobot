@@ -1,4 +1,4 @@
-async function runManualTests(appSource, manualSource, report = () => {}, sensorsSource = "") {
+async function runManualTests(appSource, manualSource, report = () => {}, sensorsSource = "", mapSource = "") {
   const assert = (value, message) => { if (!value) throw new Error(message); };
   async function fixture({ latency = 0, openLatency = 0 } = {}) {
     let now = 0, serial = 1, nonce = 1, mode = "ok", openResolve;
@@ -7,7 +7,7 @@ async function runManualTests(appSource, manualSource, report = () => {}, sensor
     let status = { valid: true, connected: true, state: 2, faults: 0, stop: 0, age_ms: 0 };
     function node(id) {
       if (!nodes.has(id)) nodes.set(id, { dataset: {}, textContent: "", disabled: false, events: {},
-        addEventListener(event, fn) { this.events[event] = fn; }, setPointerCapture() {} });
+        addEventListener(event, fn) { this.events[event] = fn; }, setPointerCapture() {}, getContext() { return null; } });
       return nodes.get(id);
     }
     const document = { hidden: false, getElementById: node, addEventListener(event, fn) { docEvents[event] = fn; } };
@@ -41,6 +41,7 @@ async function runManualTests(appSource, manualSource, report = () => {}, sensor
       if (url === "/health") return response({ status: "ok", service: "esp32-web" });
       if (url === "/api/status") return response(status);
       if (url === "/api/sensors") throw new Error("telemetry unavailable");
+      if (url === "/api/map") throw new Error("mapping unavailable");
       assert(options.method === "POST", "operations require POST");
       if (url === "/api/command") return response({ accepted: true, confirmed: false,
         id: options.headers["X-Request-ID"], command: options.body, phase: "queued" });
@@ -75,7 +76,7 @@ async function runManualTests(appSource, manualSource, report = () => {}, sensor
       return response({ accepted: true, phase: "halt_requested" });
     }
     const run = new Function("document", "window", "fetch", "AbortController", "setTimeout", "clearTimeout", "performance", "crypto",
-      appSource + "\n" + manualSource + "\n" + sensorsSource + "\nreturn { snapshot(s) {renderStatus(s);manualControl.onStatus(s);}, cancel:manualControl.cancel }; ");
+      appSource + "\n" + manualSource + "\n" + sensorsSource + "\n" + mapSource + "\nreturn { snapshot(s) {renderStatus(s);manualControl.onStatus(s);}, cancel:manualControl.cancel }; ");
     const api = run(document, window, fetchMock, Controller,
       (fn, delay) => { const id = serial++; timers.set(id, { fn, at: now + delay }); return id; },
       id => timers.delete(id), { now: () => now }, { getRandomValues(bytes) { bytes.fill(nonce++ % 256); return bytes; } });

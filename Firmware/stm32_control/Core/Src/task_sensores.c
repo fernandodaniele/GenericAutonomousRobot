@@ -5,6 +5,7 @@
 #include "drv_TCRT5000.h"
 #include "drv_ultrasound.h"
 #include "task_sensores.h"
+#include "mid_odometry.h"
 
 #define SENSORES_PERIODO_BASE_MS  10U
 #define SENSORES_PERIODO_IR_MS    20U
@@ -52,6 +53,7 @@ static void TaskSensores_SetUltrasoundResult(SensoresDatos_t *data,
     if (valid != 0U) {
         *published_tick = trigger_tick;
     }
+    Odometry_Observe((unsigned)sensor, distance, trigger_tick, valid != 0U);
 }
 
 static void vTaskSensores(void *pvParameters)

@@ -89,3 +89,6 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 32px
   .manual-pad { gap: 6px; }
   .manual-pad button { font-size: .7rem; padding: 12px 3px; }
 }
+.map-frame { width: 100%; max-width: 640px; margin: 16px auto; border: 1px solid #b9c5d5; background: #dde3eb; }
+#map-canvas { display: block; width: 100%; height: auto; }
+.map-legend { font-size: .82rem; line-height: 1.6; }

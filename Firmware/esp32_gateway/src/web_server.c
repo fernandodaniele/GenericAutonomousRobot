@@ -7,6 +7,7 @@
 #include <string.h>
 #include "stm32_status.h"
 #include "stm32_sensors.h"
+#include "stm32_mapping.h"
 #include "web_commands.h"
 #include "esp_timer.h"
 #include "esp_http_server.h"
@@ -89,6 +90,26 @@ static esp_err_t WebServer_Status(httpd_req_t *request)
     err = httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     if (err != ESP_OK) return err;
     return httpd_resp_send(request, response, length);
+}
+
+static esp_err_t WebServer_Map(httpd_req_t *request)
+{
+    static char response[MAP_JSON_CAPACITY]; /* HTTP unico; no ocupa su stack. */
+    Stm32StatusSnapshot status;Stm32Status_GetSnapshot(&status);
+    int n=Stm32Mapping_Json(response,sizeof(response),status.connected);
+    if(n<0) return ESP_FAIL;
+    esp_err_t err=httpd_resp_set_type(request,"application/json; charset=utf-8");
+    if(err!=ESP_OK) return err;
+    err=httpd_resp_set_hdr(request,"Cache-Control","no-store");
+    if(err!=ESP_OK) return err;
+    return httpd_resp_send(request,response,n);
+}
+static esp_err_t WebServer_MapScript(httpd_req_t *request)
+{
+    extern const uint8_t map_start[] asm("_binary_map_js_start");
+    extern const uint8_t map_end[] asm("_binary_map_js_end");
+    static const WebResource resource={map_start,map_end,"application/javascript; charset=utf-8"};
+    request->user_ctx=(void *)&resource;return WebServer_Resource(request);
 }
 
 static bool ReadHeader(httpd_req_t *request, const char *name, char *value, size_t capacity)
@@ -269,7 +290,7 @@ esp_err_t WebServer_Start(void)
     s_attempted = true;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.recv_wait_timeout = 1; /* Lecturas POST acotadas; sin esperar UART. */
-    config.max_uri_handlers = 13;
+    config.max_uri_handlers = 15;
     config.lru_purge_enable = true;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
@@ -289,7 +310,9 @@ esp_err_t WebServer_Start(void)
         { .uri = "/api/manual/halt", .method = HTTP_POST, .handler = WebServer_ManualHalt },
         { .uri = "/manual.js", .method = HTTP_GET, .handler = WebServer_ManualScript },
         { .uri = "/api/sensors", .method = HTTP_GET, .handler = WebServer_Sensors },
-        { .uri = "/sensors.js", .method = HTTP_GET, .handler = WebServer_SensorsScript }
+        { .uri = "/sensors.js", .method = HTTP_GET, .handler = WebServer_SensorsScript },
+        { .uri = "/api/map", .method = HTTP_GET, .handler = WebServer_Map },
+        { .uri = "/map.js", .method = HTTP_GET, .handler = WebServer_MapScript }
     };
     for (size_t i = 0U; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);

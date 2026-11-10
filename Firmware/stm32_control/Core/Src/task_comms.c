@@ -7,6 +7,7 @@
 #include "task_safety.h"
 #include "mid_motion.h"
 #include "task_sensores.h"
+#include "mid_mapping.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -77,6 +78,14 @@ static bool TaskComms_SensorsQuery(const char *message, uint32_t *query) {
  */
 static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickType_t issued_tick) {
     uint32_t query;
+    unsigned mapping_part;
+    if (Mapping_Query(message, &query, &mapping_part)) {
+        static char mapping_response[160]; /* Una sola tarea; no crece el stack. */
+        int n = Mapping_Format(mapping_response, sizeof(mapping_response), query,
+                               mapping_part, xTaskGetTickCount());
+        if (n > 0) DrvUart_SendString(uart, mapping_response);
+        return;
+    }
     if (TaskComms_SensorsQuery(message, &query)) {
         TaskComms_SendSensors(uart, query);
         return;

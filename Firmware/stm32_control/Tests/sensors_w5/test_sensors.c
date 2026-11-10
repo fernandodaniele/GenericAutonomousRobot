@@ -4,6 +4,7 @@
 #include <string.h>
 #include <setjmp.h>
 #include "../../Core/Src/task_sensores.c"
+#include "../../Core/Src/mid_odometry.c"
 static TickType_t tick, origin;
 static unsigned writes, limit, ir_reads, triggers[2], modes[2], cases;
 static TickType_t trigger_tick[2], trigger_history[32];
@@ -13,6 +14,9 @@ static int queue_has_data;
 static jmp_buf stop;
 #define CHECK(v) do { if(!(v)) { fprintf(stderr,"FAIL %u: %s\n",(unsigned)__LINE__,#v);exit(1); } } while(0)
 #define PASS(s) printf("PASS %02u %s\n",++cases,s)
+static unsigned observer_lock;
+void test_enter(void) { ++observer_lock; }
+void test_exit(void) { CHECK(observer_lock); --observer_lock; }
 void Error_Handler(void) { CHECK(0); }
 TickType_t xTaskGetTickCount(void) { return tick; }
 BaseType_t xTaskCreate(void (*fn)(void *),const char *n,unsigned stack,void *arg,UBaseType_t prio,TaskHandle_t *h) {
@@ -39,6 +43,7 @@ HAL_StatusTypeDef HCSR04_Rear_Cancel(void) { return HAL_OK; }
 static void run(unsigned count,TickType_t start,unsigned front,unsigned rear) {
     tick=origin=start;writes=ir_reads=total_triggers=0;triggers[0]=triggers[1]=0;modes[0]=front;modes[1]=rear;
     limit=count;queue_has_data=0;memset(history,0,sizeof history);sensores_queue=NULL;TaskSensores_Create();
+    Odometry_Init(start);
     SensoresDatos_t copy;CHECK(TaskSensores_GetData(&copy)==pdFALSE && TaskSensores_GetData(NULL)==pdFALSE);
     if(!setjmp(stop))vTaskSensores(NULL);
     CHECK(TaskSensores_GetData(&copy)==pdTRUE && !memcmp(&copy,&latest,sizeof copy));
@@ -70,5 +75,10 @@ int main(void) {
     run(32,0,0,0);CHECK(ir_reads==16);
     for(unsigned i=0;i<16;++i) { SensoresDatos_t *s=&history[i*2];CHECK(s->ir.del_izq==((i&1)!=0) && s->ir.del_der==((i&2)!=0) && s->ir.tras_izq==((i&4)!=0) && s->ir.tras_der==((i&8)!=0));CHECK(s->hay_caida==(i!=15)); }
     PASS("all four GPIO-derived states and aggregate cliff unchanged across all 16 masks");
+    OdometryRay front,rear;Odometry_GetRay(0,&front);Odometry_GetRay(1,&rear);
+    CHECK(front.state==2U&&rear.state==2U&&front.sequence==3U&&rear.sequence==2U);
+    CHECK(front.tick==280U&&rear.tick==210U);
+    CHECK(fabsf(front.distance_m-0.345f)<1e-6f&&fabsf(rear.distance_m-0.33f)<1e-6f);
+    PASS("W7 real acquisition observer preserves independent original trigger ticks without changing the 70-ms schedule");
     printf("RESULT %u real acquisition-loop groups passed; no hardware validation\n",cases);return 0;
 }

@@ -1,5 +1,10 @@
 # W7 pendiente obligatorio — Requisitos para mapeo 2D
 
+Nota posterior: este documento conserva el análisis previo de W6. La implementación
+W7 y su configuración todavía no calibrada se documentan en
+[W7_LOCALIZACION_MAPEO.md](W7_LOCALIZACION_MAPEO.md). Las mediciones físicas
+pendientes siguen siendo necesarias; no se sustituyeron por valores supuestos.
+
 W6 no implementa un mapa, odometría ni telemetría simulada. El mapa de ocupación
 2D sigue siendo un objetivo obligatorio de la próxima etapa, sujeto a diseño
 y autorización propios. Los datos actuales no bastan para ubicar obstáculos

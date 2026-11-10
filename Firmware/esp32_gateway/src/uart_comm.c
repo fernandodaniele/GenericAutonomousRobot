@@ -1,6 +1,7 @@
 #include "uart_comm.h"
 #include "stm32_status.h"
 #include "stm32_sensors.h"
+#include "stm32_mapping.h"
 #include "web_commands.h"
 
 #include <string.h>
@@ -103,6 +104,20 @@ void Uart_PollSensors(void)
     xSemaphoreGive(s_tx_gate);
 }
 
+void Uart_PollMapping(void)
+{
+    if(!Stm32Mapping_PollDue()) return;
+    Stm32Mapping_DeferPoll();
+    if(!WebCommands_CanPollMapping()||!TxBegin()) return;
+    if(WebCommands_CanPollMapping()) {
+        char message[40];unsigned part;
+        uint32_t query=Stm32Mapping_BeginQuery(&part);
+        int n=snprintf(message,sizeof(message),"MAPPING Q=%" PRIu32 " S=%u\n",query,part);
+        if(n<=0||(size_t)n>=sizeof(message)||!TxWrite(message)) Stm32Mapping_QueryFailed();
+    }
+    xSemaphoreGive(s_tx_gate);
+}
+
 bool Uart_SendControl(UartControlCommand command)
 {
     const char *message;
@@ -194,6 +209,7 @@ void Uart_ReadResponse(void) {
     if (length > 0) {
         Stm32Status_Feed(rx_buffer, (size_t)length);
         Stm32Sensors_Feed(rx_buffer, (size_t)length);
+        Stm32Mapping_Feed(rx_buffer, (size_t)length);
         rx_buffer[length] = '\0';
         printf("[STM32] %s", (char *)rx_buffer);
     }

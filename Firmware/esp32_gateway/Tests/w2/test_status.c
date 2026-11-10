@@ -10,6 +10,8 @@
 #define assert(value) do { if (!(value)) { fprintf(stderr,"FAIL %s:%u: %s\n",__FILE__,(unsigned)__LINE__,#value); exit(1); } } while (0)
 #include "stm32_status.c"
 #include "stm32_sensors.c"
+#include "mapping_grid.c"
+#include "stm32_mapping.c"
 #define TAG uart_tag
 #include "uart_comm.c"
 #undef TAG
@@ -40,7 +42,7 @@ static int body_error;
 static int64_t body_delay;
 static const char *rx_data, *keys;
 static size_t rx_size;
-static httpd_uri_t routes[13];
+static httpd_uri_t routes[15];
 static unsigned route_count, server_count, server_stops, fail_route;
 static int http_error, network_error;
 static jmp_buf task_end;
@@ -86,10 +88,10 @@ int uart_read_bytes(int port,void *bytes,uint32_t size,unsigned timeout)
 }
 esp_err_t WifiAp_Start(void) { return network_error ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_start(httpd_handle_t *out,const httpd_config_t *cfg)
-{ assert(cfg->server_port==80 && cfg->lru_purge_enable && cfg->max_uri_handlers==13 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
+{ assert(cfg->server_port==80 && cfg->lru_purge_enable && cfg->max_uri_handlers==15 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
 esp_err_t httpd_stop(httpd_handle_t handle) { assert(handle); ++server_stops; return ESP_OK; }
 esp_err_t httpd_register_uri_handler(httpd_handle_t handle,const httpd_uri_t *r)
-{ assert(handle && route_count<13); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12)) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
+{ assert(handle && route_count<15); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12)) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type)
 { assert(r && type && !lock_depth); return http_error==1 ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value)
@@ -135,6 +137,9 @@ static void reset(void)
     memset(&s_manual,0,sizeof s_manual); memset(s_manual_ids,0,sizeof s_manual_ids);
     s_manual_next=s_manual_controls=0; s_manual_has_barrier=false; s_manual_barrier=0;
     s_auto_epoch=0; s_auto_barrier=0; s_auto_has_barrier=false;
+    memset(&s_map_work,0,sizeof s_map_work);memset(&s_map_published,0,sizeof s_map_published);
+    s_map_counter=s_map_pending=0;s_map_part=s_map_expected=0;s_map_sent=s_map_poll=0;
+    s_map_length=0;s_map_discard=false;
     wait_delay=0; wait_hook=NULL; gate_fail=false; request_token=request_sequence=NULL;
 }
 static void feed(const char *text) { Stm32Status_Feed((const uint8_t *)text,strlen(text)); }
@@ -205,12 +210,14 @@ static esp_err_t manual_post(unsigned op,const char *body)
 static unsigned frame_count(const char *frame) { unsigned count=0; for(unsigned i=0;i<tx_count;++i) if(!strcmp(frame,frames[i])) ++count; return count; }
 #include "test_sensors.c"
 #include "test_auto.c"
+#include "test_mapping.c"
 
 int main(void)
 {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     InitializeCriticalSection(&s_lock.native); InitializeCriticalSection(&s_sensor_lock.native);
     InitializeCriticalSection(&s_command_lock.native);
+    InitializeCriticalSection(&s_map_lock.native);
     InitializeCriticalSection(&tx_lock);
     s_tx_gate=xSemaphoreCreateMutexStatic(&s_tx_storage);
     reset(); assert(!snapshot().valid && !snapshot().connected); api();
@@ -274,7 +281,7 @@ int main(void)
         assert(!strcmp(frames[0],"STATUS\n"));
     }
     pass("actual app_main polls at 1 Hz without new tasks, including AP failure");
-    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==13);
+    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==15);
     const char *paths[]={"/","/style.css","/app.js","/health","/api/status"};
     for(unsigned i=0;i<5;++i) {
         assert(!strcmp(routes[i].uri,paths[i])); httpd_req_t r={.user_ctx=routes[i].user_ctx}; assert(routes[i].handler(&r)==ESP_OK);
@@ -439,5 +446,6 @@ int main(void)
     pass("four POST endpoints use bounded shared validation, safe tokens/sequences and no direct HTTP UART writes");
     test_sensors();
     test_auto();
-    printf("RESULT %u native W1-W6 test groups passed; no hardware validation\n",cases); return 0;
+    test_mapping();
+    printf("RESULT %u native W1-W7 test groups passed; no hardware validation\n",cases); return 0;
 }

@@ -31,7 +31,10 @@ typedef struct {
     int gyro_z;
     int imu_ok;
     int heading_ddeg;         // Rumbo en decimas de grado (+ = izquierda)
+    int imu_diag;             // Diagnostico del MPU6050 (IMU_DIAG_* en la STM32)
 } Sample_t;
+
+#define IMU_DIAG_UNKNOWN (-99)   // STM32 con firmware anterior, sin diagnostico
 
 typedef struct {
     uint32_t id;
@@ -68,16 +71,19 @@ static bool is_range_status(char status) {
 
 static bool parse_sample(const char *line, Sample_t *s) {
     int fields = sscanf(line,
-                        "TEL,%lu,%15[^,],%d,%d,%d,%c,%lu,%c,%lu,%c,%lu,%u,%u,%d,%d,%d,%d,%d",
+                        "TEL,%lu,%15[^,],%d,%d,%d,%c,%lu,%c,%lu,%c,%lu,%u,%u,%d,%d,%d,%d,%d,%d",
                         &s->stm_ms, s->state, &s->pwm[0], &s->pwm[1], &s->brake,
                         &s->us[0].status, &s->us[0].mm,
                         &s->us[1].status, &s->us[1].mm,
                         &s->us[2].status, &s->us[2].mm,
                         &s->tcrt[0], &s->tcrt[1],
                         &s->cliff[0], &s->cliff[1],
-                        &s->gyro_z, &s->imu_ok, &s->heading_ddeg);
+                        &s->gyro_z, &s->imu_ok, &s->heading_ddeg, &s->imu_diag);
     if (fields == 17) {
         s->heading_ddeg = 0;   // STM32 con firmware anterior, sin rumbo
+    }
+    if (fields <= 18) {
+        s->imu_diag = IMU_DIAG_UNKNOWN;
     }
     if (fields < 17 || !is_token(s->state)) {
         return false;
@@ -143,14 +149,15 @@ size_t Telemetry_ToJson(char *out, size_t size) {
         "{\"link\":%s,\"age\":%ld,\"ms\":%lu,\"state\":\"%s\","
         "\"pwm\":[%d,%d],\"brake\":%s,"
         "\"us\":[{\"s\":\"%c\",\"mm\":%lu},{\"s\":\"%c\",\"mm\":%lu},{\"s\":\"%c\",\"mm\":%lu}],"
-        "\"tcrt\":[%u,%u],\"cliff\":[%d,%d],\"gyro\":%d,\"imu\":%s,\"heading\":%d,\"events\":[",
+        "\"tcrt\":[%u,%u],\"cliff\":[%d,%d],\"gyro\":%d,\"imu\":%s,\"heading\":%d,\"imuDiag\":%d,\"events\":[",
         link ? "true" : "false", age_ms, s.stm_ms, s.valid ? s.state : "",
         s.pwm[0], s.pwm[1], s.brake ? "true" : "false",
         s.valid ? s.us[0].status : 'N', s.us[0].mm,
         s.valid ? s.us[1].status : 'N', s.us[1].mm,
         s.valid ? s.us[2].status : 'N', s.us[2].mm,
         s.tcrt[0], s.tcrt[1], s.cliff[0], s.cliff[1],
-        s.gyro_z, s.imu_ok ? "true" : "false", s.heading_ddeg);
+        s.gyro_z, s.imu_ok ? "true" : "false", s.heading_ddeg,
+        s.valid ? s.imu_diag : IMU_DIAG_UNKNOWN);
 
     bool first = true;
     for (int i = 0; i < EVENT_COUNT && used > 0 && (size_t)used < size; i++) {

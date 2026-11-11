@@ -43,6 +43,12 @@ typedef struct
 
 uint8_t MPU6050_Init(I2C_HandleTypeDef *I2Cx);
 
+/**
+ * @brief Identificador (WHO_AM_I) leido en el ultimo MPU6050_Init().
+ * @return 0x68 en un MPU6050 original, otro valor en un clon, -1 si nadie respondio en I2C.
+ */
+int16_t MPU6050_GetWhoAmI(void);
+
 void MPU6050_Read_Accel(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct);
 
 void MPU6050_Read_Gyro(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct);

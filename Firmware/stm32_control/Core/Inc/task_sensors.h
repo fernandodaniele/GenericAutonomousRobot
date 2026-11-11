@@ -22,6 +22,13 @@ extern "C" {
 
 #define TASK_SENSORS_PERIOD_MS   20
 
+/* Diagnostico del MPU6050 (SensorSnapshot_t.imu_diag). Un valor >= 0 es el
+ * WHO_AM_I que respondio: con imu_ok en false, es un modelo no reconocido. */
+#define IMU_DIAG_LINE_LOW    (-3)   // SDA o SCL quedan en bajo: cables, alimentacion o pull-ups
+#define IMU_DIAG_LOST        (-2)   // Respondia y dejo de responder
+#define IMU_DIAG_NO_ACK      (-1)   // Nadie responde en 0x68 ni en 0x69
+#define IMU_DIAG_DISABLED    (-4)   // SENSORS_USE_IMU = 0
+
 /**
  * @brief Foto de sensores publicada por task_sensors.
  */
@@ -38,6 +45,7 @@ typedef struct {
     int16_t gyro_z_dps;                            // Velocidad angular Z en grados/s (+ = izquierda)
     int32_t heading_mdeg;                          // Rumbo integrado desde el encendido, milesimas de grado (+ = izquierda)
     bool imu_ok;                                   // MPU6050 inicializado
+    int16_t imu_diag;                              // Ver IMU_DIAG_*; >= 0: WHO_AM_I leido
 } SensorSnapshot_t;
 
 /**

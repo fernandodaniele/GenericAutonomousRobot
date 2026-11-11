@@ -104,6 +104,20 @@ el rumbo tiene que aumentar. Si da negativo, el módulo está montado al revés:
 `SENSORS_GYRO_Z_SIGN = -1` en `task_sensors.c`. Con el signo equivocado, el robot gira cada
 vez más en vez de enderezarse.
 
+**Conexión** (I2C3, módulo GY-521): VCC a 3V3, GND a GND, SCL a **PA8**, SDA a **PC9**, AD0 a
+GND o sin conectar (también se acepta AD0 en alto, dirección 0x69).
+
+Al arrancar, la STM32 libera el bus I2C por si quedó trabado tras un reset y acepta los
+clones compatibles (MPU6500 / MPU9250, que responden con otro identificador). Si no logra
+usarlo, el panel indica la causa en "Giro Z":
+
+| Mensaje en el panel | Causa probable |
+|---|---|
+| SDA o SCL quedan en bajo | Cable cortado, módulo sin alimentación o falta de pull-ups (los GY-521 los traen) |
+| No responde por I2C | SCL y SDA invertidos o en otros pines, o sin GND común |
+| Responde con ID 0x..: modelo no reconocido | Otro sensor: pasar ese número para agregarlo |
+| Respondía y dejó de responder | Conexión floja o cables largos |
+
 ### LED naranja (LD3)
 | LED | Estado |
 |---|---|
@@ -124,7 +138,7 @@ el firmware de la ESP32, que la actualiza consultando `GET /api/status`.
 La STM32 manda esta línea por USART2 cada 200 ms, en todos los estados:
 
 ```text
-TEL,<ms>,<estado>,<pwm_izq>,<pwm_der>,<freno>,<est_frente>,<mm_frente>,<est_izq>,<mm_izq>,<est_der>,<mm_der>,<tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>,<rumbo_decimas_grado>
+TEL,<ms>,<estado>,<pwm_izq>,<pwm_der>,<freno>,<est_frente>,<mm_frente>,<est_izq>,<mm_izq>,<est_der>,<mm_der>,<tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>,<rumbo_decimas_grado>,<diag_imu>
 ```
 
 Estados de ultrasonido: `O` = distancia válida, `F` = nada al alcance, `C` = pegado,

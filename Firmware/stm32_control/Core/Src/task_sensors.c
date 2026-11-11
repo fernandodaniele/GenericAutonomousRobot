@@ -102,6 +102,50 @@ static bool imu_init(void)
     return false;
 }
 
+/* Libera el bus I2C3 (SCL = PA8, SDA = PC9). Si se resetea la STM32 en medio
+ * de una lectura, el MPU6050 queda sosteniendo SDA en bajo y el bus no vuelve
+ * a funcionar hasta cortar la alimentacion. Se dan hasta 9 pulsos de reloj y
+ * una condicion de STOP. Devuelve true si alguna linea sigue en bajo: falta
+ * de pull-up, cable cortado o modulo sin alimentacion. */
+static bool i2c3_bus_recover(void)
+{
+    GPIO_InitTypeDef gpio = {0};
+
+    osDelay(100);   // El MPU6050 tarda hasta 100 ms en arrancar despues de alimentarse
+    HAL_I2C_DeInit(&hi2c3);
+    gpio.Mode = GPIO_MODE_OUTPUT_OD;
+    gpio.Pull = GPIO_NOPULL;
+    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+    gpio.Pin = GPIO_PIN_8;
+    HAL_GPIO_Init(GPIOA, &gpio);
+    gpio.Pin = GPIO_PIN_9;
+    HAL_GPIO_Init(GPIOC, &gpio);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+    osDelay(2);
+
+    for (uint8_t i = 0; i < 9 && HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9) == GPIO_PIN_RESET; i++) {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+        osDelay(1);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+        osDelay(1);
+    }
+
+    /* STOP: SDA sube con SCL en alto */
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+    osDelay(1);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+    osDelay(1);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+    osDelay(1);
+
+    const bool low = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_RESET
+                  || HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9) == GPIO_PIN_RESET;
+
+    HAL_I2C_Init(&hi2c3);   // Vuelve a poner los pines en modo I2C
+    return low;
+}
+
 /* Offset del giro Z (cuentas crudas): promedio con el robot quieto */
 static float gyro_calibrate(void)
 {
@@ -137,13 +181,18 @@ static void SensorsTask(void* argument)
     float gyro_bias = 0.0f;
     float heading_deg = 0.0f;
     uint8_t imu_fails = 0;
+    const bool lines_low = i2c3_bus_recover();
     snap.imu_ok = imu_init();
+    snap.imu_diag = MPU6050_GetWhoAmI();
     if (snap.imu_ok) {
         gyro_bias = gyro_calibrate();
+    } else if (lines_low) {
+        snap.imu_diag = IMU_DIAG_LINE_LOW;
     }
     uint32_t last_gyro_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
 #else
     snap.imu_ok = false;
+    snap.imu_diag = IMU_DIAG_DISABLED;
 #endif
 
     /* Variables de control para el orden secuencial prioritario */
@@ -240,6 +289,7 @@ static void SensorsTask(void* argument)
                 snap.heading_mdeg = (int32_t)(heading_deg * 1000.0f);
             } else if (++imu_fails >= SENSORS_IMU_FAIL_MAX) {
                 snap.imu_ok = false;   // Sin IMU la navegacion sigue sin corregir el rumbo
+                snap.imu_diag = IMU_DIAG_LOST;
                 snap.gyro_z_dps = 0;
             }
         }

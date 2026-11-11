@@ -241,7 +241,8 @@ static void send_range(DrvUart_t *uart, const SensorSnapshot_t *s, UltrasoundInd
 /* Telemetria para la pagina web del ESP32, siempre (tambien en IDLE y FAULT):
  * TEL,<ms>,<estado>,<pwm_izq>,<pwm_der>,<freno>,
  *     <est_frente>,<mm_frente>,<est_izq>,<mm_izq>,<est_der>,<mm_der>,
- *     <tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>,<rumbo_decimas_grado>
+ *     <tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>,<rumbo_decimas_grado>,
+ *     <diag_imu> (ver IMU_DIAG_* en task_sensors.h)
  * Estados de ultrasonido: O = valido, F = libre, C = pegado, N = sin eco */
 static void send_tel_line(DrvUart_t *uart, uint32_t ms)
 {
@@ -267,6 +268,7 @@ static void send_tel_line(DrvUart_t *uart, uint32_t ms)
   send_int(uart, snap.gyro_z_dps);
   send_int(uart, snap.imu_ok ? 1 : 0);
   send_int(uart, snap.heading_mdeg / 100);
+  send_int(uart, snap.imu_diag);
   DrvUart_SendString(uart, "\n");
 }
 

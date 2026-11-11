@@ -30,6 +30,7 @@ typedef struct {
     int cliff[2];
     int gyro_z;
     int imu_ok;
+    int heading_ddeg;         // Rumbo en decimas de grado (+ = izquierda)
 } Sample_t;
 
 typedef struct {
@@ -67,15 +68,18 @@ static bool is_range_status(char status) {
 
 static bool parse_sample(const char *line, Sample_t *s) {
     int fields = sscanf(line,
-                        "TEL,%lu,%15[^,],%d,%d,%d,%c,%lu,%c,%lu,%c,%lu,%u,%u,%d,%d,%d,%d",
+                        "TEL,%lu,%15[^,],%d,%d,%d,%c,%lu,%c,%lu,%c,%lu,%u,%u,%d,%d,%d,%d,%d",
                         &s->stm_ms, s->state, &s->pwm[0], &s->pwm[1], &s->brake,
                         &s->us[0].status, &s->us[0].mm,
                         &s->us[1].status, &s->us[1].mm,
                         &s->us[2].status, &s->us[2].mm,
                         &s->tcrt[0], &s->tcrt[1],
                         &s->cliff[0], &s->cliff[1],
-                        &s->gyro_z, &s->imu_ok);
-    if (fields != 17 || !is_token(s->state)) {
+                        &s->gyro_z, &s->imu_ok, &s->heading_ddeg);
+    if (fields == 17) {
+        s->heading_ddeg = 0;   // STM32 con firmware anterior, sin rumbo
+    }
+    if (fields < 17 || !is_token(s->state)) {
         return false;
     }
     for (int i = 0; i < US_COUNT; i++) {
@@ -139,14 +143,14 @@ size_t Telemetry_ToJson(char *out, size_t size) {
         "{\"link\":%s,\"age\":%ld,\"ms\":%lu,\"state\":\"%s\","
         "\"pwm\":[%d,%d],\"brake\":%s,"
         "\"us\":[{\"s\":\"%c\",\"mm\":%lu},{\"s\":\"%c\",\"mm\":%lu},{\"s\":\"%c\",\"mm\":%lu}],"
-        "\"tcrt\":[%u,%u],\"cliff\":[%d,%d],\"gyro\":%d,\"imu\":%s,\"events\":[",
+        "\"tcrt\":[%u,%u],\"cliff\":[%d,%d],\"gyro\":%d,\"imu\":%s,\"heading\":%d,\"events\":[",
         link ? "true" : "false", age_ms, s.stm_ms, s.valid ? s.state : "",
         s.pwm[0], s.pwm[1], s.brake ? "true" : "false",
         s.valid ? s.us[0].status : 'N', s.us[0].mm,
         s.valid ? s.us[1].status : 'N', s.us[1].mm,
         s.valid ? s.us[2].status : 'N', s.us[2].mm,
         s.tcrt[0], s.tcrt[1], s.cliff[0], s.cliff[1],
-        s.gyro_z, s.imu_ok ? "true" : "false");
+        s.gyro_z, s.imu_ok ? "true" : "false", s.heading_ddeg);
 
     bool first = true;
     for (int i = 0; i < EVENT_COUNT && used > 0 && (size_t)used < size; i++) {

@@ -82,12 +82,33 @@ static NavRange_t to_range(UltrasoundStatus_t st)
     }
 }
 
+/* Rampa de PWM por rueda: sube despacio (arranque suave) y baja rapido.
+ * Para cambiar de sentido primero baja hasta 0. */
 static int16_t ramp(int16_t current, int16_t target)
 {
-    int32_t diff = (int32_t)target - (int32_t)current;
-    if (diff > TASK_NAV_RAMP_STEP_PWM)  diff = TASK_NAV_RAMP_STEP_PWM;
-    if (diff < -TASK_NAV_RAMP_STEP_PWM) diff = -TASK_NAV_RAMP_STEP_PWM;
-    return (int16_t)(current + diff);
+    const bool reverse = (current > 0 && target < 0) || (current < 0 && target > 0);
+    if (target == 0 || reverse) {
+        int32_t next = (current > 0) ? current - TASK_NAV_RAMP_STEP_PWM
+                                     : current + TASK_NAV_RAMP_STEP_PWM;
+        if ((current > 0 && next < 0) || (current < 0 && next > 0)) next = 0;
+        return (int16_t)next;
+    }
+
+    const int32_t sign = (target > 0) ? 1 : -1;
+    const int32_t goal = sign * target;
+    int32_t mag = sign * current;
+    if (mag < TASK_NAV_SOFT_START_PWM) {
+        /* Desde parado: salta hasta justo debajo del arranque de la rueda */
+        mag = (goal < TASK_NAV_SOFT_START_PWM) ? goal : TASK_NAV_SOFT_START_PWM;
+    }
+    if (mag < goal) {
+        mag += TASK_NAV_RAMP_UP_STEP_PWM;
+        if (mag > goal) mag = goal;
+    } else if (mag > goal) {
+        mag -= TASK_NAV_RAMP_STEP_PWM;
+        if (mag < goal) mag = goal;
+    }
+    return (int16_t)(sign * mag);
 }
 
 /* Indicador en LD3 (naranja):
@@ -177,6 +198,7 @@ static void NavTask(void* argument)
             in.cliff_left = snap.cliff_left;
             in.cliff_right = snap.cliff_right;
             in.gyro_z_dps = snap.gyro_z_dps;
+            in.heading_mdeg = snap.heading_mdeg;
             in.imu_ok = snap.imu_ok;
         } else {
             in.snapshot_stale = true;

@@ -324,7 +324,8 @@ function record(d) {
   const last = history[history.length - 1];
   if (last && d.ms < last.ms) history = [];
   if (last && d.ms === last.ms) return;
-  history.push({ ms: d.ms, us: d.us.map(sonarCm), raw: d.us, pwm: d.pwm, state: d.state });
+  history.push({ ms: d.ms, us: d.us.map(sonarCm), raw: d.us, pwm: d.pwm, state: d.state,
+    heading: d.imu ? d.heading / 10 : null });
   while (history.length && d.ms - history[0].ms > HISTORY_MS) history.shift();
 }
 
@@ -360,7 +361,9 @@ function render(d) {
       d.cliff[i] ? 'Borde detectado' : 'Ve piso', !!d.cliff[i]);
   });
   setRow($('floor'), 2, 'Giro Z', null, d.imu ? d.gyro + ' °/s' : '—',
-    d.imu ? 'IMU activa' : 'IMU desactivada', false);
+    d.imu ? 'Positivo = girando a la izquierda' : 'IMU sin respuesta', !d.imu);
+  setRow($('floor'), 3, 'Rumbo', null, d.imu ? (d.heading / 10).toFixed(1) + ' °' : '—',
+    d.imu ? 'Ángulo girado desde el encendido' : 'Sin corrección de rumbo', !d.imu);
 
   if (lastState !== null && d.state !== lastState) {
     addLog(d.ms, (STATES[lastState] || lastState) + ' → ' + (STATES[d.state] || d.state));
@@ -491,6 +494,7 @@ function updateTip() {
     'Hace ' + ((end - p.ms) / 1000).toFixed(1) + ' s · ' + (STATES[p.state] || p.state),
     SONAR_NAMES.map((n, i) => n + ': ' + sonarValue(p.raw[i])).join(' · '),
     'Motores: ' + Math.round(p.pwm[0] * 100 / PWM_MAX) + ' % / ' + Math.round(p.pwm[1] * 100 / PWM_MAX) + ' %'
+      + (p.heading === null ? '' : ' · Rumbo ' + p.heading.toFixed(1) + ' °')
   ].forEach(line => {
     const div = document.createElement('div');
     div.textContent = line;

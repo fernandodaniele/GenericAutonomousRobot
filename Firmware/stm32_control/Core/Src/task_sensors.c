@@ -19,10 +19,19 @@
 #include "drv_gyro.h"
 #include <string.h>
 
-/* El MPU6050 no se usa por ahora: 0 = no se inicializa ni se lee. */
+/* MPU6050: giro Z para mantener el rumbo. 0 = no se inicializa ni se lee. */
 #ifndef SENSORS_USE_IMU
-#define SENSORS_USE_IMU          0
+#define SENSORS_USE_IMU          1
 #endif
+/* Sentido del giro Z: con +1, girar el robot a la izquierda (antihorario visto
+ * desde arriba) tiene que dar valores positivos en el panel. Si da negativos,
+ * el modulo esta montado al reves: poner -1. */
+#ifndef SENSORS_GYRO_Z_SIGN
+#define SENSORS_GYRO_Z_SIGN      1
+#endif
+#define SENSORS_GYRO_LSB_PER_DPS 131.0f  // Escala +/- 250 grados/s
+#define SENSORS_GYRO_CAL_SAMPLES 100     // 1 s quieto al encender para medir el offset
+#define SENSORS_IMU_FAIL_MAX     5       // Lecturas I2C fallidas seguidas: IMU fuera
 
 /* TCRT5000 habilitados */
 #ifndef SENSORS_USE_TCRT_LEFT
@@ -92,6 +101,22 @@ static bool imu_init(void)
     }
     return false;
 }
+
+/* Offset del giro Z (cuentas crudas): promedio con el robot quieto */
+static float gyro_calibrate(void)
+{
+    int32_t sum = 0;
+    uint16_t count = 0;
+    for (uint16_t i = 0; i < SENSORS_GYRO_CAL_SAMPLES; i++) {
+        int16_t raw;
+        if (MPU6050_Read_GyroZ_Raw(SENSORS_IMU_I2C, &raw) == 0) {
+            sum += raw;
+            count++;
+        }
+        osDelay(10);
+    }
+    return (count > 0u) ? (float)sum / (float)count : 0.0f;
+}
 #endif
 
 static void SensorsTask(void* argument)
@@ -107,14 +132,16 @@ static void SensorsTask(void* argument)
         snap.us_last_status[i] = ULTRASOUND_STATUS_NO_ECHO;
     }
 
-#if SENSORS_USE_IMU
-    MPU6050_t imu;
-    memset(&imu, 0, sizeof(imu));
-#endif
-
     drv_tcrt5000_init();
 #if SENSORS_USE_IMU
+    float gyro_bias = 0.0f;
+    float heading_deg = 0.0f;
+    uint8_t imu_fails = 0;
     snap.imu_ok = imu_init();
+    if (snap.imu_ok) {
+        gyro_bias = gyro_calibrate();
+    }
+    uint32_t last_gyro_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
 #else
     snap.imu_ok = false;
 #endif
@@ -201,8 +228,20 @@ static void SensorsTask(void* argument)
         /* 7. Leer el Giroscopio MPU6050 */
 #if SENSORS_USE_IMU
         if (snap.imu_ok) {
-            MPU6050_Read_Gyro(SENSORS_IMU_I2C, &imu);
-            snap.gyro_z_dps = (int16_t)imu.Gz;
+            int16_t raw;
+            const uint32_t now_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+            if (MPU6050_Read_GyroZ_Raw(SENSORS_IMU_I2C, &raw) == 0) {
+                const float dps = (float)SENSORS_GYRO_Z_SIGN
+                                * ((float)raw - gyro_bias) / SENSORS_GYRO_LSB_PER_DPS;
+                heading_deg += dps * (float)(now_ms - last_gyro_ms) / 1000.0f;
+                last_gyro_ms = now_ms;
+                imu_fails = 0;
+                snap.gyro_z_dps = (int16_t)(dps + ((dps >= 0.0f) ? 0.5f : -0.5f));
+                snap.heading_mdeg = (int32_t)(heading_deg * 1000.0f);
+            } else if (++imu_fails >= SENSORS_IMU_FAIL_MAX) {
+                snap.imu_ok = false;   // Sin IMU la navegacion sigue sin corregir el rumbo
+                snap.gyro_z_dps = 0;
+            }
         }
 #endif
 

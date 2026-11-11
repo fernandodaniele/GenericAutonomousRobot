@@ -11,6 +11,8 @@
 #define TEMP_OUT_H_REG 0x41
 #define GYRO_CONFIG_REG 0x1B
 #define GYRO_XOUT_H_REG 0x43
+#define GYRO_ZOUT_H_REG 0x47
+#define CONFIG_REG 0x1A
 
 // Setup MPU6050
 #define MPU6050_ADDR 0xD0
@@ -48,6 +50,11 @@ uint8_t MPU6050_Init(I2C_HandleTypeDef *I2Cx)
         // Set DATA RATE of 1KHz by writing SMPLRT_DIV register
         Data = 0x07;
         HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, SMPLRT_DIV_REG, 1, &Data, 1, i2c_timeout);
+
+        // Filtro pasa bajos interno (DLPF_CFG = 3, unos 44 Hz): quita la
+        // vibracion de los motores de la lectura del giro
+        Data = 0x03;
+        HAL_I2C_Mem_Write(I2Cx, MPU6050_ADDR, CONFIG_REG, 1, &Data, 1, i2c_timeout);
 
         // Set accelerometer configuration in ACCEL_CONFIG Register
         // XA_ST=0,YA_ST=0,ZA_ST=0, FS_SEL=0 -> � 2g
@@ -105,6 +112,18 @@ void MPU6050_Read_Gyro(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)
     DataStruct->Gx = DataStruct->Gyro_X_RAW / 131.0;
     DataStruct->Gy = DataStruct->Gyro_Y_RAW / 131.0;
     DataStruct->Gz = DataStruct->Gyro_Z_RAW / 131.0;
+}
+
+uint8_t MPU6050_Read_GyroZ_Raw(I2C_HandleTypeDef *I2Cx, int16_t *raw)
+{
+    uint8_t Rec_Data[2];
+
+    if (HAL_I2C_Mem_Read(I2Cx, MPU6050_ADDR, GYRO_ZOUT_H_REG, 1, Rec_Data, 2, i2c_timeout) != HAL_OK)
+    {
+        return 1;
+    }
+    *raw = (int16_t)(Rec_Data[0] << 8 | Rec_Data[1]);
+    return 0;
 }
 
 void MPU6050_Read_Temp(I2C_HandleTypeDef *I2Cx, MPU6050_t *DataStruct)

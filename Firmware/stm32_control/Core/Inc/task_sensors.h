@@ -35,7 +35,8 @@ typedef struct {
     uint16_t tcrt_right;
     bool cliff_left;                               // TCRT izquierdo ve precipicio
     bool cliff_right;
-    int16_t gyro_z_dps;                            // Velocidad angular Z en grados/s
+    int16_t gyro_z_dps;                            // Velocidad angular Z en grados/s (+ = izquierda)
+    int32_t heading_mdeg;                          // Rumbo integrado desde el encendido, milesimas de grado (+ = izquierda)
     bool imu_ok;                                   // MPU6050 inicializado
 } SensorSnapshot_t;
 

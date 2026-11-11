@@ -22,7 +22,18 @@ extern "C" {
 
 #define TASK_NAV_PERIOD_MS        20
 #define TASK_NAV_STALE_MS         300   // Foto mas vieja que esto: motores detenidos
-#define TASK_NAV_RAMP_STEP_PWM    600   // Cambio maximo de PWM por periodo
+#define TASK_NAV_RAMP_STEP_PWM    600   // Bajada maxima de PWM por periodo (frenar o invertir es rapido)
+
+/* Arranque suave: desde parado la rueda salta a TASK_NAV_SOFT_START_PWM (por
+ * debajo del PWM con el que empieza a girar) y sube de a
+ * TASK_NAV_RAMP_UP_STEP_PWM cada 20 ms. Con los valores actuales llega al
+ * 70 % en unos 0,4 s en lugar de dar un golpe. */
+#ifndef TASK_NAV_SOFT_START_PWM
+#define TASK_NAV_SOFT_START_PWM   4000
+#endif
+#ifndef TASK_NAV_RAMP_UP_STEP_PWM
+#define TASK_NAV_RAMP_UP_STEP_PWM 100
+#endif
 
 /* Arranque automatico: 1 = el robot arranca solo al encenderse, sin esperar
  * START del ESP32 (STOP por UART sigue funcionando). 0 = espera START. */

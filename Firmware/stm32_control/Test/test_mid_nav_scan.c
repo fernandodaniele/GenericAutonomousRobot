@@ -72,11 +72,32 @@ int main(void)
     CHECK(o.state == NAV_STATE_FORWARD && !o.brake);
     CHECK(o.linear_mms == NAV_FWD_SPEED_MMS && o.angular_rads == 0.0f);
 
+    /* Rumbo: si se desvia a la derecha corrige a la izquierda y viceversa */
+    in = base(); in.heading_mdeg = -5000;
+    o = step(&c, in);
+    CHECK(o.state == NAV_STATE_FORWARD && o.angular_rads > 0.0f && o.linear_mms == NAV_FWD_SPEED_MMS);
+    in.heading_mdeg = 5000; o = step(&c, in);
+    CHECK(o.angular_rads < 0.0f);
+    in.heading_mdeg = 90000; o = step(&c, in);
+    CHECK(o.angular_rads == -NAV_HEADING_MAX_RAD_S);              /* correccion limitada */
+    in.heading_mdeg = NAV_HEADING_DEADBAND_MDEG - 100; o = step(&c, in);
+    CHECK(o.angular_rads == 0.0f);                                /* desvio minimo: recto */
+    in.heading_mdeg = -5000; in.imu_ok = false; o = step(&c, in);
+    CHECK(o.angular_rads == 0.0f);                                /* sin IMU: recto */
+
     /* Tramo: sigue recto hasta NAV_STEP_MS y frena para escanear */
-    o = run(&c, base(), NAV_STEP_MS - 10 * STEP_MS);
+    o = run(&c, base(), NAV_STEP_MS - 15 * STEP_MS);
     CHECK(o.state == NAV_STATE_FORWARD && o.linear_mms == NAV_FWD_SPEED_MMS);
     o = run(&c, base(), 12 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
+
+    /* El rumbo de referencia es el del momento en que decide avanzar */
+    start(&c);
+    in = base(); in.heading_mdeg = 30000;
+    o = run(&c, in, SCAN_TOTAL_MS + STEP_MS);
+    CHECK(o.state == NAV_STATE_FORWARD && o.angular_rads == 0.0f);
+    in.heading_mdeg = 25000; o = step(&c, in);
+    CHECK(o.angular_rads > 0.0f);
 
     /* No decide antes de terminar la pausa y las lecturas */
     in = walls(100, 900, 100);

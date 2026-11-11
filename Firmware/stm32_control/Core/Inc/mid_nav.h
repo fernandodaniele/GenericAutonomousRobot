@@ -162,6 +162,20 @@ extern "C" {
 #ifndef NAV_SCAN_MAX_MS
 #define NAV_SCAN_MAX_MS        1200
 #endif
+/* Mantener el rumbo con el MPU6050 en cada tramo recto: el rumbo de referencia
+ * es el que tenia al decidir avanzar. Sin IMU el tramo va sin corregir. */
+#ifndef NAV_HEADING_HOLD
+#define NAV_HEADING_HOLD       1
+#endif
+#ifndef NAV_HEADING_KP
+#define NAV_HEADING_KP         1.0f     // rad/s de correccion por radian de desvio
+#endif
+#ifndef NAV_HEADING_MAX_RAD_S
+#define NAV_HEADING_MAX_RAD_S  0.15f    // Correccion maxima (rueda externa a ~50 mm/s)
+#endif
+#ifndef NAV_HEADING_DEADBAND_MDEG
+#define NAV_HEADING_DEADBAND_MDEG 500   // Desvios menores a 0,5 grados no se corrigen
+#endif
 /* Giros o retrocesos seguidos sin avanzar antes de FAULT (salir con STOP y START) */
 #ifndef NAV_SCAN_STUCK_MAX
 #define NAV_SCAN_STUCK_MAX     6
@@ -210,6 +224,7 @@ typedef struct {
     bool cliff_left;
     bool cliff_right;
     int16_t gyro_z_dps;
+    int32_t heading_mdeg;          // Rumbo del MPU6050, milesimas de grado (+ = izquierda)
     bool imu_ok;
 } NavInput_t;
 
@@ -240,6 +255,7 @@ typedef struct {
     uint16_t scan_samples[3][NAV_SCAN_SAMPLES]; // Espacio libre (mm) ordenado: frente, izquierda, derecha
     uint8_t scan_n[3];             // Lecturas validas por sensor en este escaneo
     uint8_t scan_streak;           // Giros o retrocesos seguidos sin avanzar
+    int32_t heading_target_mdeg;   // Rumbo a mantener en el tramo recto
 } NavContext_t;
 
 void Nav_Init(NavContext_t* ctx);

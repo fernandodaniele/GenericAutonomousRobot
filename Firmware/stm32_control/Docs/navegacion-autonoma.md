@@ -82,6 +82,28 @@ Con `NAV_SCAN_STUCK_MAX` (6) maniobras seguidas sin avanzar 2 s, entra en `FAULT
 con `NAV_SCAN_TURN_MS` para que el giro sea de 90°. Los valores actuales salen de las
 velocidades nominales, que no están medidas.
 
+### Arranque suave
+Desde parado, cada rueda salta a `TASK_NAV_SOFT_START_PWM` (4000, por debajo del PWM con el
+que empieza a girar) y sube de a `TASK_NAV_RAMP_UP_STEP_PWM` (100) cada 20 ms: llega al 70 %
+en unos 0,4 s. Frenar e invertir el sentido siguen siendo rápidos (`TASK_NAV_RAMP_STEP_PWM`).
+Valores en `Core/Inc/task_nav.h`.
+
+### Rumbo con el MPU6050
+El MPU6050 (I2C3) está activo (`SENSORS_USE_IMU = 1`). Al encender mide el offset del giro Z
+durante 1 s: **el robot tiene que estar quieto** ese segundo. Después integra el giro Z
+cada 20 ms y obtiene el rumbo.
+
+En cada tramo recto el robot mantiene el rumbo que tenía al decidir avanzar: corrige
+proporcionalmente al desvío (`NAV_HEADING_KP`), con un máximo de `NAV_HEADING_MAX_RAD_S` y sin
+corregir desvíos menores a 0,5°. Si el MPU6050 deja de responder, el tramo sigue sin
+corrección. Se desactiva con `NAV_HEADING_HOLD = 0`.
+
+**Verificar el signo antes de la primera prueba:** con el robot quieto, girarlo a mano hacia
+la izquierda (antihorario visto desde arriba). En el panel, "Giro Z" tiene que dar positivo y
+el rumbo tiene que aumentar. Si da negativo, el módulo está montado al revés: poner
+`SENSORS_GYRO_Z_SIGN = -1` en `task_sensors.c`. Con el signo equivocado, el robot gira cada
+vez más en vez de enderezarse.
+
 ### LED naranja (LD3)
 | LED | Estado |
 |---|---|
@@ -102,7 +124,7 @@ el firmware de la ESP32, que la actualiza consultando `GET /api/status`.
 La STM32 manda esta línea por USART2 cada 200 ms, en todos los estados:
 
 ```text
-TEL,<ms>,<estado>,<pwm_izq>,<pwm_der>,<freno>,<est_frente>,<mm_frente>,<est_izq>,<mm_izq>,<est_der>,<mm_der>,<tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>
+TEL,<ms>,<estado>,<pwm_izq>,<pwm_der>,<freno>,<est_frente>,<mm_frente>,<est_izq>,<mm_izq>,<est_der>,<mm_der>,<tcrt_izq>,<tcrt_der>,<borde_izq>,<borde_der>,<giro_z>,<imu_ok>,<rumbo_decimas_grado>
 ```
 
 Estados de ultrasonido: `O` = distancia válida, `F` = nada al alcance, `C` = pegado,

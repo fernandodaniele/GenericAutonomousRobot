@@ -185,9 +185,26 @@ static uint32_t scan_median(const NavContext_t* ctx, uint8_t sensor)
     return ctx->scan_samples[sensor][(n - 1u) / 2u];
 }
 
+/* Correccion de rumbo en el tramo recto: proporcional al desvio respecto del
+ * rumbo con el que arranco el tramo (+ = girar a la izquierda). */
+static float heading_hold(const NavContext_t* ctx, const NavInput_t* in)
+{
+    if (!NAV_HEADING_HOLD || !in->imu_ok) {
+        return 0.0f;
+    }
+    const int32_t err_mdeg = ctx->heading_target_mdeg - in->heading_mdeg;
+    if (err_mdeg > -NAV_HEADING_DEADBAND_MDEG && err_mdeg < NAV_HEADING_DEADBAND_MDEG) {
+        return 0.0f;
+    }
+    float w = NAV_HEADING_KP * (float)err_mdeg * (0.0174533f / 1000.0f);
+    if (w > NAV_HEADING_MAX_RAD_S) w = NAV_HEADING_MAX_RAD_S;
+    if (w < -NAV_HEADING_MAX_RAD_S) w = -NAV_HEADING_MAX_RAD_S;
+    return w;
+}
+
 /* Decide con las medianas: frente libre -> tramo nuevo; si no, doblar hacia
  * el lado libre (con ambos libres, el mas amplio); todo bloqueado -> atras. */
-static void scan_decide(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
+static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out, uint32_t now)
 {
     const uint32_t front = scan_median(ctx, SCAN_FRONT);
     const uint32_t left = scan_median(ctx, SCAN_LEFT);
@@ -195,6 +212,7 @@ static void scan_decide(NavContext_t* ctx, NavOutput_t* out, uint32_t now)
 
     if (front >= NAV_CLEAR_MM) {
         enter_state(ctx, NAV_STATE_FORWARD, now);
+        ctx->heading_target_mdeg = in->heading_mdeg;
         return;
     }
     if (ctx->scan_streak < UINT8_MAX) ctx->scan_streak++;
@@ -231,7 +249,7 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
                 scan_add(ctx, SCAN_RIGHT, in->right, in->right_mm);
             }
             if (scan_complete(ctx) || t >= NAV_SCAN_MAX_MS) {
-                scan_decide(ctx, out, now);
+                scan_decide(ctx, in, out, now);
             }
             break;
         case SPHASE_TURN:
@@ -435,6 +453,7 @@ void Nav_Init(NavContext_t* ctx)
     ctx->fault_latched = false;
     memset(ctx->scan_n, 0, sizeof(ctx->scan_n));
     ctx->scan_streak = 0;
+    ctx->heading_target_mdeg = 0;
 }
 
 NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
@@ -521,6 +540,7 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
                     set_brake(&out);
                 } else {
                     out.linear_mms = NAV_FWD_SPEED_MMS;
+                    out.angular_rads = heading_hold(ctx, in);
                 }
             } else if (ctx->corner && elapsed(now, ctx->corner_enter_ms) >= NAV_CORNER_MAX_MS) {
                 /* Esquina que no termina: rutina evasiva */

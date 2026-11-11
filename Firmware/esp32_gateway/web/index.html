@@ -241,10 +241,11 @@ function motorText(pwm, brake) {
 
 /* Diagnostico del MPU6050 (IMU_DIAG_* en task_sensors.h de la STM32) */
 function imuProblem(diag) {
-  if (diag === -3) return 'SDA o SCL quedan en bajo: revisar cables, alimentación y pull-ups';
+  if (diag === -3) return 'SDA o SCL en bajo: el módulo está sin alimentación o un cable va a masa (se reintenta cada 2 s)';
   if (diag === -2) return 'Respondía y dejó de responder: revisar conexiones flojas';
-  if (diag === -1) return 'No responde por I2C: revisar SCL→PA8, SDA→PC9, GND y VCC';
+  if (diag === -1) return 'No responde por I2C: revisar SCL→PB6, SDA→PB9, GND y VCC';
   if (diag === -4) return 'Desactivada en el firmware';
+  if (diag === -5) return 'Calibrando: mantener el robot quieto';
   if (typeof diag === 'number' && diag >= 0) {
     return 'Responde con ID 0x' + diag.toString(16).toUpperCase() + ': modelo no reconocido';
   }

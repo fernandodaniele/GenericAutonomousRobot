@@ -89,9 +89,14 @@ en unos 0,4 s. Frenar e invertir el sentido siguen siendo rápidos (`TASK_NAV_RA
 Valores en `Core/Inc/task_nav.h`.
 
 ### Rumbo con el MPU6050
-El MPU6050 (I2C3) está activo (`SENSORS_USE_IMU = 1`). Al encender mide el offset del giro Z
-durante 1 s: **el robot tiene que estar quieto** ese segundo. Después integra el giro Z
-cada 20 ms y obtiene el rumbo.
+El MPU6050 (I2C3) está activo (`SENSORS_USE_IMU = 1`). Al conectarse mide el offset del giro Z
+durante 1 s: **el robot tiene que estar quieto** ese segundo (el panel muestra "Calibrando").
+Después integra el giro Z cada 20 ms y obtiene el rumbo.
+
+Si al encender el MPU6050 no responde, la STM32 lo reintenta cada 2 s sin frenar la lectura de
+los demás sensores. Esto cubre el caso de un módulo que recibe alimentación después que la STM32,
+por ejemplo desde la batería de los motores. Si se conecta con el robot en marcha, calibra en
+movimiento y el rumbo puede desviarse: conviene encender todo junto.
 
 En cada tramo recto el robot mantiene el rumbo que tenía al decidir avanzar: corrige
 proporcionalmente al desvío (`NAV_HEADING_KP`), con un máximo de `NAV_HEADING_MAX_RAD_S` y sin
@@ -104,8 +109,13 @@ el rumbo tiene que aumentar. Si da negativo, el módulo está montado al revés:
 `SENSORS_GYRO_Z_SIGN = -1` en `task_sensors.c`. Con el signo equivocado, el robot gira cada
 vez más en vez de enderezarse.
 
-**Conexión** (I2C3, módulo GY-521): VCC a 3V3, GND a GND, SCL a **PA8**, SDA a **PC9**, AD0 a
-GND o sin conectar (también se acepta AD0 en alto, dirección 0x69).
+**Conexión** (I2C1, módulo GY-521): VCC a 3V3, GND a GND, SCL a **PB6**, SDA a **PB9**, AD0 a
+GND o sin conectar (también se acepta AD0 en alto, dirección 0x69). En la Discovery el I2C1
+también llega al codec de audio de la placa, que ya trae pull-ups de 4,7 kΩ y usa otra
+dirección. No usar PB8 como SCL: es el PWM del motor derecho.
+
+Para volver al I2C3 (SCL en **PA8**, SDA en **PC9**, con las pull-ups internas del STM32 de
+unos 40 kΩ) poner `SENSORS_IMU_ON_I2C1 = 0` en `task_sensors.c`.
 
 Al arrancar, la STM32 libera el bus I2C por si quedó trabado tras un reset y acepta los
 clones compatibles (MPU6500 / MPU9250, que responden con otro identificador). Si no logra
@@ -113,7 +123,8 @@ usarlo, el panel indica la causa en "Giro Z":
 
 | Mensaje en el panel | Causa probable |
 |---|---|
-| SDA o SCL quedan en bajo | Cable cortado, módulo sin alimentación o falta de pull-ups (los GY-521 los traen) |
+| SDA o SCL en bajo | Módulo sin alimentación en ese momento, un cable a masa o en un pin equivocado |
+| Calibrando | Conectado: mantener el robot quieto 1 s |
 | No responde por I2C | SCL y SDA invertidos o en otros pines, o sin GND común |
 | Responde con ID 0x..: modelo no reconocido | Otro sensor: pasar ese número para agregarlo |
 | Respondía y dejó de responder | Conexión floja o cables largos |

@@ -24,10 +24,11 @@ extern "C" {
 
 /* Diagnostico del MPU6050 (SensorSnapshot_t.imu_diag). Un valor >= 0 es el
  * WHO_AM_I que respondio: con imu_ok en false, es un modelo no reconocido. */
-#define IMU_DIAG_LINE_LOW    (-3)   // SDA o SCL quedan en bajo: cables, alimentacion o pull-ups
+#define IMU_DIAG_LINE_LOW    (-3)   // SDA o SCL en bajo aun con pull-up: alimentacion o cables
 #define IMU_DIAG_LOST        (-2)   // Respondia y dejo de responder
 #define IMU_DIAG_NO_ACK      (-1)   // Nadie responde en 0x68 ni en 0x69
 #define IMU_DIAG_DISABLED    (-4)   // SENSORS_USE_IMU = 0
+#define IMU_DIAG_CALIBRATING (-5)   // Conectado, midiendo el offset (1 s, robot quieto)
 
 /**
  * @brief Foto de sensores publicada por task_sensors.

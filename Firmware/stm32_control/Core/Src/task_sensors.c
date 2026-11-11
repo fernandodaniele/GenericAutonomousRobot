@@ -30,8 +30,11 @@
 #define SENSORS_GYRO_Z_SIGN      1
 #endif
 #define SENSORS_GYRO_LSB_PER_DPS 131.0f  // Escala +/- 250 grados/s
-#define SENSORS_GYRO_CAL_SAMPLES 100     // 1 s quieto al encender para medir el offset
+#define SENSORS_GYRO_CAL_SAMPLES 50      // 1 s quieto (50 ciclos de 20 ms) para medir el offset
 #define SENSORS_IMU_FAIL_MAX     5       // Lecturas I2C fallidas seguidas: IMU fuera
+/* Sin IMU se reintenta cada 2 s: el modulo puede recibir alimentacion despues
+ * que la STM32 (por ejemplo, de la bateria de los motores). */
+#define SENSORS_IMU_RETRY_MS     2000
 
 /* TCRT5000 habilitados */
 #ifndef SENSORS_USE_TCRT_LEFT
@@ -41,7 +44,26 @@
 #define SENSORS_USE_TCRT_RIGHT   1
 #endif
 
+/* Bus del MPU6050:
+ * 1 = I2C1: SCL en PB6, SDA en PB9. En la Discovery lo comparte con el codec de
+ *     audio (direccion distinta, queda en reset) y ya tiene pull-ups de 4,7 kOhm.
+ * 0 = I2C3: SCL en PA8, SDA en PC9 (pull-ups internas). */
+#ifndef SENSORS_IMU_ON_I2C1
+#define SENSORS_IMU_ON_I2C1      1
+#endif
+#if SENSORS_IMU_ON_I2C1
+#define SENSORS_IMU_I2C          (&hi2c1)
+#define IMU_SCL_PORT             GPIOB
+#define IMU_SCL_PIN              GPIO_PIN_6
+#define IMU_SDA_PORT             GPIOB
+#define IMU_SDA_PIN              GPIO_PIN_9
+#else
 #define SENSORS_IMU_I2C          (&hi2c3)
+#define IMU_SCL_PORT             GPIOA
+#define IMU_SCL_PIN              GPIO_PIN_8
+#define IMU_SDA_PORT             GPIOC
+#define IMU_SDA_PIN              GPIO_PIN_9
+#endif
 #define SENSORS_IMU_INIT_RETRIES 3
 
 /* Configuración del filtro de promedio móvil para el frente */
@@ -102,64 +124,63 @@ static bool imu_init(void)
     return false;
 }
 
-/* Libera el bus I2C3 (SCL = PA8, SDA = PC9). Si se resetea la STM32 en medio
+/* Libera el bus I2C del MPU6050. Si se resetea la STM32 en medio
  * de una lectura, el MPU6050 queda sosteniendo SDA en bajo y el bus no vuelve
  * a funcionar hasta cortar la alimentacion. Se dan hasta 9 pulsos de reloj y
- * una condicion de STOP. Devuelve true si alguna linea sigue en bajo: falta
- * de pull-up, cable cortado o modulo sin alimentacion. */
+ * una condicion de STOP. Usa las mismas pull-ups internas que el I2C, asi que
+ * si alguna linea sigue en bajo el problema no es la falta de pull-up sino un
+ * modulo sin alimentacion, un cable a masa o un pin equivocado. */
 static bool i2c3_bus_recover(void)
 {
     GPIO_InitTypeDef gpio = {0};
 
-    osDelay(100);   // El MPU6050 tarda hasta 100 ms en arrancar despues de alimentarse
-    HAL_I2C_DeInit(&hi2c3);
+    HAL_I2C_DeInit(SENSORS_IMU_I2C);
     gpio.Mode = GPIO_MODE_OUTPUT_OD;
-    gpio.Pull = GPIO_NOPULL;
+    gpio.Pull = GPIO_PULLUP;
     gpio.Speed = GPIO_SPEED_FREQ_LOW;
-    gpio.Pin = GPIO_PIN_8;
-    HAL_GPIO_Init(GPIOA, &gpio);
-    gpio.Pin = GPIO_PIN_9;
-    HAL_GPIO_Init(GPIOC, &gpio);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+    gpio.Pin = IMU_SCL_PIN;
+    HAL_GPIO_Init(IMU_SCL_PORT, &gpio);
+    gpio.Pin = IMU_SDA_PIN;
+    HAL_GPIO_Init(IMU_SDA_PORT, &gpio);
+    HAL_GPIO_WritePin(IMU_SCL_PORT, IMU_SCL_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(IMU_SDA_PORT, IMU_SDA_PIN, GPIO_PIN_SET);
     osDelay(2);
 
-    for (uint8_t i = 0; i < 9 && HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9) == GPIO_PIN_RESET; i++) {
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+    for (uint8_t i = 0; i < 9 && HAL_GPIO_ReadPin(IMU_SDA_PORT, IMU_SDA_PIN) == GPIO_PIN_RESET; i++) {
+        HAL_GPIO_WritePin(IMU_SCL_PORT, IMU_SCL_PIN, GPIO_PIN_RESET);
         osDelay(1);
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(IMU_SCL_PORT, IMU_SCL_PIN, GPIO_PIN_SET);
         osDelay(1);
     }
 
     /* STOP: SDA sube con SCL en alto */
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(IMU_SDA_PORT, IMU_SDA_PIN, GPIO_PIN_RESET);
     osDelay(1);
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(IMU_SCL_PORT, IMU_SCL_PIN, GPIO_PIN_SET);
     osDelay(1);
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(IMU_SDA_PORT, IMU_SDA_PIN, GPIO_PIN_SET);
     osDelay(1);
 
-    const bool low = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_RESET
-                  || HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_9) == GPIO_PIN_RESET;
+    const bool low = HAL_GPIO_ReadPin(IMU_SCL_PORT, IMU_SCL_PIN) == GPIO_PIN_RESET
+                  || HAL_GPIO_ReadPin(IMU_SDA_PORT, IMU_SDA_PIN) == GPIO_PIN_RESET;
 
-    HAL_I2C_Init(&hi2c3);   // Vuelve a poner los pines en modo I2C
+    HAL_I2C_Init(SENSORS_IMU_I2C);   // Vuelve a poner los pines en modo I2C
     return low;
 }
 
-/* Offset del giro Z (cuentas crudas): promedio con el robot quieto */
-static float gyro_calibrate(void)
+/* Intenta conectar el MPU6050. Con las lineas en bajo no lo intenta: el
+ * modulo esta sin alimentacion o desconectado (la proxima vez se reintenta).
+ * El primer intento usa reintentos; los siguientes, uno solo para no frenar
+ * la lectura de los demas sensores. */
+static bool imu_connect(int16_t* diag, bool first)
 {
-    int32_t sum = 0;
-    uint16_t count = 0;
-    for (uint16_t i = 0; i < SENSORS_GYRO_CAL_SAMPLES; i++) {
-        int16_t raw;
-        if (MPU6050_Read_GyroZ_Raw(SENSORS_IMU_I2C, &raw) == 0) {
-            sum += raw;
-            count++;
-        }
-        osDelay(10);
+    if (i2c3_bus_recover()) {
+        *diag = IMU_DIAG_LINE_LOW;
+        return false;
     }
-    return (count > 0u) ? (float)sum / (float)count : 0.0f;
+    const bool ok = first ? imu_init() : (MPU6050_Init(SENSORS_IMU_I2C) == 0);
+    *diag = ok ? IMU_DIAG_CALIBRATING : MPU6050_GetWhoAmI();
+    return ok;
 }
 #endif
 
@@ -181,15 +202,13 @@ static void SensorsTask(void* argument)
     float gyro_bias = 0.0f;
     float heading_deg = 0.0f;
     uint8_t imu_fails = 0;
-    const bool lines_low = i2c3_bus_recover();
-    snap.imu_ok = imu_init();
-    snap.imu_diag = MPU6050_GetWhoAmI();
-    if (snap.imu_ok) {
-        gyro_bias = gyro_calibrate();
-    } else if (lines_low) {
-        snap.imu_diag = IMU_DIAG_LINE_LOW;
-    }
+    int32_t cal_sum = 0;
+    uint16_t cal_count = 0;
+    osDelay(100);   // El MPU6050 tarda hasta 100 ms en arrancar despues de alimentarse
+    bool imu_present = imu_connect(&snap.imu_diag, true);
+    snap.imu_ok = false;   // Hasta terminar de calibrar
     uint32_t last_gyro_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
+    uint32_t last_imu_try_ms = last_gyro_ms;
 #else
     snap.imu_ok = false;
     snap.imu_diag = IMU_DIAG_DISABLED;
@@ -276,21 +295,43 @@ static void SensorsTask(void* argument)
 
         /* 7. Leer el Giroscopio MPU6050 */
 #if SENSORS_USE_IMU
-        if (snap.imu_ok) {
+        {
             int16_t raw;
             const uint32_t now_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
-            if (MPU6050_Read_GyroZ_Raw(SENSORS_IMU_I2C, &raw) == 0) {
-                const float dps = (float)SENSORS_GYRO_Z_SIGN
-                                * ((float)raw - gyro_bias) / SENSORS_GYRO_LSB_PER_DPS;
-                heading_deg += dps * (float)(now_ms - last_gyro_ms) / 1000.0f;
-                last_gyro_ms = now_ms;
+            if (!imu_present) {
+                /* Sin IMU: reintentar cada tanto */
+                if (now_ms - last_imu_try_ms >= SENSORS_IMU_RETRY_MS) {
+                    last_imu_try_ms = now_ms;
+                    imu_present = imu_connect(&snap.imu_diag, false);
+                    cal_sum = 0;
+                    cal_count = 0;
+                    imu_fails = 0;
+                    last_gyro_ms = now_ms;
+                }
+            } else if (MPU6050_Read_GyroZ_Raw(SENSORS_IMU_I2C, &raw) == 0) {
                 imu_fails = 0;
-                snap.gyro_z_dps = (int16_t)(dps + ((dps >= 0.0f) ? 0.5f : -0.5f));
-                snap.heading_mdeg = (int32_t)(heading_deg * 1000.0f);
+                if (cal_count < SENSORS_GYRO_CAL_SAMPLES) {
+                    /* Calibracion: 1 s de lecturas con el robot quieto */
+                    cal_sum += raw;
+                    if (++cal_count == SENSORS_GYRO_CAL_SAMPLES) {
+                        gyro_bias = (float)cal_sum / (float)SENSORS_GYRO_CAL_SAMPLES;
+                        snap.imu_ok = true;
+                        snap.imu_diag = MPU6050_GetWhoAmI();
+                    }
+                } else {
+                    const float dps = (float)SENSORS_GYRO_Z_SIGN
+                                    * ((float)raw - gyro_bias) / SENSORS_GYRO_LSB_PER_DPS;
+                    heading_deg += dps * (float)(now_ms - last_gyro_ms) / 1000.0f;
+                    snap.gyro_z_dps = (int16_t)(dps + ((dps >= 0.0f) ? 0.5f : -0.5f));
+                    snap.heading_mdeg = (int32_t)(heading_deg * 1000.0f);
+                }
+                last_gyro_ms = now_ms;
             } else if (++imu_fails >= SENSORS_IMU_FAIL_MAX) {
+                imu_present = false;
                 snap.imu_ok = false;   // Sin IMU la navegacion sigue sin corregir el rumbo
                 snap.imu_diag = IMU_DIAG_LOST;
                 snap.gyro_z_dps = 0;
+                last_imu_try_ms = now_ms;
             }
         }
 #endif

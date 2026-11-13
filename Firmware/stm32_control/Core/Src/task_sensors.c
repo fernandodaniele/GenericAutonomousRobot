@@ -17,7 +17,9 @@
 #include "i2c.h"
 #include "drv_TCRT5000.h"
 #include "drv_gyro.h"
+#include "task_nav.h"   // TaskNav_GetStatus(): ruedas detenidas = recalibrar el giroscopio
 #include <string.h>
+#include <stdint.h>
 
 /* MPU6050: giro Z para mantener el rumbo. 0 = no se inicializa ni se lee. */
 #ifndef SENSORS_USE_IMU
@@ -27,10 +29,30 @@
  * desde arriba) tiene que dar valores positivos en el panel. Si da negativos,
  * el modulo esta montado al reves: poner -1. */
 #ifndef SENSORS_GYRO_Z_SIGN
-#define SENSORS_GYRO_Z_SIGN      1
+#define SENSORS_GYRO_Z_SIGN      -1     // Modulo montado al reves (verificado 11/11/2026)
 #endif
 #define SENSORS_GYRO_LSB_PER_DPS 131.0f  // Escala +/- 250 grados/s
 #define SENSORS_GYRO_CAL_SAMPLES 50      // 1 s quieto (50 ciclos de 20 ms) para medir el offset
+/* Dispersion maxima (max - min, en cuentas crudas) aceptada durante la calibracion.
+ * 260 cuentas = ~2 grados/s a +/-250 grados/s. Si se supera, el robot se movio
+ * mientras se media el offset: se descarta y se vuelve a calibrar. */
+#ifndef SENSORS_GYRO_CAL_MAX_SPREAD
+#define SENSORS_GYRO_CAL_MAX_SPREAD 260
+#endif
+/* Recalibracion con el robot quieto: el offset del MPU6050 deriva con la
+ * temperatura (sobre todo los primeros minutos). Con las dos ruedas en PWM 0
+ * desde hace SENSORS_GYRO_STILL_MS, el offset se actualiza con un filtro
+ * (constante de tiempo ~ 20 ms / ALPHA = 1 s) y el rumbo no se integra.
+ * Si alguien gira el robot a mano (mas de STILL_MAX_DPS) se integra normal. */
+#ifndef SENSORS_GYRO_STILL_MS
+#define SENSORS_GYRO_STILL_MS      300
+#endif
+#ifndef SENSORS_GYRO_STILL_MAX_DPS
+#define SENSORS_GYRO_STILL_MAX_DPS 3.0f
+#endif
+#ifndef SENSORS_GYRO_BIAS_ALPHA
+#define SENSORS_GYRO_BIAS_ALPHA    0.02f
+#endif
 #define SENSORS_IMU_FAIL_MAX     5       // Lecturas I2C fallidas seguidas: IMU fuera
 /* Sin IMU se reintenta cada 2 s: el modulo puede recibir alimentacion despues
  * que la STM32 (por ejemplo, de la bateria de los motores). */
@@ -204,11 +226,14 @@ static void SensorsTask(void* argument)
     uint8_t imu_fails = 0;
     int32_t cal_sum = 0;
     uint16_t cal_count = 0;
+    int16_t cal_min = INT16_MAX;   // Extremos de la calibracion para detectar movimiento
+    int16_t cal_max = INT16_MIN;
     osDelay(100);   // El MPU6050 tarda hasta 100 ms en arrancar despues de alimentarse
     bool imu_present = imu_connect(&snap.imu_diag, true);
     snap.imu_ok = false;   // Hasta terminar de calibrar
     uint32_t last_gyro_ms = (uint32_t)xTaskGetTickCount() * portTICK_PERIOD_MS;
     uint32_t last_imu_try_ms = last_gyro_ms;
+    uint32_t last_moving_ms = last_gyro_ms;   // Ultima vez que alguna rueda tuvo PWM
 #else
     snap.imu_ok = false;
     snap.imu_diag = IMU_DIAG_DISABLED;
@@ -305,6 +330,8 @@ static void SensorsTask(void* argument)
                     imu_present = imu_connect(&snap.imu_diag, false);
                     cal_sum = 0;
                     cal_count = 0;
+                    cal_min = INT16_MAX;
+                    cal_max = INT16_MIN;
                     imu_fails = 0;
                     last_gyro_ms = now_ms;
                 }
@@ -313,14 +340,42 @@ static void SensorsTask(void* argument)
                 if (cal_count < SENSORS_GYRO_CAL_SAMPLES) {
                     /* Calibracion: 1 s de lecturas con el robot quieto */
                     cal_sum += raw;
+                    if (raw < cal_min) cal_min = raw;
+                    if (raw > cal_max) cal_max = raw;
                     if (++cal_count == SENSORS_GYRO_CAL_SAMPLES) {
-                        gyro_bias = (float)cal_sum / (float)SENSORS_GYRO_CAL_SAMPLES;
-                        snap.imu_ok = true;
-                        snap.imu_diag = MPU6050_GetWhoAmI();
+                        if ((int32_t)cal_max - (int32_t)cal_min > SENSORS_GYRO_CAL_MAX_SPREAD) {
+                            /* El robot se movio durante la calibracion: el offset
+                             * saldria corrido y el rumbo derivaria. Se repite. */
+                            cal_sum = 0;
+                            cal_count = 0;
+                            cal_min = INT16_MAX;
+                            cal_max = INT16_MIN;
+                        } else {
+                            gyro_bias = (float)cal_sum / (float)SENSORS_GYRO_CAL_SAMPLES;
+                            snap.imu_ok = true;
+                            snap.imu_diag = MPU6050_GetWhoAmI();
+                        }
                     }
                 } else {
-                    const float dps = (float)SENSORS_GYRO_Z_SIGN
-                                    * ((float)raw - gyro_bias) / SENSORS_GYRO_LSB_PER_DPS;
+                    /* Robot quieto = las dos ruedas con PWM 0 desde hace un rato
+                     * (IDLE, freno, pausa del escaneo). Ahi el giroscopio solo
+                     * mide su offset: se lo sigue lentamente (deriva por
+                     * temperatura) y no se integra el rumbo. */
+                    const NavStatus_t nav = TaskNav_GetStatus();
+                    if (nav.pwm_left != 0 || nav.pwm_right != 0) {
+                        last_moving_ms = now_ms;
+                    }
+                    const float raw_dps = ((float)raw - gyro_bias) / SENSORS_GYRO_LSB_PER_DPS;
+                    const bool still = (now_ms - last_moving_ms) >= SENSORS_GYRO_STILL_MS
+                                    && raw_dps > -SENSORS_GYRO_STILL_MAX_DPS
+                                    && raw_dps < SENSORS_GYRO_STILL_MAX_DPS;
+                    float dps;
+                    if (still) {
+                        gyro_bias += SENSORS_GYRO_BIAS_ALPHA * ((float)raw - gyro_bias);
+                        dps = 0.0f;
+                    } else {
+                        dps = (float)SENSORS_GYRO_Z_SIGN * raw_dps;
+                    }
                     heading_deg += dps * (float)(now_ms - last_gyro_ms) / 1000.0f;
                     snap.gyro_z_dps = (int16_t)(dps + ((dps >= 0.0f) ? 0.5f : -0.5f));
                     snap.heading_mdeg = (int32_t)(heading_deg * 1000.0f);

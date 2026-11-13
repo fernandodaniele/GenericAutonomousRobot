@@ -103,19 +103,24 @@ void Motor_Brake(MotorHandle_t* motor) {
 void Motors_InitAll(void) {
     extern TIM_HandleTypeDef htim4;
 
-    // Motor Izquierdo: PWM en PB7 (TIM4_CH2), DIR en PD0
+    /* Los canales estaban cruzados respecto del cableado real (verificado en el
+     * robot el 11/11/2026 con el giro Z): la salida PB8/PD2 mueve la rueda fisica
+     * izquierda y PB7/PD0 la derecha. Los nombres MOTOR_L/R_DIR del .ioc quedan
+     * invertidos hasta renombrarlos en CubeMX. */
+
+    // Motor Izquierdo (rueda fisica izquierda): PWM en PB8 (TIM4_CH3), DIR en PD2
     g_motor_left.htim      = &htim4;
-    g_motor_left.channel   = TIM_CHANNEL_2;
-    g_motor_left.dir_port  = MOTOR_L_DIR_GPIO_Port;
-    g_motor_left.dir_pin   = MOTOR_L_DIR_Pin;
+    g_motor_left.channel   = TIM_CHANNEL_3;
+    g_motor_left.dir_port  = MOTOR_R_DIR_GPIO_Port;
+    g_motor_left.dir_pin   = MOTOR_R_DIR_Pin;
     g_motor_left.inverted  = 1;
     Motor_Init(&g_motor_left);
 
-    // Motor Derecho: PWM en PB8 (TIM4_CH3), DIR en PD2
+    // Motor Derecho (rueda fisica derecha): PWM en PB7 (TIM4_CH2), DIR en PD0
     g_motor_right.htim     = &htim4;
-    g_motor_right.channel  = TIM_CHANNEL_3;
-    g_motor_right.dir_port = MOTOR_R_DIR_GPIO_Port;
-    g_motor_right.dir_pin  = MOTOR_R_DIR_Pin;
+    g_motor_right.channel  = TIM_CHANNEL_2;
+    g_motor_right.dir_port = MOTOR_L_DIR_GPIO_Port;
+    g_motor_right.dir_pin  = MOTOR_L_DIR_Pin;
     g_motor_right.inverted = 1;
     Motor_Init(&g_motor_right);
 }

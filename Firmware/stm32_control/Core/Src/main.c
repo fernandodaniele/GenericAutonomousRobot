@@ -45,7 +45,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAFE_DISTANCE 200	// Safety distance in mm
+#define SAFE_DISTANCE 300	// Safety distance in mm (plan: frena a 30 cm)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/

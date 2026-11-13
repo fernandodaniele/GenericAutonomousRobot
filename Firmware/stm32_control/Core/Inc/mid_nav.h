@@ -31,10 +31,10 @@ extern "C" {
 
 /* ===== Parametros (ajustar con la distancia de frenado medida) ===== */
 #ifndef NAV_OBSTACLE_MM
-#define NAV_OBSTACLE_MM        180    // De frente: maniobra evasiva por debajo de esto
+#define NAV_OBSTACLE_MM        300    // De frente: frena por debajo de 30 cm (plan)
 #endif
 #ifndef NAV_CLEAR_MM
-#define NAV_CLEAR_MM           250   // Frente libre: termina el giro o la evasiva
+#define NAV_CLEAR_MM           400   // Frente libre con 40 cm: termina el giro o la evasiva (plan)
 #endif
 #ifndef NAV_WALL_MM
 #define NAV_WALL_MM            100   // Distancia a mantener con la pared
@@ -180,6 +180,15 @@ extern "C" {
 #ifndef NAV_SCAN_STUCK_MAX
 #define NAV_SCAN_STUCK_MAX     6
 #endif
+/* Un lado cuenta como libre para doblar con al menos esto (plan: 40 cm).
+ * Se prefiere la derecha; si no esta libre, la izquierda. */
+#ifndef NAV_SIDE_FREE_MM
+#define NAV_SIDE_FREE_MM       NAV_CLEAR_MM
+#endif
+/* Retrocesos seguidos sin camino libre antes de FAULT (plan: 5) */
+#ifndef NAV_SCAN_BACKUP_MAX
+#define NAV_SCAN_BACKUP_MAX    5
+#endif
 
 typedef enum {
     NAV_STATE_IDLE = 0,
@@ -255,6 +264,7 @@ typedef struct {
     uint16_t scan_samples[3][NAV_SCAN_SAMPLES]; // Espacio libre (mm) ordenado: frente, izquierda, derecha
     uint8_t scan_n[3];             // Lecturas validas por sensor en este escaneo
     uint8_t scan_streak;           // Giros o retrocesos seguidos sin avanzar
+    uint8_t backup_streak;         // Retrocesos seguidos sin ningun lado libre
     int32_t heading_target_mdeg;   // Rumbo a mantener en el tramo recto
 } NavContext_t;
 

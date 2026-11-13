@@ -177,3 +177,16 @@ cd Firmware/stm32_control
 gcc -Wall -Wextra -DNAV_STEP_SCAN_ENABLE=0 -ICore/Inc Test/test_mid_nav.c Core/Src/mid_nav.c -o test_mid_nav && ./test_mid_nav
 gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav_scan.c Core/Src/mid_nav.c -o test_mid_nav_scan && ./test_mid_nav_scan
 ```
+
+## Umbrales del plan (30 / 40 cm)
+
+| Regla | Parámetro | Valor |
+|---|---|---|
+| Frena de frente por debajo de 30 cm | `NAV_OBSTACLE_MM` | 300 mm (antes 180) |
+| Frente libre para avanzar | `NAV_CLEAR_MM` | 400 mm (antes 250) |
+| Lado libre para doblar; prefiere la **derecha**, si no la izquierda | `NAV_SIDE_FREE_MM` | 400 mm |
+| Sin lado libre: retrocede ~10 cm y vuelve a medir, hasta 5 veces; luego `FAULT` | `NAV_SCAN_BACKUP_MAX` | 5 |
+| Distancia de seguridad en `main.c` | `SAFE_DISTANCE` | 300 mm (antes 200) |
+
+Un lateral sin eco no cuenta como libre; un eco largo sí. Falta medir la distancia de
+frenado a `NAV_FWD_SPEED_MMS` para confirmar que el robot se detiene antes de 30 cm.

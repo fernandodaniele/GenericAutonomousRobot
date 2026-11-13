@@ -202,8 +202,9 @@ static float heading_hold(const NavContext_t* ctx, const NavInput_t* in)
     return w;
 }
 
-/* Decide con las medianas: frente libre -> tramo nuevo; si no, doblar hacia
- * el lado libre (con ambos libres, el mas amplio); todo bloqueado -> atras. */
+/* Decide con las medianas: frente libre -> tramo nuevo; si no, doblar a la
+ * derecha si tiene NAV_SIDE_FREE_MM libres, si no a la izquierda; todo
+ * bloqueado -> atras, hasta NAV_SCAN_BACKUP_MAX veces seguidas (luego FAULT). */
 static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out, uint32_t now)
 {
     const uint32_t front = scan_median(ctx, SCAN_FRONT);
@@ -211,6 +212,7 @@ static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* ou
     const uint32_t right = scan_median(ctx, SCAN_RIGHT);
 
     if (front >= NAV_CLEAR_MM) {
+        ctx->backup_streak = 0;
         enter_state(ctx, NAV_STATE_FORWARD, now);
         ctx->heading_target_mdeg = in->heading_mdeg;
         return;
@@ -218,10 +220,18 @@ static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* ou
     if (ctx->scan_streak < UINT8_MAX) ctx->scan_streak++;
     if (ctx->scan_streak >= NAV_SCAN_STUCK_MAX) {
         latch_fault(ctx, out, now);
-    } else if (left >= NAV_CLEAR_MM || right >= NAV_CLEAR_MM) {
-        ctx->turn_dir = (left >= right) ? 1 : -1;
+    } else if (right >= NAV_SIDE_FREE_MM) {
+        ctx->backup_streak = 0;
+        ctx->turn_dir = -1;                       /* derecha */
         enter_phase(ctx, SPHASE_TURN, now);
+    } else if (left >= NAV_SIDE_FREE_MM) {
+        ctx->backup_streak = 0;
+        ctx->turn_dir = 1;                        /* izquierda */
+        enter_phase(ctx, SPHASE_TURN, now);
+    } else if (ctx->backup_streak >= NAV_SCAN_BACKUP_MAX) {
+        latch_fault(ctx, out, now);               /* sin paso tras los retrocesos */
     } else {
+        ctx->backup_streak++;
         enter_phase(ctx, SPHASE_BACKUP, now);
     }
 }
@@ -453,6 +463,7 @@ void Nav_Init(NavContext_t* ctx)
     ctx->fault_latched = false;
     memset(ctx->scan_n, 0, sizeof(ctx->scan_n));
     ctx->scan_streak = 0;
+    ctx->backup_streak = 0;
     ctx->heading_target_mdeg = 0;
 }
 
@@ -493,6 +504,7 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
         ctx->fault_latched = false;
         ctx->cliff_streak = 0;
         ctx->scan_streak = 0;
+        ctx->backup_streak = 0;
     } else if (in->command == NAV_CMD_START && ctx->state == NAV_STATE_IDLE) {
         enter_state(ctx, run_state(), now);
     }
@@ -532,6 +544,7 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
             if (elapsed(now, ctx->state_enter_ms) >= NAV_CLIFF_LOOP_RESET_MS) {
                 ctx->cliff_streak = 0;
                 ctx->scan_streak = 0;
+                ctx->backup_streak = 0;
             }
             if (NAV_STEP_SCAN_ENABLE) {
                 /* Tramo recto: frena al completarlo o si aparece algo de frente */

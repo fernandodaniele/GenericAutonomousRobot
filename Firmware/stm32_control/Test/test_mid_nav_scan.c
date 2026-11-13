@@ -120,10 +120,60 @@ int main(void)
     o = run(&c, walls(100, 100, 900), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.angular_rads < 0.0f);
 
-    /* Ambos lados libres: el mas amplio */
+    /* Ambos lados libres: prefiere la derecha aunque la izquierda sea mas amplia */
     start(&c);
-    o = run(&c, walls(100, 400, 900), SCAN_TOTAL_MS + 4 * STEP_MS);
+    o = run(&c, walls(100, 900, NAV_SIDE_FREE_MM), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.angular_rads < 0.0f);
+
+    /* Derecha con menos de 40 cm: dobla a la izquierda */
+    start(&c);
+    o = run(&c, walls(100, NAV_SIDE_FREE_MM, NAV_SIDE_FREE_MM - 10), SCAN_TOTAL_MS + 4 * STEP_MS);
+    CHECK(o.angular_rads > 0.0f);
+
+    /* Ningun lado llega a 40 cm: retrocede */
+    start(&c);
+    o = run(&c, walls(100, NAV_SIDE_FREE_MM - 10, NAV_SIDE_FREE_MM - 10), SCAN_TOTAL_MS + 4 * STEP_MS);
+    CHECK(o.linear_mms == NAV_BACK_SPEED_MMS && o.angular_rads == 0.0f);
+
+    /* Frena a 30 cm de frente */
+    start(&c);
+    run(&c, base(), SCAN_TOTAL_MS + STEP_MS);
+    o = step(&c, walls(NAV_OBSTACLE_MM + 10, 900, 900));
+    CHECK(o.state == NAV_STATE_FORWARD && !o.brake);
+    o = step(&c, walls(NAV_OBSTACLE_MM - 10, 900, 900));
+    CHECK(o.state == NAV_STATE_SCAN && o.brake);
+
+    /* Sin paso: NAV_SCAN_BACKUP_MAX retrocesos y despues FAULT */
+    start(&c);
+    {
+        int backups = 0; bool backing = false; uint32_t evt = 0;
+        in = walls(100, 100, 100);
+        for (uint32_t e = 0; e < 120000u && o.state != NAV_STATE_FAULT; e += STEP_MS) {
+            o = step(&c, in); evt |= o.events;
+            bool now_back = (o.linear_mms == NAV_BACK_SPEED_MMS);
+            if (now_back && !backing) backups++;
+            backing = now_back;
+        }
+        CHECK(backups == NAV_SCAN_BACKUP_MAX);
+        CHECK(o.state == NAV_STATE_FAULT && o.fault_latched && (evt & NAV_EVT_FAULT));
+    }
+
+    /* Un lado libre despues de retroceder corta la cuenta de retrocesos */
+    start(&c);
+    {
+        int backups = 0; bool backing = false;
+        for (uint32_t e = 0; e < 120000u && backups < NAV_SCAN_BACKUP_MAX - 1; e += STEP_MS) {
+            o = step(&c, walls(100, 100, 100));
+            bool now_back = (o.linear_mms == NAV_BACK_SPEED_MMS);
+            if (now_back && !backing) backups++;
+            backing = now_back;
+        }
+        /* aparece paso a la derecha: dobla, no FAULT */
+        for (uint32_t e = 0; e < 20000u && o.angular_rads == 0.0f && o.state != NAV_STATE_FAULT; e += STEP_MS) {
+            o = step(&c, walls(100, 100, 900));
+        }
+        CHECK(o.state == NAV_STATE_SCAN && o.angular_rads < 0.0f);
+    }
 
     /* Todo bloqueado: retrocede */
     start(&c);

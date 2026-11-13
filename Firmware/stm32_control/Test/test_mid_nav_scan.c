@@ -115,6 +115,28 @@ int main(void)
     o = run(&c, in, 11 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
 
+    /* Tras el giro de 90 grados sigue de largo por el lateral libre, sin
+     * volver a escanear: ahora el frente es el lado que tenia 40 cm */
+    start(&c);
+    o = run(&c, walls(100, 100, 900), SCAN_TOTAL_MS + 4 * STEP_MS);
+    CHECK(o.state == NAV_STATE_SCAN && o.angular_rads < 0.0f);         /* gira a la derecha */
+    o = run(&c, walls(100, 100, 900), NAV_SCAN_TURN_MS);
+    CHECK(o.state == NAV_STATE_SCAN && o.brake);                        /* quieto un momento */
+    {
+        uint32_t took = 0;
+        for (; took < NAV_SETTLE_MS + 4 * STEP_MS && o.state != NAV_STATE_FORWARD; took += STEP_MS) {
+            o = step(&c, walls(900, 100, 900));
+        }
+        CHECK(o.state == NAV_STATE_FORWARD && o.linear_mms == NAV_FWD_SPEED_MMS);
+        CHECK(took < NAV_SETTLE_MS + 4 * STEP_MS);                     /* sin otra ronda de medicion */
+    }
+    o = run(&c, walls(900, 100, 900), 500);
+    CHECK(o.state == NAV_STATE_FORWARD && o.linear_mms > 0.0f);
+
+    /* Mientras avanza, menos de 40 cm de frente: frena y decide */
+    o = step(&c, walls(NAV_SIDE_FREE_MM - 10, 900, 900));
+    CHECK(o.state == NAV_STATE_SCAN && o.brake);
+
     /* Frente bloqueado, derecha libre: dobla a la derecha */
     start(&c);
     o = run(&c, walls(100, 100, 900), SCAN_TOTAL_MS + 4 * STEP_MS);

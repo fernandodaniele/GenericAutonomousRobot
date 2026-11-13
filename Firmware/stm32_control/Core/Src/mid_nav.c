@@ -18,9 +18,10 @@
  *
  *  Con NAV_STEP_SCAN_ENABLE = 1 el recorrido es por tramos:
  *  IDLE           -> SCAN            : comando START (mide antes de moverse)
- *  FORWARD        -> SCAN            : termino el tramo o hay obstaculo de frente
+ *  FORWARD        -> SCAN            : termino el tramo o el frente no tiene 40 cm libres
  *  SCAN           -> FORWARD         : frente libre
- *  SCAN (gira o retrocede) -> SCAN   : vuelve a medir despues de cada maniobra
+ *  SCAN (gira 90 grados)   -> FORWARD : sigue por el lateral que tenia 40 cm libres
+ *  SCAN (retrocede)        -> SCAN    : vuelve a medir
  *  SCAN           -> FAULT           : NAV_SCAN_STUCK_MAX maniobras seguidas sin avanzar
  *  CLIFF_RECOVER  -> SCAN            : ambos TCRT5000 ven suelo tras la maniobra
  */
@@ -45,7 +46,8 @@ enum {
     SPHASE_SETTLE = 0,
     SPHASE_COLLECT,
     SPHASE_TURN,
-    SPHASE_BACKUP
+    SPHASE_BACKUP,
+    SPHASE_TURN_SETTLE   // pausa tras el giro de 90 grados, luego avanza por ese lado
 };
 
 /* Indices de NavContext_t.scan_samples */
@@ -265,9 +267,21 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
         case SPHASE_TURN:
             if (t >= NAV_SCAN_TURN_MS) {
                 set_brake(out);
-                enter_phase(ctx, SPHASE_SETTLE, now);
+                enter_phase(ctx, SPHASE_TURN_SETTLE, now);
             } else {
                 out->angular_rads = (float)ctx->turn_dir * NAV_TURN_RAD_S;
+            }
+            break;
+        case SPHASE_TURN_SETTLE:
+            /* Ya se midio que ese lado tiene NAV_SIDE_FREE_MM libres: tras
+             * quedar quieto, sigue de largo por ahi. Si el frente nuevo no
+             * tiene 40 cm, FORWARD vuelve a frenar y medir. */
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) {
+                enter_state(ctx, NAV_STATE_FORWARD, now);
+                ctx->heading_target_mdeg = in->heading_mdeg;
+                out->brake = false;
+                out->linear_mms = NAV_FWD_SPEED_MMS;
             }
             break;
         case SPHASE_BACKUP:

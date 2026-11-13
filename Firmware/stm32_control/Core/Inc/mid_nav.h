@@ -31,7 +31,7 @@ extern "C" {
 
 /* ===== Parametros (ajustar con la distancia de frenado medida) ===== */
 #ifndef NAV_OBSTACLE_MM
-#define NAV_OBSTACLE_MM        300    // De frente: frena por debajo de 30 cm (plan)
+#define NAV_OBSTACLE_MM        400    // De frente: frena si no tiene 40 cm libres y decide si dobla
 #endif
 #ifndef NAV_CLEAR_MM
 #define NAV_CLEAR_MM           400   // Frente libre con 40 cm: termina el giro o la evasiva (plan)

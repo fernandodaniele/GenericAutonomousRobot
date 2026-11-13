@@ -68,7 +68,7 @@ tramos en lugar de seguir la pared. Con `0` vuelve el seguimiento de pared conti
 |---|---|---|
 | Libre (≥ `NAV_CLEAR_MM`) | Cualquiera | Otro tramo recto |
 | Bloqueado | Uno libre | Dobla 90° hacia ese lado |
-| Bloqueado | Ambos libres | Dobla 90° hacia el más amplio |
+| Bloqueado | Ambos libres | Dobla 90° a la derecha |
 | Bloqueado | Ambos bloqueados | Retrocede unos 10 cm |
 
 Después de doblar o retroceder vuelve a medir antes de moverse. El borde (TCRT5000)
@@ -182,9 +182,9 @@ gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav_scan.c Core/Src/mid_nav.c -o test
 
 | Regla | Parámetro | Valor |
 |---|---|---|
-| Frena de frente por debajo de 30 cm | `NAV_OBSTACLE_MM` | 300 mm (antes 180) |
+| Frena de frente si no tiene 40 cm libres | `NAV_OBSTACLE_MM` | 400 mm (antes 180) |
 | Frente libre para avanzar | `NAV_CLEAR_MM` | 400 mm (antes 250) |
-| Lado libre para doblar; prefiere la **derecha**, si no la izquierda | `NAV_SIDE_FREE_MM` | 400 mm |
+| Lado libre para doblar; prefiere la **derecha**, si no la izquierda. Gira 90° y sigue de largo por ese lado | `NAV_SIDE_FREE_MM` | 400 mm |
 | Sin lado libre: retrocede ~10 cm y vuelve a medir, hasta 5 veces; luego `FAULT` | `NAV_SCAN_BACKUP_MAX` | 5 |
 | Distancia de seguridad en `main.c` | `SAFE_DISTANCE` | 300 mm (antes 200) |
 

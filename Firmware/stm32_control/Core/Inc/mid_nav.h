@@ -137,17 +137,28 @@ extern "C" {
 #ifndef NAV_STEP_SCAN_ENABLE
 #define NAV_STEP_SCAN_ENABLE   1
 #endif
-/* Sin encoders el tramo se mide por tiempo: si el robot no recorre 20 cm,
+/* Sin encoders el tramo se mide por tiempo: si el robot no recorre 50 cm,
  * ajustar NAV_STEP_MS con lo medido en el piso. */
 #ifndef NAV_STEP_MM
-#define NAV_STEP_MM            200
+#define NAV_STEP_MM            500    // tramo de 50 cm (antes 20 cm)
 #endif
 #ifndef NAV_STEP_MS
 #define NAV_STEP_MS            ((uint32_t)((float)NAV_STEP_MM * 1000.0f / NAV_FWD_SPEED_MMS))
 #endif
-/* Giro de 90 grados: (pi / 2) / NAV_TURN_RAD_S. Calibrar en el piso. */
+/* Giro de 90 grados del escaneo: duracion medida en el robot (antes 4488 ms,
+ * calculados con la velocidad nominal). Ajustar si no da 90 grados. */
 #ifndef NAV_SCAN_TURN_MS
-#define NAV_SCAN_TURN_MS       4488
+#define NAV_SCAN_TURN_MS       350
+#endif
+/* 1 = el giro del escaneo pivotea sobre la rueda interna (queda quieta y
+ *     solo avanza la externa). 0 = gira en el lugar (las dos ruedas). */
+#ifndef NAV_SCAN_PIVOT
+#define NAV_SCAN_PIVOT         1
+#endif
+/* Distancia entre ruedas (mm), igual a ROBOT_WHEEL_BASE de mid_kinematics.h.
+ * Se repite aca para que mid_nav no dependa del driver de motores. */
+#ifndef NAV_WHEEL_BASE_MM
+#define NAV_WHEEL_BASE_MM      200.0f
 #endif
 /* Retroceso con todo bloqueado: unos 10 cm a 35 mm/s (atras no hay sensores) */
 #ifndef NAV_SCAN_BACK_MS
@@ -174,7 +185,7 @@ extern "C" {
 #define NAV_HEADING_MAX_RAD_S  0.15f    // Correccion maxima (rueda externa a ~50 mm/s)
 #endif
 #ifndef NAV_HEADING_DEADBAND_MDEG
-#define NAV_HEADING_DEADBAND_MDEG 500   // Desvios menores a 0,5 grados no se corrigen
+#define NAV_HEADING_DEADBAND_MDEG 5000  // Desvios menores a 5 grados no se corrigen (antes 0,5)
 #endif
 /* Giros o retrocesos seguidos sin avanzar antes de FAULT (salir con STOP y START) */
 #ifndef NAV_SCAN_STUCK_MAX

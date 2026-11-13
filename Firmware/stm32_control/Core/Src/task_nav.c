@@ -226,8 +226,15 @@ static void NavTask(void* argument)
             int16_t target_l = 0;
             int16_t target_r = 0;
             Kinematics_Compute(rc, &target_l, &target_r);
-            pwm_l = ramp(pwm_l, target_l);
-            pwm_r = ramp(pwm_r, target_r);
+            if (out.angular_rads != 0.0f && out.state == NAV_STATE_SCAN) {
+                /* Giro del escaneo (350 ms): sin rampa, porque con el
+                 * arranque suave la rueda no llegaria a moverse a tiempo */
+                pwm_l = target_l;
+                pwm_r = target_r;
+            } else {
+                pwm_l = ramp(pwm_l, target_l);
+                pwm_r = ramp(pwm_r, target_r);
+            }
             Motors_SetSpeeds(pwm_l, pwm_r);
         }
 

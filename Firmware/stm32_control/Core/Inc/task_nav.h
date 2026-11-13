@@ -27,12 +27,12 @@ extern "C" {
 /* Arranque suave: desde parado la rueda salta a TASK_NAV_SOFT_START_PWM (por
  * debajo del PWM con el que empieza a girar) y sube de a
  * TASK_NAV_RAMP_UP_STEP_PWM cada 20 ms. Con los valores actuales llega al
- * 70 % en unos 0,4 s en lugar de dar un golpe. */
+ * 70 % en casi 1 s en lugar de dar un golpe. */
 #ifndef TASK_NAV_SOFT_START_PWM
 #define TASK_NAV_SOFT_START_PWM   4000
 #endif
 #ifndef TASK_NAV_RAMP_UP_STEP_PWM
-#define TASK_NAV_RAMP_UP_STEP_PWM 100
+#define TASK_NAV_RAMP_UP_STEP_PWM 40    // antes 100 (0,4 s); 40 = rampa de ~1 s
 #endif
 
 /* Arranque automatico: 1 = el robot arranca solo al encenderse, sin esperar

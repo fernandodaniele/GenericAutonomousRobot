@@ -107,7 +107,14 @@ int main(void)
 
     /* Frente bloqueado, izquierda libre: dobla a la izquierda */
     o = run(&c, in, SCAN_TOTAL_MS - NAV_BRAKE_MS - NAV_SETTLE_MS + 4 * STEP_MS);
-    CHECK(o.state == NAV_STATE_SCAN && !o.brake && o.angular_rads > 0.0f && o.linear_mms == 0.0f);
+    CHECK(o.state == NAV_STATE_SCAN && !o.brake && o.angular_rads > 0.0f);
+#if NAV_SCAN_PIVOT
+    /* Pivote: la rueda interna (izquierda al doblar a la izquierda) queda en 0 */
+    CHECK(o.linear_mms - o.angular_rads * NAV_WHEEL_BASE_MM * 0.5f == 0.0f);
+    CHECK(o.linear_mms + o.angular_rads * NAV_WHEEL_BASE_MM * 0.5f > 0.0f);
+#else
+    CHECK(o.linear_mms == 0.0f);
+#endif
 
     /* El giro dura NAV_SCAN_TURN_MS y despues vuelve a medir quieto */
     o = run(&c, in, NAV_SCAN_TURN_MS - 10 * STEP_MS);
@@ -151,6 +158,15 @@ int main(void)
     start(&c);
     o = run(&c, walls(100, NAV_SIDE_FREE_MM, NAV_SIDE_FREE_MM - 10), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.angular_rads > 0.0f);
+
+    /* Pivote a la derecha: la rueda derecha queda en 0, la izquierda avanza */
+#if NAV_SCAN_PIVOT
+    start(&c);
+    o = run(&c, walls(100, 100, 900), SCAN_TOTAL_MS + 4 * STEP_MS);
+    CHECK(o.angular_rads < 0.0f);
+    CHECK(o.linear_mms + o.angular_rads * NAV_WHEEL_BASE_MM * 0.5f == 0.0f);
+    CHECK(o.linear_mms - o.angular_rads * NAV_WHEEL_BASE_MM * 0.5f > 0.0f);
+#endif
 
     /* Ningun lado llega a 40 cm: retrocede */
     start(&c);
@@ -252,7 +268,7 @@ int main(void)
     start(&c);
     in = base(); in.front = NAV_RANGE_NO_ECHO;
     o = run(&c, in, NAV_BRAKE_MS + NAV_SETTLE_MS + NAV_SCAN_MAX_MS + 4 * STEP_MS);
-    CHECK(o.state == NAV_STATE_SCAN && o.linear_mms == 0.0f);
+    CHECK(o.state == NAV_STATE_SCAN && !(o.linear_mms > 0.0f && o.angular_rads == 0.0f));
 
     /* Precipicio durante el escaneo: tiene prioridad */
     start(&c);

@@ -270,6 +270,11 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
                 enter_phase(ctx, SPHASE_TURN_SETTLE, now);
             } else {
                 out->angular_rads = (float)ctx->turn_dir * NAV_TURN_RAD_S;
+                if (NAV_SCAN_PIVOT) {
+                    /* Pivote: v = w * B / 2 deja la rueda interna en 0
+                     * (v_int = v - w*B/2 = 0) y la externa en w * B. */
+                    out->linear_mms = NAV_TURN_RAD_S * NAV_WHEEL_BASE_MM * 0.5f;
+                }
             }
             break;
         case SPHASE_TURN_SETTLE:

@@ -58,7 +58,7 @@ el lado ciego: activarla solo cuando el ultrasonido derecho funcione.
 Con `NAV_STEP_SCAN_ENABLE = 1` (valor actual, `Core/Inc/mid_nav.h`) el robot recorre por
 tramos en lugar de seguir la pared. Con `0` vuelve el seguimiento de pared continuo.
 
-1. Avanza recto `NAV_STEP_MM` (200 mm). Sin encoders, el tramo se controla por tiempo
+1. Avanza recto `NAV_STEP_MM` (500 mm). Sin encoders, el tramo se controla por tiempo
    con `NAV_STEP_MS`. Si aparece algo a menos de `NAV_OBSTACLE_MM`, corta el tramo.
 2. Frena, espera quieto (`NAV_BRAKE_MS` + `NAV_SETTLE_MS`) y toma `NAV_SCAN_SAMPLES`
    lecturas por ultrasonido, con un máximo de `NAV_SCAN_MAX_MS`. Usa la mediana.
@@ -82,10 +82,16 @@ Con `NAV_SCAN_STUCK_MAX` (6) maniobras seguidas sin avanzar 2 s, entra en `FAULT
 con `NAV_SCAN_TURN_MS` para que el giro sea de 90°. Los valores actuales salen de las
 velocidades nominales, que no están medidas.
 
+### Giro del escaneo
+El giro de 90° dura `NAV_SCAN_TURN_MS` = 350 ms (medido en el robot) y **pivotea** sobre la
+rueda interna: esa rueda queda quieta y solo avanza la externa (`NAV_SCAN_PIVOT = 1`;
+con 0 gira en el lugar con las dos ruedas). En este giro no se aplica la rampa de
+arranque suave, para que la rueda externa alcance a moverse en los 350 ms.
+
 ### Arranque suave
 Desde parado, cada rueda salta a `TASK_NAV_SOFT_START_PWM` (4000, por debajo del PWM con el
-que empieza a girar) y sube de a `TASK_NAV_RAMP_UP_STEP_PWM` (100) cada 20 ms: llega al 70 %
-en unos 0,4 s. Frenar e invertir el sentido siguen siendo rápidos (`TASK_NAV_RAMP_STEP_PWM`).
+que empieza a girar) y sube de a `TASK_NAV_RAMP_UP_STEP_PWM` (40) cada 20 ms: llega al 70 %
+en casi 1 s. Frenar e invertir el sentido siguen siendo rápidos (`TASK_NAV_RAMP_STEP_PWM`).
 Valores en `Core/Inc/task_nav.h`.
 
 ### Rumbo con el MPU6050

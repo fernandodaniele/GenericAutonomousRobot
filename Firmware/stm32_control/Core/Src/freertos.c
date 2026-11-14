@@ -28,6 +28,8 @@
 #include "drv_uart.h"
 #include "task_sensors.h"
 #include "task_nav.h"
+#include "task_datalogger.h"
+#include "mid_clock.h"
 #include <string.h>
 /* USER CODE END Includes */
 
@@ -63,6 +65,9 @@ const osThreadAttr_t defaultTask_attributes = {
 static void send_nav_event(DrvUart_t *uart, const NavEventMsg_t *ev);
 static void send_map_line(DrvUart_t *uart, uint32_t ms);
 static void send_tel_line(DrvUart_t *uart, uint32_t ms);
+static void send_sys_line(DrvUart_t *uart, uint32_t ms);
+static void send_one_event(DrvUart_t *uart, uint32_t ms, const char *text);
+static bool handle_time_command(const char *message);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -106,6 +111,8 @@ void MX_FREERTOS_Init(void) {
   /* Navegacion autonoma (plan Pruebas_Grupo2, etapas 1 y 2) */
   TaskSensors_Create();
   TaskNav_Create();
+  /* Datalogger: filas de datos en GAR.LOG y estado de modulos (la de menor prioridad) */
+  TaskDatalogger_Create();
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -142,6 +149,10 @@ void StartDefaultTask(void *argument)
             (void) TaskNav_SendCommand(NAV_CMD_START);
         } else if (strcmp(message, "STOP") == 0) {
             (void) TaskNav_SendCommand(NAV_CMD_STOP);
+        } else if (strncmp(message, "TIME,", 5) == 0) {
+            /* Puesta en hora del DS1302 desde la web: TIME,AAAA,MM,DD,hh,mm,ss */
+            uint32_t ms = (uint32_t)osKernelGetTickCount();
+            send_one_event(&esp_uart, ms, handle_time_command(message) ? "HORA_OK" : "HORA_ERR");
         }
     }
 
@@ -158,6 +169,13 @@ void StartDefaultTask(void *argument)
         last_map_ms = now_ms;
         send_map_line(&esp_uart, now_ms);
         send_tel_line(&esp_uart, now_ms);
+    }
+
+    /* Estado de los modulos del datalogger (SD, reloj), cada 1 s */
+    static uint32_t last_sys_ms = 0;
+    if (now_ms - last_sys_ms >= 1000u) {
+        last_sys_ms = now_ms;
+        send_sys_line(&esp_uart, now_ms);
     }
     osDelay(10);
   }
@@ -270,6 +288,81 @@ static void send_tel_line(DrvUart_t *uart, uint32_t ms)
   send_int(uart, snap.heading_mdeg / 100);
   send_int(uart, snap.imu_diag);
   DrvUart_SendString(uart, "\n");
+}
+
+/* Estado de los modulos para la pagina web del ESP32:
+ * SYS,<ms>,<sd>,<tipo_sd>,<lineas_sd>,<reloj_ok>,<anio>,<mes>,<dia>,<hora>,<min>,<seg>,<filas>
+ * sd: 0 = sin tarjeta, 1 = guardando, 2 = fallo en marcha
+ * tipo_sd: 0 = desconocido, 1 = SDSC, 2 = SDHC */
+static void send_sys_line(DrvUart_t *uart, uint32_t ms)
+{
+  DataloggerStatus_t st;
+  TaskDatalogger_GetStatus(&st);
+
+  DrvUart_SendString(uart, "SYS");
+  send_int(uart, (int32_t)ms);
+  send_int(uart, (int32_t)st.log.sd_state);
+  send_int(uart, (int32_t)st.log.sd_type);
+  send_int(uart, (int32_t)st.log.lines_sd);
+  send_int(uart, st.clock_ok ? 1 : 0);
+  send_int(uart, st.clock_ok ? (int32_t)st.now.year : 0);
+  send_int(uart, st.clock_ok ? (int32_t)st.now.month : 0);
+  send_int(uart, st.clock_ok ? (int32_t)st.now.day : 0);
+  send_int(uart, st.clock_ok ? (int32_t)st.now.hour : 0);
+  send_int(uart, st.clock_ok ? (int32_t)st.now.minute : 0);
+  send_int(uart, st.clock_ok ? (int32_t)st.now.second : 0);
+  send_int(uart, (int32_t)st.rows);
+  DrvUart_SendString(uart, "\n");
+}
+
+/* Lee el siguiente numero de "TIME,AAAA,MM,DD,hh,mm,ss" (sin sscanf) */
+static bool parse_next_number(const char **cursor, uint32_t *value)
+{
+  const char *p = *cursor;
+  uint32_t number = 0u;
+  uint8_t digits = 0u;
+
+  if (*p != ',') {
+    return false;
+  }
+  p++;
+  while ((*p >= '0') && (*p <= '9') && (digits < 5u)) {
+    number = (number * 10u) + (uint32_t)(*p - '0');
+    p++;
+    digits++;
+  }
+  if (digits == 0u) {
+    return false;
+  }
+  *cursor = p;
+  *value = number;
+  return true;
+}
+
+/* Pone en hora el DS1302 con lo recibido. Devuelve true si se pudo */
+static bool handle_time_command(const char *message)
+{
+  uint32_t field[6];
+  const char *cursor = message + 4;   // Apunta a la coma despues de "TIME"
+
+  for (uint8_t i = 0u; i < 6u; i++) {
+    if (!parse_next_number(&cursor, &field[i])) {
+      return false;
+    }
+  }
+  if (*cursor != '\0') {
+    return false;
+  }
+
+  ClockDateTime_t value = {
+    .year = (uint16_t)field[0], .month = (uint8_t)field[1], .day = (uint8_t)field[2],
+    .hour = (uint8_t)field[3], .minute = (uint8_t)field[4], .second = (uint8_t)field[5]
+  };
+  if ((field[0] > CLOCK_YEAR_MAX) || (field[1] > 12u) || (field[2] > 31u)
+      || (field[3] > 23u) || (field[4] > 59u) || (field[5] > 59u)) {
+    return false;
+  }
+  return Clock_Set(&value);
 }
 
 static void send_nav_event(DrvUart_t *uart, const NavEventMsg_t *ev)

@@ -42,8 +42,22 @@ typedef struct {
     char text[TOKEN_SIZE];
 } Event_t;
 
+/* Estado de los modulos del datalogger (linea SYS de la STM32) */
+typedef struct {
+    bool valid;
+    int64_t rx_us;
+    unsigned long stm_ms;
+    int sd;                   // 0 = sin tarjeta, 1 = guardando, 2 = fallo en marcha
+    int sd_type;              // 0 = desconocido, 1 = SDSC, 2 = SDHC
+    unsigned long sd_lines;   // Lineas guardadas en GAR.LOG
+    int clock_ok;
+    int date[6];              // Anio, mes, dia, hora, minuto, segundo
+    unsigned long rows;       // Filas de datos generadas
+} System_t;
+
 static SemaphoreHandle_t lock;
 static Sample_t latest;
+static System_t system_status;
 static Event_t events[EVENT_COUNT];
 static uint32_t next_event_id = 1;
 
@@ -109,6 +123,23 @@ static void handle_sample(const char *line) {
     xSemaphoreGive(lock);
 }
 
+static void handle_system(const char *line) {
+    System_t sys;
+    int fields = sscanf(line, "SYS,%lu,%d,%d,%lu,%d,%d,%d,%d,%d,%d,%d,%lu",
+                        &sys.stm_ms, &sys.sd, &sys.sd_type, &sys.sd_lines, &sys.clock_ok,
+                        &sys.date[0], &sys.date[1], &sys.date[2],
+                        &sys.date[3], &sys.date[4], &sys.date[5], &sys.rows);
+    if (fields != 12 || sys.sd < 0 || sys.sd > 2) {
+        return;   // Linea cortada o con ruido: se descarta
+    }
+    sys.valid = true;
+    sys.rx_us = esp_timer_get_time();
+
+    xSemaphoreTake(lock, portMAX_DELAY);
+    system_status = sys;
+    xSemaphoreGive(lock);
+}
+
 static void handle_event(const char *line) {
     Event_t event;
     if (sscanf(line, "EVT,%lu,%15s", &event.ms, event.text) != 2 || !is_token(event.text)) {
@@ -130,17 +161,27 @@ bool Telemetry_HandleLine(const char *line) {
         handle_event(line);
         return true;
     }
+    if (strncmp(line, "SYS,", 4) == 0) {
+        handle_system(line);
+        return true;
+    }
     return strncmp(line, "MAP,", 4) == 0;
 }
 
 size_t Telemetry_ToJson(char *out, size_t size) {
     Sample_t s;
+    System_t sys;
     Event_t copy[EVENT_COUNT];
 
     xSemaphoreTake(lock, portMAX_DELAY);
     s = latest;
+    sys = system_status;
     memcpy(copy, events, sizeof(copy));
     xSemaphoreGive(lock);
+
+    // El estado de modulos llega cada 1 s: se da por viejo a los 3 s
+    const long sys_age_ms = sys.valid ? (long)((esp_timer_get_time() - sys.rx_us) / 1000) : -1;
+    const bool sys_fresh = sys.valid && sys_age_ms < 3000;
 
     const long age_ms = s.valid ? (long)((esp_timer_get_time() - s.rx_us) / 1000) : -1;
     const bool link = s.valid && age_ms < LINK_TIMEOUT_MS;
@@ -169,7 +210,13 @@ size_t Telemetry_ToJson(char *out, size_t size) {
         first = false;
     }
     if (used > 0 && (size_t)used < size) {
-        used += snprintf(out + used, size - used, "]}");
+        used += snprintf(out + used, size - used,
+            "],\"sys\":{\"ok\":%s,\"sd\":%d,\"sdType\":%d,\"sdLines\":%lu,"
+            "\"clock\":%s,\"date\":[%d,%d,%d,%d,%d,%d],\"rows\":%lu}}",
+            sys_fresh ? "true" : "false", sys.sd, sys.sd_type, sys.sd_lines,
+            sys.clock_ok ? "true" : "false",
+            sys.date[0], sys.date[1], sys.date[2], sys.date[3], sys.date[4], sys.date[5],
+            sys.rows);
     }
 
     return (used > 0 && (size_t)used < size) ? (size_t)used : 0;

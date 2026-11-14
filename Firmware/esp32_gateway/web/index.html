@@ -20,6 +20,7 @@
   --left: #eb6834;
   --right: #1baf7a;
   --good: #0ca30c;
+  --warning: #c98500;
   --critical: #d03b3b;
 }
 @media (prefers-color-scheme: dark) {
@@ -37,6 +38,7 @@
     --front: #3987e5;
     --left: #d95926;
     --right: #199e70;
+    --warning: #e0a030;
   }
 }
 * { box-sizing: border-box; }
@@ -93,6 +95,15 @@ canvas { display: block; width: 100%; height: 130px; }
 #log li:first-child { border-top: 0; }
 #log time { color: var(--ink-2); font-variant-numeric: tabular-nums; min-width: 62px; }
 .note { margin: 0; font-size: 12px; color: var(--ink-2); }
+#modules .row b { font-size: 15px; font-weight: 600; text-align: right; }
+#modules .name i { border-radius: 50%; }
+.ok i.dot { background: var(--good); }
+.warn i.dot { background: var(--warning); }
+.fail i.dot { background: var(--critical); }
+.off i.dot { background: var(--axis); }
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+#syncTime { padding: 10px 14px; background: var(--ink-2); font-size: 14px; }
+@media (min-width: 720px) { #modules .list { columns: 2; column-gap: 24px; } #modules .row { break-inside: avoid; } }
 .stale .live { opacity: .45; }
 @media (min-width: 720px) {
   .grid.two { grid-template-columns: 1fr 1fr; }
@@ -117,6 +128,15 @@ canvas { display: block; width: 100%; height: 130px; }
       <button id="stop" type="button">STOP</button>
     </div>
     <p id="msg" role="status"></p>
+  </section>
+
+  <section class="card" id="modules">
+    <h2>Estado de módulos</h2>
+    <div class="list" id="moduleList"></div>
+    <div class="tools">
+      <button id="syncTime" type="button">Sincronizar hora del robot</button>
+      <span class="note">Copia al reloj DS1302 la hora de este celular.</span>
+    </div>
   </section>
 
   <div class="grid two">
@@ -188,7 +208,7 @@ canvas { display: block; width: 100%; height: 130px; }
 <script>
 'use strict';
 const PWM_MAX = 8399;       // MOTOR_MAX_SPEED en la STM32
-const CLEAR_CM = 25;        // NAV_CLEAR_MM: desde aca el frente cuenta como libre
+const CLEAR_CM = 40;        // NAV_CLEAR_MM: desde aca el frente cuenta como libre
 const BEAM_MAX_CM = 100;    // Escala de la vista superior y del grafico
 const HISTORY_MS = 60000;
 const GAP_MS = 1500;
@@ -199,7 +219,11 @@ const STATES = {
   IDLE: 'En espera', FORWARD: 'Avanzando', SCAN: 'Escaneo',
   AVOID: 'Esquivando', CLIFF: 'Borde detectado', FAULT: 'Falla'
 };
-const EVENTS = { ALERTA: 'Giro brusco', CLIFF: 'Borde detectado', FAULT: 'Falla' };
+const EVENTS = {
+  ALERTA: 'Giro brusco', CLIFF: 'Borde detectado', FAULT: 'Falla',
+  HORA_OK: 'Reloj puesto en hora', HORA_ERR: 'No se pudo poner en hora el reloj'
+};
+const SD_TYPES = ['', 'SDSC', 'SDHC'];
 const SONAR_NAMES = ['Frente', 'Izquierda', 'Derecha'];
 const SONAR_COLORS = ['--front', '--left', '--right'];
 
@@ -327,6 +351,88 @@ function addLog(ms, text) {
   while (log.children.length > LOG_MAX) log.lastChild.remove();
 }
 
+/* Una fila de "Estado de modulos": level = ok | warn | fail | off */
+function setModule(i, name, level, value, detail) {
+  const host = $('moduleList');
+  let row = host.children[i];
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<span class="name"><i class="dot"></i></span><b></b><small></small>';
+    row.firstChild.append(document.createTextNode(name));
+    host.append(row);
+  }
+  row.classList.remove('ok', 'warn', 'fail', 'off');
+  row.classList.add(level);
+  row.children[1].textContent = value;
+  row.children[2].textContent = detail;
+}
+
+const two = n => String(n).padStart(2, '0');
+
+function dateText(t) {
+  return two(t[2]) + '/' + two(t[1]) + '/' + t[0] + ' ' + two(t[3]) + ':' + two(t[4]) + ':' + two(t[5]);
+}
+
+function sonarModule(u) {
+  if (u.s === 'N') return ['fail', 'Sin eco', 'No responde: revisar TRIG, ECHO y 5 V'];
+  if (u.s === 'C') return ['warn', '< 2 cm', 'Responde, pero algo está pegado al sensor'];
+  if (u.s === 'F') return ['ok', 'Libre', 'Responde: nada al alcance'];
+  return ['ok', (u.mm / 10).toFixed(1) + ' cm', 'Responde'];
+}
+
+function renderModules(d) {
+  const link = d.link;
+  const sys = d.sys || { ok: false };
+  let i = 0;
+
+  setModule(i++, 'STM32 (enlace UART)', link ? 'ok' : 'fail', link ? 'Conectado' : 'Sin datos',
+    link ? 'Recibe telemetría cada 200 ms' : 'Revisar TX/RX entre ESP32 y STM32, GND y que la STM32 esté encendida');
+
+  SONAR_NAMES.forEach((name, k) => {
+    const [level, value, detail] = link ? sonarModule(d.us[k]) : ['off', '—', 'Sin datos del STM32'];
+    setModule(i++, 'Ultrasonido ' + name.toLowerCase(), level, value, detail);
+  });
+
+  ['izquierdo', 'derecho'].forEach((side, k) => {
+    if (!link) { setModule(i++, 'Sensor de piso ' + side, 'off', '—', 'Sin datos del STM32'); return; }
+    const v = d.tcrt[k];
+    const level = v === 0 ? 'warn' : 'ok';
+    setModule(i++, 'Sensor de piso ' + side, level, 'ADC ' + v,
+      v === 0 ? 'Lee 0: sin señal o desactivado en el firmware' : (d.cliff[k] ? 'Responde: ve un borde' : 'Responde: ve piso'));
+  });
+
+  if (!link) setModule(i++, 'Giroscopio MPU6050', 'off', '—', 'Sin datos del STM32');
+  else setModule(i++, 'Giroscopio MPU6050', d.imu ? 'ok' : 'fail', d.imu ? d.gyro + ' °/s' : 'Falla',
+    d.imu ? 'Responde por I2C1 (PB6/PB9)' : imuProblem(d.imuDiag));
+
+  setModule(i++, 'Motores', link ? 'ok' : 'off',
+    link ? pct(d.pwm[0]) + ' % / ' + pct(d.pwm[1]) + ' %' : '—',
+    'Lo que ordena el STM32 (sin encoders no se confirma el giro)');
+
+  if (!sys.ok) {
+    setModule(i++, 'Tarjeta SD', 'off', '—', 'Sin estado del STM32 (firmware sin datalogger o sin enlace)');
+    setModule(i++, 'Reloj DS1302', 'off', '—', 'Sin estado del STM32');
+    setModule(i++, 'Datalogger', 'off', '—', 'Sin estado del STM32');
+    return;
+  }
+
+  if (sys.sd === 1) setModule(i++, 'Tarjeta SD', 'ok', SD_TYPES[sys.sdType] || 'OK',
+    'Guardando GAR.LOG: ' + sys.sdLines + ' líneas desde el arranque');
+  else if (sys.sd === 2) setModule(i++, 'Tarjeta SD', 'fail', 'Falló',
+    'Falló una escritura: se dejó de usar. Revisar contacto y alimentación; reiniciar');
+  else setModule(i++, 'Tarjeta SD', 'warn', 'No detectada',
+    'Sin tarjeta o no responde (SPI2: PB13/PB14/PB15, CS en PC4). Se detecta al arrancar');
+
+  setModule(i++, 'Reloj DS1302', sys.clock ? 'ok' : 'warn', sys.clock ? dateText(sys.date) : 'Sin hora',
+    sys.clock ? 'Responde y está en hora' : 'No responde o nunca se puso en hora: tocá «Sincronizar hora del robot»');
+
+  const saving = sys.sd === 1;
+  setModule(i++, 'Datalogger', sys.rows > 0 ? (saving ? 'ok' : 'warn') : 'fail', sys.rows + ' filas',
+    sys.rows === 0 ? 'La tarea no está generando filas' :
+    saving ? 'Una fila cada 200 ms en GAR.LOG' : 'Genera filas, pero sin SD solo salen por USB');
+}
+
 function setLink(on, text) {
   $('link').classList.toggle('on', on);
   $('linkText').textContent = text;
@@ -343,6 +449,7 @@ function record(d) {
 }
 
 function render(d) {
+  renderModules(d);
   if (!d.link) {
     setLink(false, d.age < 0 ? 'Sin datos del STM32' : 'STM32 sin responder');
     return;
@@ -553,6 +660,19 @@ async function send(command) {
   }
 }
 
+async function syncTime() {
+  const t = new Date();
+  const body = [t.getFullYear(), t.getMonth() + 1, t.getDate(),
+    t.getHours(), t.getMinutes(), t.getSeconds()].join(',');
+  try {
+    const response = await fetch('/time', { method: 'POST', body });
+    $('msg').textContent = await response.text();
+  } catch (e) {
+    $('msg').textContent = 'Sin conexión con la ESP32';
+  }
+}
+
+$('syncTime').onclick = syncTime;
 $('start').onclick = () => send('start');
 $('stop').onclick = () => send('stop');
 

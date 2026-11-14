@@ -1,5 +1,7 @@
 #include "wifi_control.h"
 
+#include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include "esp_wifi.h"
 #include "esp_event.h"
@@ -10,7 +12,9 @@
 #include "telemetry.h"
 #include "uart_comm.h"
 
-#define STATUS_JSON_SIZE 1024
+#define STATUS_JSON_SIZE 1536
+#define TIME_BODY_SIZE   24     // "AAAA,MM,DD,hh,mm,ss" = 19 caracteres
+#define TIME_FIELDS      6
 
 static const char *TAG = "WIFI_CTRL";
 
@@ -48,6 +52,50 @@ static esp_err_t stop_handler(httpd_req_t *req) {
     return httpd_resp_sendstr(req, "STOP enviado");
 }
 
+/* Acepta solo "AAAA,MM,DD,hh,mm,ss": 6 numeros separados por comas */
+static bool is_time_text(const char *text) {
+    int fields = 0;
+    int digits = 0;
+
+    for (; *text != '\0'; text++) {
+        if (*text >= '0' && *text <= '9') {
+            digits++;
+            if (digits > 4) {
+                return false;
+            }
+        } else if (*text == ',' && digits > 0) {
+            fields++;
+            digits = 0;
+        } else {
+            return false;
+        }
+    }
+    return digits > 0 && fields == TIME_FIELDS - 1;
+}
+
+/* Puesta en hora del DS1302: el navegador manda su fecha y hora local */
+static esp_err_t time_handler(httpd_req_t *req) {
+    char body[TIME_BODY_SIZE];
+    char line[TIME_BODY_SIZE + 8];
+
+    if (req->content_len == 0 || req->content_len >= sizeof(body)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Formato: AAAA,MM,DD,hh,mm,ss");
+    }
+    int received = httpd_req_recv(req, body, req->content_len);
+    if (received != (int)req->content_len) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Pedido incompleto");
+    }
+    body[received] = '\0';
+    if (!is_time_text(body)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Formato: AAAA,MM,DD,hh,mm,ss");
+    }
+
+    snprintf(line, sizeof(line), "TIME,%s", body);
+    Uart_SendLine(line);
+    ESP_LOGI(TAG, "%s enviado a la STM32", line);
+    return httpd_resp_sendstr(req, "Hora enviada al robot");
+}
+
 static void start_web_server(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true;   // Un celular que se fue no deja ocupadas las conexiones
@@ -62,6 +110,8 @@ static void start_web_server(void) {
     const httpd_uri_t start_uri = { .uri = "/start", .method = HTTP_POST, .handler = start_handler };
     const httpd_uri_t stop_uri  = { .uri = "/stop",  .method = HTTP_POST, .handler = stop_handler };
     const httpd_uri_t status_uri = { .uri = "/api/status", .method = HTTP_GET, .handler = status_handler };
+    const httpd_uri_t time_uri  = { .uri = "/time",  .method = HTTP_POST, .handler = time_handler };
+    httpd_register_uri_handler(server, &time_uri);
     httpd_register_uri_handler(server, &status_uri);
     httpd_register_uri_handler(server, &index_uri);
     httpd_register_uri_handler(server, &start_uri);

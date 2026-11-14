@@ -30,6 +30,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "drv_sd_diskio.h"
+#include "drv_sd_spi.h"
+#include "mid_log.h"
 #include "drv_ultrasound.h"
 #include "drv_motor.h"
 #include "mid_kinematics.h"
@@ -114,6 +117,14 @@ int main(void)
   DrvUart_Init(&esp_uart, &huart2);
   DrvUart_StartReceive(&esp_uart);
   DrvUart_SendString(&esp_uart, "STM32 Control Ready\r\n");
+
+  /* Datalogger: SD por SPI2 (PB13/PB14/PB15, CS en PC4) y archivo GAR.LOG.
+   * Si la SD no esta o falla, el robot arranca igual (sin Error_Handler). */
+  SdDiskio_Init(&hspi2);
+  if (Log_Init()) {
+    /* Prueba de la parte 3: esta linea tiene que aparecer en GAR.LOG */
+    LOG_INFO("datalogger: SD lista (%s)", (SD_GetType() == SD_TYPE_SDHC) ? "SDHC" : "SDSC");
+  }
   /* USER CODE END 2 */
 
   /* FreeRTOS */

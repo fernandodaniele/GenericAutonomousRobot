@@ -58,6 +58,8 @@ Core/Src/drv_uart.c \
 Core/Src/ds1302.c \
 Core/Src/mid_kinematics.c \
 Core/Src/mid_log.c \
+Core/Src/drv_sd_diskio.c \
+Middlewares/Third_Party/FatFs/src/ff.c \
 Core/Src/task_example.c \
 Core/Src/task_sensors.c \
 Core/Src/task_nav.c \
@@ -162,6 +164,7 @@ AS_INCLUDES =
 # C includes
 C_INCLUDES =  \
 -ICore/Inc \
+-IMiddlewares/Third_Party/FatFs/src \
 -IDrivers/STM32F4xx_HAL_Driver/Inc \
 -IDrivers/STM32F4xx_HAL_Driver/Inc/Legacy \
 -IDrivers/CMSIS/Device/ST/STM32F4xx/Include \

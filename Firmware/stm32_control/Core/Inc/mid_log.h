@@ -6,8 +6,8 @@
  *   1) Archivo "0:/GAR.LOG" en la SD (caja negra), siempre que este montada.
  *   2) USB CDC (Virtual COM Port), solo si la PC tiene el puerto abierto (DTR).
  *
- * Formato:  [boot+1234ms] [INF] mensaje\r\n
- * (la fecha y hora del DS1302 se agrega en la parte 4 del datalogger)
+ * Formato:  [2026-11-14 17:30:05] [INF] mensaje\r\n
+ * Si el reloj DS1302 no responde o no esta en hora: [boot+1234ms] [INF] ...
  *
  * - Log_Write se puede llamar desde varias tareas: un mutex serializa el
  *   acceso a la SD y al USB.
@@ -20,6 +20,7 @@
  *
  * Uso:
  *   LOG_INFO("SD lista: %s", tipo);
+ *   LOG_DATA("%lu,%u,%u", t, a, b);     // fila de datos del datalogger
  *   LOG_WARN("distancia fuera de rango: %u mm", d);
  *   LOG_ERROR("fallo la escritura, error %d", err);
  */
@@ -32,6 +33,7 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define LOG_LINE_SIZE   160     // Largo maximo de una linea (incluye prefijo y \r\n)
 #define LOG_FILE_PATH   "0:/GAR.LOG"
@@ -42,12 +44,29 @@ extern "C" {
 #define LOG_WARN(fmt, ...)   Log_Write("WRN", fmt, ##__VA_ARGS__)
 /** @brief  Linea de nivel ERROR. */
 #define LOG_ERROR(fmt, ...)  Log_Write("ERR", fmt, ##__VA_ARGS__)
+/** @brief  Fila de datos del datalogger (nivel DAT). */
+#define LOG_DATA(fmt, ...)   Log_Write("DAT", fmt, ##__VA_ARGS__)
+
+/** @brief  Estado de la tarjeta SD para el log. */
+typedef enum {
+    LOG_SD_ABSENT = 0,      // No se pudo montar al arrancar (no hay tarjeta o no responde)
+    LOG_SD_ACTIVE,          // Montada y escribiendo GAR.LOG
+    LOG_SD_FAILED           // Estaba montada y fallo una escritura: se dejo de usar
+} LogSdState_t;
+
+/** @brief  Resumen del log para mostrar en la web. */
+typedef struct {
+    LogSdState_t sd_state;
+    uint8_t sd_type;        // SD_Type_t de drv_sd_spi (0 = desconocido, 1 = SDSC, 2 = SDHC)
+    uint32_t lines_sd;      // Lineas guardadas en GAR.LOG desde el arranque
+} LogStatus_t;
 
 /**
  * @brief  Monta la SD, abre GAR.LOG para agregar al final y crea el mutex.
  *
- * Llamar una vez desde main(), despues de MX_SPI2_Init y antes de iniciar
- * el scheduler. Si la SD no esta o falla, el log sigue saliendo por USB.
+ * Llamar una vez desde main(), despues de MX_SPI2_Init y Clock_Init y antes
+ * de iniciar el scheduler. Si la SD no esta o falla, el log sigue saliendo
+ * por USB.
  *
  * @return true si la SD quedo montada y GAR.LOG abierto.
  */
@@ -59,8 +78,13 @@ bool Log_Init(void);
 bool Log_IsSdActive(void);
 
 /**
+ * @brief  Copia el estado actual del log (no bloquea).
+ */
+void Log_GetStatus(LogStatus_t *out);
+
+/**
  * @brief  Escribe una linea. Usar las macros LOG_* en lugar de llamarla directo.
- * @param  level  Etiqueta de 3 letras ("INF", "WRN", "ERR").
+ * @param  level  Etiqueta de 3 letras ("INF", "WRN", "ERR", "DAT").
  * @param  fmt    Formato estilo printf (sin %f: newlib-nano no imprime float).
  */
 void Log_Write(const char *level, const char *fmt, ...);

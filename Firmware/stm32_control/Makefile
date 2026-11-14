@@ -59,6 +59,7 @@ Core/Src/ds1302.c \
 Core/Src/mid_kinematics.c \
 Core/Src/mid_log.c \
 Core/Src/drv_sd_diskio.c \
+Core/Src/mid_clock.c \
 Middlewares/Third_Party/FatFs/src/ff.c \
 Core/Src/task_example.c \
 Core/Src/task_sensors.c \

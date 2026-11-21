@@ -9,6 +9,7 @@
 #include "task.h"
 #include "queue.h"
 #include "../../Core/Src/mpu6050.c"
+#include "../../Core/Src/mid_odometry.c"
 #include "../../Core/Src/task_imu.c"
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"FAIL %u: %s\n",__LINE__,#x); exit(1); } } while(0)
 static TickType_t tick;
@@ -143,6 +144,8 @@ static void test_calibration(void) {
     pass("IMU-2 mode checks reject calibration in MANUAL/AUTO without changing robot mode or motor behavior");
     reset();axis(8,131);axis(10,-262);axis(12,66);request_after_reads=1;run(253);
     CHECK(request_done && saved.calibration.state==IMU_CAL_VALID && saved.calibration.request==7U && saved.calibration.samples==250U);
+    CHECK(saved.orientation.state==IMU_YAW_VALID && saved.orientation.degrees==0.0 &&
+          saved.orientation.reference_tick==saved.calibration.completed_tick && saved.orientation.reference_request==7U);
     CHECK(saved.calibration.sum[0]==32750 && saved.sample_tick==5020U && saved.state==IMU_VALID);
     CHECK(!TaskIMU_RequestCalibration(7U,tick));
     pass("IMU-2 real TaskIMU and I2C path honor one explicit request and acquire the entire 250-sample window");
@@ -165,7 +168,93 @@ static void test_calibration(void) {
     pass("IMU-2 real task recovers from I2C failure and accepts a fresh full 250-sample explicit recalibration without restart");
     reset();request_after_reads=1;read_fail_at=252;run(254);
     CHECK(history[252].calibration.state==IMU_CAL_VALID && saved.state==IMU_READ_ERROR && saved.calibration.state==IMU_CAL_FAILED && saved.calibration.reason==IMU_CAL_I2C);
+    CHECK(history[252].orientation.state==IMU_YAW_VALID && saved.orientation.state==IMU_YAW_INVALID && saved.orientation.reason==IMU_YAW_I2C);
     pass("IMU-2 an I2C fault after successful calibration revokes previously valid offsets on the real task path");
+}
+static TaskIMUSnapshot_t yaw_start(TickType_t at, int16_t raw_z, int32_t bias_sum) {
+    TaskIMUSnapshot_t s=stationary();s.sample_tick=at;s.data.Gyro_Z_RAW=raw_z;
+    s.calibration=(TaskIMUCalibration_t){.state=IMU_CAL_VALID,.samples=250,.request=42,.completed_tick=at,.sum={0,0,bias_sum}};
+    IMU_OrientationObserve(&s,true);return s;
+}
+static void yaw_step(TaskIMUSnapshot_t *s, TickType_t at, int16_t z) {
+    s->sample_tick=at;s->data.Gyro_Z_RAW=z;IMU_OrientationObserve(s,false);
+}
+static void test_orientation(void) {
+    reset();TaskIMUSnapshot_t s=stationary();IMU_OrientationObserve(&s,false);
+    CHECK(s.orientation.state==IMU_YAW_PENDING);
+    IMU_CalibrationBegin(&s,42,0,0);IMU_OrientationObserve(&s,false);
+    CHECK(s.orientation.state==IMU_YAW_PENDING && s.orientation.degrees==0);
+    pass("IMU-3 pending/running calibration never integrates or invents an orientation");
+    for(int sign=-1;sign<=1;sign+=2) {
+        s=yaw_start(0,sign*11790,0);
+        for(unsigned i=1;i<=50;++i)yaw_step(&s,20*i,sign*11790);
+        CHECK(s.orientation.state==IMU_YAW_VALID && fabs(s.orientation.degrees-sign*90.0)<1e-10);
+    }
+    pass("IMU-3 constant corrected Z integrates +90/-90 degrees over actual one-second acquisitions");
+    s=yaw_start(0,66,16500);
+    for(unsigned i=1;i<=1000;++i)yaw_step(&s,20*i,66);
+    CHECK(s.orientation.degrees==0.0);
+    s=yaw_start(0,101,25125); /* fractional bias=100.5 */
+    for(unsigned i=1;i<=50;++i)yaw_step(&s,20*i,101);
+    CHECK(fabs(s.orientation.degrees-0.5/131.0)<1e-12);
+    pass("IMU-3 measured fractional offsets preserve zero and small physical drift without deadband or arbitrary corrections");
+    s=yaw_start(0,0,0);yaw_step(&s,10,1310);yaw_step(&s,40,3930);yaw_step(&s,80,1310);
+    CHECK(s.orientation.state==IMU_YAW_VALID && fabs(s.orientation.degrees-1.45)<1e-12);
+    pass("IMU-3 trapezoid uses irregular 10/30/40-ms deltas and adjacent actual rates, not nominal task or HTTP timing");
+    s=yaw_start(UINT32_MAX-19U,1310,0);yaw_step(&s,0,1310);
+    CHECK(s.orientation.sample_tick==0 && fabs(s.orientation.degrees-0.2)<1e-12);
+    s=yaw_start(0,1310,0);yaw_step(&s,20,1310);CHECK(fabs(s.orientation.degrees-0.2)<1e-12);
+    pass("IMU-3 zero reference/sample ticks and FreeRTOS wrap are legitimate");
+    for(unsigned duplicate=0;duplicate<2;++duplicate) {
+        s=yaw_start(10,1310,0);yaw_step(&s,duplicate?10:51,1310);
+        CHECK(s.orientation.state==IMU_YAW_INVALID && s.orientation.reason==IMU_YAW_TIMING && s.orientation.degrees==0);
+        yaw_step(&s,71,1310);CHECK(s.orientation.state==IMU_YAW_INVALID && s.orientation.degrees==0);
+    }
+    pass("IMU-3 duplicate ticks and gaps above 40 ms latch invalidity without long-interval jumps or automatic resumption");
+    s=yaw_start(0,1310,0);yaw_step(&s,20,1310);IMU_CalibrationI2CError(&s);
+    CHECK(s.orientation.state==IMU_YAW_INVALID && s.orientation.reason==IMU_YAW_I2C && fabs(s.orientation.degrees-0.2)<1e-12);
+    s=yaw_start(0,1310,0);s.calibration.state=IMU_CAL_FAILED;IMU_OrientationObserve(&s,false);
+    CHECK(s.orientation.state==IMU_YAW_INVALID && s.orientation.reason==IMU_YAW_CALIBRATION);
+    pass("IMU-3 calibration loss and actual I2C error route revoke orientation while retaining its last-used reference");
+    IMU_CalibrationBegin(&s,99,0,0);CHECK(!s.orientation.reference_request && s.orientation.degrees==0);
+    for(unsigned i=1;i<=250;++i) { s.sample_tick=i*20;s.data.Gyro_Z_RAW=0;IMU_CalibrationObserve(&s,s.sample_tick); }
+    IMU_OrientationObserve(&s,true);
+    CHECK(s.orientation.reference_request==99 && s.orientation.reference_tick==5000 && s.orientation.degrees==0);
+    yaw_step(&s,5020,1310);CHECK(fabs(s.orientation.degrees-0.1)<1e-12);
+    pass("IMU-3 explicit successful recalibration establishes a new zero/reference and previous rates cannot leak across it");
+    s=yaw_start(0,32767,0);s.orientation.degrees=INT32_MAX/1000.0;
+    yaw_step(&s,20,32767);CHECK(s.orientation.state==IMU_YAW_INVALID && s.orientation.reason==IMU_YAW_NUMERIC);
+    pass("IMU-3 signed millidegree range is guarded without wrap, saturation or undefined float-to-int conversion");
+    OdometryConfig config={.left_radius_m=.1f,.right_radius_m=.1f,.left_cpr=1000,.right_cpr=1000,.track_m=.2f,.beam_half_angle=.1f};
+    Odometry_InitConfig(&config,0);Odometry_Update(-100,100,20);
+    s=yaw_start(20,11790,0);Odometry_Update(-5,5,40);yaw_step(&s,40,11790);
+    CHECK(s.orientation.comparison_state==IMU_COMPARE_VALID && s.orientation.comparison_tick==20);
+    CHECK(fabs(s.orientation.encoder_reference_deg-36.0)<.001 && fabs(s.orientation.encoder_delta_deg)<.001);
+    Odometry_Update(-5,5,60);yaw_step(&s,60,11790);
+    CHECK(s.orientation.comparison_tick==40 && fabs(s.orientation.gyro_delta_deg-1.8)<.001 &&
+          fabs(s.orientation.encoder_delta_deg-1.8)<.001 && fabs(s.orientation.difference_deg)<.001);
+    CHECK(s.orientation.encoder_calibration==ODOM_GEOMETRY_PROVISIONAL);
+    OdometrySnapshot od;Odometry_GetSnapshot(&od);CHECK(od.left_count==-110 && od.right_count==110 && od.theta_rad>0.6);
+    pass("IMU-3 real odometry history compares identical ticks from a nonzero encoder origin without resetting or mutating odometry");
+    Odometry_InitConfig(&config,0);Odometry_Update(-499,499,20);
+    s=yaw_start(20,11790,0);Odometry_Update(-5,5,40);yaw_step(&s,40,11790);
+    Odometry_Update(-5,5,60);yaw_step(&s,60,11790);
+    CHECK(s.orientation.encoder_reference_deg>179 && fabs(s.orientation.encoder_delta_deg-1.8)<.001 && fabs(s.orientation.difference_deg)<.001);
+    pass("IMU-3 encoder heading crossing +/-pi preserves the same-origin small positive turn without a 360-degree jump");
+    Odometry_InitConfig(&config,0);s=yaw_start(1,11790,0);
+    CHECK(s.orientation.comparison_state!=IMU_COMPARE_VALID);
+    Odometry_Update(0,0,10);Odometry_Update(0,0,20);yaw_step(&s,21,11790);
+    CHECK(s.orientation.comparison_state==IMU_COMPARE_VALID && s.orientation.comparison_tick==1);
+    pass("IMU-3 one-sample comparison delay resolves a reference newer than the last MotorControl update without extrapolation");
+    Odometry_InitConfig(NULL,0);s=yaw_start(0,11790,0);yaw_step(&s,20,11790);
+    CHECK(s.orientation.state==IMU_YAW_VALID && s.orientation.comparison_state==IMU_COMPARE_ODOMETRY);
+    CHECK(IMU_WrapDegrees(359)==-1 && IMU_WrapDegrees(-359)==1 && IMU_WrapDegrees(721)==1);
+    pass("IMU-3 absent odometry prevents comparison but not gyro integration; common deltas/difference wrap modulo 360 degrees");
+    for(unsigned i=2;i<=162;++i)yaw_step(&s,i*20,11790);
+    CHECK(orientation_work.reference_expired && s.orientation.state==IMU_YAW_VALID);
+    Odometry_InitConfig(&config,3240);Odometry_Update(0,0,3260);yaw_step(&s,3260,11790);
+    CHECK(!orientation_work.encoder_reference && s.orientation.comparison_state==IMU_COMPARE_ODOMETRY);
+    pass("IMU-3 lost initial encoder reference is never silently replaced by a later unrelated origin");
 }
 int main(void) {
     TaskIMUSnapshot_t s; MPU6050_t d;
@@ -204,6 +293,7 @@ int main(void) {
     CHECK(saved.data.Accel_X_RAW==INT16_MIN && saved.data.Accel_Z_RAW==INT16_MIN && isfinite(saved.data.KalmanAngleX));
     pass("extreme raw acceleration cannot overflow the inherited roll norm before square root");
     test_calibration();
+    test_orientation();
     printf("RESULT %u IMU acquisition/driver/calibration groups passed; no hardware validation\n",groups);
     return 0;
 }

@@ -16,7 +16,7 @@ function imuValidate(s) {
       s.sample_age_ms === null || s.sample_age_ms > s.max_age_ms)) return false;
   if (![[s.accel_g, 2.001], [s.gyro_dps, 250.2]].every(([v, bound]) =>
     Array.isArray(v) && v.length === 3 && v.every(n => s.valid ? typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= bound : n === null))) return false;
-  if (s.calibration === undefined) return true; // IMU-1 HTTP consumers remain compatible.
+  if (s.calibration === undefined) return s.orientation === undefined && s.comparison === undefined; // IMU-1 compatibility.
   const c=s.calibration, phases=["idle","queued","sent","accepted","rejected","tx_error","expired"];
   const triple=(v,usable,bound)=>Array.isArray(v)&&v.length===3&&v.every(n=>usable?typeof n==="number"&&Number.isFinite(n)&&Math.abs(n)<=bound:n===null);
   if(!c || typeof c.available!=="boolean" || typeof c.valid!=="boolean" ||
@@ -27,8 +27,26 @@ function imuValidate(s) {
   if(c.valid&&(!s.valid||c.state!=="valid"||c.samples!==250||c.reason!=="none"||c.age_ms===null))return false;
   if((c.state==="failed")!==(c.reason!=="none")||(c.state==="pending"&&c.samples!==0)||
     (c.state==="running"&&c.samples>=250)||(c.state==="valid"&&c.samples!==250))return false;
-  return triple(s.gyro_raw,s.valid,32768)&&s.gyro_raw.every(n=>n===null||(Number.isInteger(n)&&n<=32767))&&
-    triple(s.gyro_corrected_dps,c.valid,500.3)&&triple(c.offset_dps,c.valid,250.2);
+  if(!(triple(s.gyro_raw,s.valid,32768)&&s.gyro_raw.every(n=>n===null||(Number.isInteger(n)&&n<=32767))&&
+    triple(s.gyro_corrected_dps,c.valid,500.3)&&triple(c.offset_dps,c.valid,250.2)))return false;
+  if(s.orientation===undefined && s.comparison===undefined)return true; // IMU-2 compatibility.
+  const o=s.orientation,p=s.comparison;
+  const angle=(v,usable,bound)=>usable?typeof v==="number"&&Number.isFinite(v)&&Math.abs(v)<=bound:v===null;
+  if(!o||!p||typeof o.available!=="boolean"||typeof o.valid!=="boolean"||typeof o.requires_calibration!=="boolean"||
+    !["unavailable","pending","valid","invalid"].includes(o.state)||
+    !["none","calibration","i2c","timing","numeric","reinitialized"].includes(o.reason)||
+    o.available!==(o.state!=="unavailable")||o.requires_calibration!==(o.available&&o.state!=="valid")||
+    (o.state==="invalid")!==(o.reason!=="none")||
+    ![o.sample_age_ms,o.reference_tick,o.reference_request].every(n=>n===null||number(n))||
+    ((o.reference_tick===null)!==(o.reference_request===null))||((o.reference_tick===null)!==(o.sample_age_ms===null))||
+    (o.reference_request!==null&&o.reference_request===0)||
+    (o.valid&&(!c.valid||o.state!=="valid"||o.reference_tick===null||o.reference_request!==c.request||o.sample_age_ms>s.max_age_ms))||
+    !angle(o.degrees,o.valid,2147483.647))return false;
+  if(typeof p.valid!=="boolean"||!["unavailable","waiting_reference","valid","odometry_unavailable","yaw_unavailable"].includes(p.state)||
+    ![p.sample_tick,p.sample_age_ms].every(n=>n===null||number(n))||!number(p.encoder_calibration)||p.encoder_calibration>2||
+    ((p.sample_tick===null)!==(p.sample_age_ms===null))||
+    (p.valid&&(!o.valid||p.state!=="valid"||p.sample_tick===null||p.sample_age_ms>s.max_age_ms||p.encoder_calibration===0)))return false;
+  return [p.gyro_delta_deg,p.encoder_delta_deg,p.difference_deg,p.encoder_reference_deg].every(v=>angle(v,p.valid,180));
 }
 
 function createImuPanel(doc, fetcher, now, schedule, clear, Controller,
@@ -67,6 +85,19 @@ function createImuPanel(doc, fetcher, now, schedule, clear, Controller,
       c.state==="failed"?`Fallida · ${reasons[c.reason]}`:calibrated?`Válida · offsets medidos en RAM · hace ${c.age_ms+elapsed} ms`:"Calibración registrada · información desactualizada");
     text("imu-offset",calibrated?c.offset_dps.map(n=>n.toFixed(4)).join(" / "):"Sin offsets vigentes");
     text("imu-gyro-corrected",calibrated?sample.gyro_corrected_dps.map(n=>n.toFixed(3)).join(" / "):"Sin calibración vigente");
+    const o=sample.orientation,p=sample.comparison;
+    const yawValid=valid&&o?.valid===true&&o.sample_age_ms+elapsed<=sample.max_age_ms;
+    const comparisonValid=yawValid&&p?.valid===true&&p.sample_age_ms+elapsed<=sample.max_age_ms;
+    const yawReasons={calibration:"Calibración perdida",i2c:"Falla I²C",timing:"Intervalo de adquisición discontinuo",numeric:"Límite numérico",reinitialized:"IMU reinicializada"};
+    text("imu-yaw",yawValid?`${o.degrees.toFixed(2)}° · relativa acumulada`:!o?.available?"No disponible en esta versión":
+      o.requires_calibration?`${yawReasons[o.reason]||"Sin referencia"} · calibrar nuevamente`:"Estimación sin información vigente");
+    text("imu-reference",o?.reference_tick!==null&&o?.reference_tick!==undefined?
+      `Referencia ${o.reference_request} · tick STM32 ${o.reference_tick} · muestra utilizada hace ${o.sample_age_ms+elapsed} ms`:"Sin referencia angular");
+    text("imu-common-angles",comparisonValid?
+      `Giroscopio ${p.gyro_delta_deg.toFixed(2)}° / Encoders ${p.encoder_delta_deg.toFixed(2)}°`:
+      p?.state==="odometry_unavailable"?"Sin pose de encoders asociable al mismo instante":"Sin comparación vigente");
+    text("imu-angle-difference",comparisonValid?
+      `${p.difference_deg.toFixed(2)}° · muestra común hace ${p.sample_age_ms+elapsed} ms · odometría ${p.encoder_calibration===2?"calibrada":"provisional"}`:"Sin comparación vigente");
     const robot=lastKnownStatus();
     if(button)button.disabled=posting||now()<waitingUntil||!valid||!c?.available||c.state==="running"||
       ["queued","sent"].includes(c.request_phase)||!robot?.valid||!robot.connected||![0,3].includes(robot.state)||robot.age_ms>=2000;

@@ -127,7 +127,7 @@ void Uart_PollImu(void)
     if (WebCommands_CanPollSensors()) {
         char message[24];
         uint32_t query = Stm32Imu_BeginQuery();
-        int n = snprintf(message, sizeof(message), "IMU2 Q=%" PRIu32 "\n", query);
+        int n = snprintf(message, sizeof(message), "IMU3 Q=%" PRIu32 "\n", query);
         if (n <= 0 || (size_t)n >= sizeof(message) || !TxWrite(message)) Stm32Imu_QueryFailed();
     }
     xSemaphoreGive(s_tx_gate);

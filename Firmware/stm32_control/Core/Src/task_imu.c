@@ -4,7 +4,9 @@
 #include "queue.h"
 #include "main.h"
 #include "task_control_robot.h"
+#include "mid_odometry.h"
 #include <limits.h>
+#include <math.h>
 #include <string.h>
 
 #define TASK_IMU_PERIOD_MS 20U
@@ -23,6 +25,85 @@ static struct {
     TickType_t requested, first, last;
 } calibration_work;
 
+/* TaskIMU owns these values. One-sample delay allows the odometry history to
+ * bracket the IMU acquisition tick without extrapolating a current pose. */
+static struct {
+    double previous_rate, pending_degrees;
+    TickType_t pending_tick;
+    bool pending, encoder_reference, reference_expired;
+    float encoder_zero;
+} orientation_work;
+
+static double IMU_WrapDegrees(double degrees) {
+    double wrapped=fmod(degrees+180.0,360.0);
+    return (wrapped<0.0 ? wrapped+360.0 : wrapped)-180.0;
+}
+static void IMU_OrientationInvalidate(TaskIMUSnapshot_t *s, uint8_t reason) {
+    s->orientation.state=IMU_YAW_INVALID;
+    s->orientation.reason=reason;
+    s->orientation.comparison_state=IMU_COMPARE_YAW;
+    orientation_work.pending=false;
+}
+static void IMU_OrientationObserve(TaskIMUSnapshot_t *s, bool completed) {
+    TaskIMUOrientation_t *o=&s->orientation;
+    if(s->calibration.state!=IMU_CAL_VALID) {
+        if(o->state==IMU_YAW_VALID) IMU_OrientationInvalidate(s,IMU_YAW_CALIBRATION);
+        return;
+    }
+    double rate=((double)s->data.Gyro_Z_RAW-s->calibration.sum[2]/(double)IMU_CAL_SAMPLES)/131.0;
+    if(completed) {
+        *o=(TaskIMUOrientation_t){.state=IMU_YAW_VALID,
+            .reference_tick=s->sample_tick,.sample_tick=s->sample_tick,
+            .reference_request=s->calibration.request};
+        memset(&orientation_work,0,sizeof(orientation_work));
+        orientation_work.previous_rate=rate;
+    } else {
+        if(o->state!=IMU_YAW_VALID)return; /* Never bridge a lost interval. */
+        if(o->reference_request!=s->calibration.request || o->reference_tick!=s->calibration.completed_tick) {
+            IMU_OrientationInvalidate(s,IMU_YAW_CALIBRATION);return;
+        }
+        TickType_t dt=(TickType_t)(s->sample_tick-o->sample_tick);
+        if(!dt || (uint64_t)dt*1000U>(uint64_t)IMU_YAW_MAX_GAP_MS*configTICK_RATE_HZ) {
+            IMU_OrientationInvalidate(s,IMU_YAW_TIMING);return;
+        }
+        double next=o->degrees+0.5*(orientation_work.previous_rate+rate)*(double)dt/configTICK_RATE_HZ;
+        /* Wire unit is signed millidegrees; never wrap/saturate an overflow. */
+        if(!isfinite(next) || fabs(next)>(INT32_MAX-1)/1000.0) {
+            IMU_OrientationInvalidate(s,IMU_YAW_NUMERIC);return;
+        }
+        o->degrees=next;o->sample_tick=s->sample_tick;
+        orientation_work.previous_rate=rate;
+    }
+    float x,y,theta;
+    if(!orientation_work.encoder_reference && !orientation_work.reference_expired &&
+       Odometry_PoseAt(o->reference_tick,&x,&y,&theta)) {
+        orientation_work.encoder_reference=true;
+        orientation_work.encoder_zero=theta;
+    }
+    /* An unavailable old reference must never alias a future tick wrap. */
+    if(!orientation_work.encoder_reference &&
+       (uint64_t)(TickType_t)(s->sample_tick-o->reference_tick)*1000U>
+       (uint64_t)ODOM_HISTORY_LENGTH*ODOM_MAX_INTERVAL_MS*configTICK_RATE_HZ)
+        orientation_work.reference_expired=true;
+    o->comparison_state=IMU_COMPARE_ODOMETRY;
+    if(orientation_work.encoder_reference && orientation_work.pending &&
+       Odometry_PoseAt(orientation_work.pending_tick,&x,&y,&theta)) {
+        OdometrySnapshot encoder;Odometry_GetSnapshot(&encoder);
+        if(encoder.state==2U) {
+            o->comparison_tick=orientation_work.pending_tick;
+            o->encoder_reference_deg=orientation_work.encoder_zero*(180.0/3.14159265358979323846);
+            o->encoder_delta_deg=IMU_WrapDegrees((theta-orientation_work.encoder_zero)*(180.0/3.14159265358979323846));
+            o->gyro_delta_deg=IMU_WrapDegrees(orientation_work.pending_degrees);
+            o->difference_deg=IMU_WrapDegrees(o->gyro_delta_deg-o->encoder_delta_deg);
+            o->encoder_calibration=(uint8_t)encoder.calibration;
+            o->comparison_state=IMU_COMPARE_VALID;
+        }
+    }
+    orientation_work.pending=true;
+    orientation_work.pending_tick=o->sample_tick;
+    orientation_work.pending_degrees=o->degrees;
+}
+
 static bool IMU_CalibrationMode(void) {
     RobotControlState_t mode=TaskControlRobot_GetState();
     return mode==ROBOT_STATE_IDLE || mode==ROBOT_STATE_SAFETY_STOP;
@@ -37,6 +118,7 @@ static void IMU_CalibrationFail(TaskIMUSnapshot_t *s, uint8_t reason) {
     s->calibration.completed_tick=0U;
 }
 static void IMU_CalibrationI2CError(TaskIMUSnapshot_t *s) {
+    IMU_OrientationInvalidate(s,IMU_YAW_I2C);
     taskENTER_CRITICAL();
     uint32_t pending=calibration_request; calibration_request=0U;
     taskEXIT_CRITICAL();
@@ -45,6 +127,8 @@ static void IMU_CalibrationI2CError(TaskIMUSnapshot_t *s) {
         IMU_CalibrationFail(s,IMU_CAL_I2C);
 }
 static void IMU_CalibrationBegin(TaskIMUSnapshot_t *s, uint32_t request, TickType_t issued, TickType_t now) {
+    s->orientation=(TaskIMUOrientation_t){0};
+    memset(&orientation_work,0,sizeof(orientation_work));
     s->calibration=(TaskIMUCalibration_t){ .request=request, .state=IMU_CAL_RUNNING };
     memset(&calibration_work,0,sizeof(calibration_work));
     calibration_work.requested=now;
@@ -119,6 +203,8 @@ static void TaskIMU_Run(void *parameters) {
         }
 
         // Descarta las mediciones anteriores después de inicializar.
+        if(snapshot.orientation.state==IMU_YAW_VALID)
+            IMU_OrientationInvalidate(&snapshot,IMU_YAW_REINITIALIZED);
         snapshot.data = (MPU6050_t){0};
         snapshot.state = IMU_READY;
         snapshot.hal_status = HAL_OK;
@@ -162,7 +248,9 @@ static void TaskIMU_Run(void *parameters) {
             snapshot.i2c_error = 0U;
             snapshot.has_sample = true;
             snapshot.sample_tick = started;
+            bool was_running=snapshot.calibration.state==IMU_CAL_RUNNING;
             IMU_CalibrationObserve(&snapshot,started);
+            IMU_OrientationObserve(&snapshot,was_running && snapshot.calibration.state==IMU_CAL_VALID);
             (void)xQueueOverwrite(imu_data_queue, &snapshot);
         }
     }

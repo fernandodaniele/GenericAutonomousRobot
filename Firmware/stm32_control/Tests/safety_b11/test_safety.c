@@ -18,6 +18,7 @@ static uint32_t test_get_autoreload(TIM_HandleTypeDef *timer);
 #include "task_control_robot.h"
 
 static TickType_t clock_tick;
+static bool advance_imu_reply_clock;
 static TaskHandle_t current_task;
 #define CONTROL_TASK_ID ((TaskHandle_t)10)
 #define MOTOR_TASK_ID ((TaskHandle_t)11)
@@ -85,7 +86,7 @@ static uint32_t mock_pwm_arr;
 static unsigned autoreload_reads;
 /* Approved motor checkpoint: 40% of the normal TIM4 period (8400 counts). */
 enum { TEST_PWM_LIMIT = 3360, TEST_SHORT_PERIOD_LIMIT = 800 };
-static char uart_response[192];
+static char uart_response[256];
 static unsigned uart_rearms;
 static void run_motor(int count);
 
@@ -137,7 +138,7 @@ void test_exit(void) {
         deliver_fault();
     }
 }
-TickType_t xTaskGetTickCount(void) { return clock_tick; }
+TickType_t xTaskGetTickCount(void) { TickType_t now=clock_tick; if(advance_imu_reply_clock)++clock_tick;return now; }
 TickType_t xTaskGetTickCountFromISR(void) { return clock_tick; }
 TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current_task; }
 HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *uart, uint8_t *byte, uint16_t size) {
@@ -588,6 +589,32 @@ static void test_imu_protocol(void) {
     uart_feed(&uart,"IMU2 Q=4294967295\n");CHECK(uart_consume(&uart));
     CHECK(strlen(uart_response)<192U && strstr(uart_response,",4294967295,-32768,-32768,-32768,") && uart_response[strlen(uart_response)-1U]=='\n');
     PASS("IMU-2 worst signed axes and full 32-bit ages fit the bounded UART response without truncation");
+    clock_tick=20;imu_snapshot.sample_tick=20;
+    imu_snapshot.orientation=(TaskIMUOrientation_t){.state=IMU_YAW_VALID,.reference_request=7,.reference_tick=0,.sample_tick=20,
+        .degrees=90.0,.comparison_state=IMU_COMPARE_VALID,.comparison_tick=0,
+        .gyro_delta_deg=88,.encoder_delta_deg=87,.difference_deg=1,.encoder_reference_deg=-30,.encoder_calibration=1};
+    uart_feed(&uart,"IMU3 Q=10\n");CHECK(uart_consume(&uart));
+    CHECK(strstr(uart_response,",1,0,0,0,90000,1,20,0,88000,87000,1000,-30000,1,7\n"));
+    CHECK(strlen(uart_response)<256U);expect_zero();
+    uart_feed(&uart,"IMU3 Q=10\nSTOP\n");CHECK(uart_consume(&uart));CHECK(!strcmp(uart_response,"STOP_QUEUED\n"));
+    PASS("IMU-3 signed relative yaw and same-tick encoder comparison fit UART with real zero tick; STOP retains priority");
+    clock_tick=20;advance_imu_reply_clock=true;
+    TaskComms_SendImu(&uart,11,3);
+    advance_imu_reply_clock=false;
+    CHECK(clock_tick==21 && strstr(uart_response,",1,0,0,0,90000,1,20,0,"));
+    PASS("IMU-3 reply uses one tick origin for all ages even if formatting spans a scheduler tick");
+    imu_snapshot.orientation.degrees=-2147483.646;
+    imu_snapshot.orientation.reference_request=UINT32_MAX;
+    imu_snapshot.orientation.comparison_tick=imu_snapshot.orientation.sample_tick=0;
+    imu_snapshot.orientation.reference_tick=UINT32_MAX;
+    imu_snapshot.orientation.gyro_delta_deg=imu_snapshot.orientation.encoder_delta_deg=-180;
+    imu_snapshot.orientation.difference_deg=imu_snapshot.orientation.encoder_reference_deg=-180;
+    imu_snapshot.calibration.request=UINT32_MAX;
+    for(unsigned i=0;i<3U;++i)imu_snapshot.calibration.sum[i]=-8192000;
+    clock_tick=UINT32_MAX;
+    TaskComms_SendImu(&uart,UINT32_MAX,3);
+    CHECK(strlen(uart_response)<=240U && uart_response[strlen(uart_response)-1]=='\n');
+    PASS("IMU-3 worst signed axes, millidegrees, sums, request IDs and 32-bit ages stay below a single 255-byte UART read");
 }
 static void test_motion_commands(void) {
     static const char *frames[] = {

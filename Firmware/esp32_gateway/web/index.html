@@ -97,11 +97,16 @@
           <div><dt>Calibración del giroscopio</dt><dd id="imu-calibration">Pendiente de información</dd></div>
           <div><dt>Offsets X / Y / Z (°/s)</dt><dd id="imu-offset">Sin offsets vigentes</dd></div>
           <div><dt>Giro corregido X / Y / Z (°/s)</dt><dd id="imu-gyro-corrected">Sin calibración vigente</dd></div>
+          <div><dt>Orientación relativa del giroscopio Z</dt><dd id="imu-yaw">Sin referencia angular</dd></div>
+          <div><dt>Origen y antigüedad de orientación</dt><dd id="imu-reference">Sin referencia angular</dd></div>
+          <div><dt>Cambios desde una referencia común (±180°)</dt><dd id="imu-common-angles">Sin comparación vigente</dd></div>
+          <div><dt>Diferencia giroscopio − encoders (±180°)</dt><dd id="imu-angle-difference">Sin comparación vigente</dd></div>
           <div><dt>Antigüedad de la última lectura</dt><dd id="imu-age">Sin muestra</dd></div>
           <div><dt>Comunicación I²C</dt><dd id="imu-error">Sin información</dd></div>
         </dl>
         <button id="imu-calibrate" type="button" disabled>Calibrar giroscopio</button>
         <p id="imu-calibration-message" class="description" role="status">Dejá el chasis inmóvil antes de iniciar. Se toman 250 muestras en aproximadamente 5 segundos, solo en En espera o Detenido por seguridad.</p>
+        <p class="description">Cada calibración válida pone a cero únicamente el ángulo relativo del giroscopio. Izquierda positiva, derecha negativa. La comparación utiliza el mismo instante de referencia y muestra cambios módulo 360°; no cuenta vueltas completas ni constituye un error contra una referencia física. No se fusiona con la odometría ni modifica el mapa.</p>
         <p class="safety-note">Ejes físicos del sensor, sin fusión con odometría. El acelerómetro incluye gravedad. Los offsets se pierden al reiniciar la STM32. Las variaciones pueden invalidar la calibración; un giro lento constante no siempre puede distinguirse del offset. Las consultas se pausan durante control manual y los datos vencidos no se muestran como válidos.</p>
         <p class="endpoint">Consulta automática <code>GET /api/imu</code></p>
       </section>

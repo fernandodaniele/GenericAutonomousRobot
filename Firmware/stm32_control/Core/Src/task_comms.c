@@ -77,28 +77,29 @@ static bool TaskComms_SensorsQuery(const char *message, uint32_t *query) {
 /* IMU v1: raw signed axes, no float formatting, no new I2C acquisition.
  * State, HAL result, I2C error bits, age of last successful acquisition.
  * Missing age/axes are '-', never invented zero measurements. */
-static void TaskComms_SendImu(DrvUart_t *uart, uint32_t query, bool extended) {
+static void TaskComms_SendImu(DrvUart_t *uart, uint32_t query, unsigned version) {
     TaskIMUSnapshot_t s = { .state = IMU_INITIALIZING };
     (void)TaskIMU_GetSnapshot(&s);
+    const TickType_t now=xTaskGetTickCount(); /* One age origin for the coherent reply. */
     char age[11] = "-";
-    static char response[192]; /* One Comms task; bounded packet without stack growth. */
+    static char response[256]; /* v3 worst-case 240 bytes; one Comms task. */
     if (s.has_sample) (void)snprintf(age, sizeof(age), "%lu",
-        (unsigned long)TaskComms_SensorAge(xTaskGetTickCount(), s.sample_tick));
+        (unsigned long)TaskComms_SensorAge(now, s.sample_tick));
     int n;
     if (s.state == IMU_VALID && s.has_sample) {
         n = snprintf(response, sizeof(response),
-            "IMU,%u,%lu,2,0,0,%s,%d,%d,%d,%d,%d,%d\n", extended ? 2U : 1U, (unsigned long)query, age,
+            "IMU,%u,%lu,2,0,0,%s,%d,%d,%d,%d,%d,%d\n", version, (unsigned long)query, age,
             (int)s.data.Accel_X_RAW, (int)s.data.Accel_Y_RAW, (int)s.data.Accel_Z_RAW,
             (int)s.data.Gyro_X_RAW, (int)s.data.Gyro_Y_RAW, (int)s.data.Gyro_Z_RAW);
     } else {
         n = snprintf(response, sizeof(response), "IMU,%u,%lu,%u,%u,%lu,%s,-,-,-,-,-,-\n",
-            extended ? 2U : 1U, (unsigned long)query, (unsigned)s.state, (unsigned)s.hal_status,
+            version, (unsigned long)query, (unsigned)s.state, (unsigned)s.hal_status,
             (unsigned long)s.i2c_error, age);
     }
-    if (extended && n>0 && (size_t)n<sizeof(response)) {
+    if (version>=2U && n>0 && (size_t)n<sizeof(response)) {
         char cal_age[11]="-", sums[3][12]={{"-"},{"-"},{"-"}};
         if(s.calibration.state==IMU_CAL_VALID) {
-            (void)snprintf(cal_age,sizeof(cal_age),"%lu",(unsigned long)TaskComms_SensorAge(xTaskGetTickCount(),s.calibration.completed_tick));
+            (void)snprintf(cal_age,sizeof(cal_age),"%lu",(unsigned long)TaskComms_SensorAge(now,s.calibration.completed_tick));
             for(unsigned i=0;i<3U;++i)(void)snprintf(sums[i],sizeof(sums[i]),"%ld",(long)s.calibration.sum[i]);
         }
         int extra=snprintf(response+n-1,sizeof(response)-(size_t)n+1U,",%u,%u,%u,%lu,%s,%s,%s,%s\n",
@@ -107,14 +108,39 @@ static void TaskComms_SendImu(DrvUart_t *uart, uint32_t query, bool extended) {
         if(extra<0 || (size_t)extra>=sizeof(response)-(size_t)n+1U)return;
         n=n-1+extra;
     }
+    if(version==3U && n>0 && (size_t)n<sizeof(response)) {
+        TaskIMUOrientation_t *o=&s.orientation;
+        static char values[11][12]; /* No extra stack for optional integers. */
+        for(unsigned i=0;i<11U;++i)strcpy(values[i],"-");
+        if(o->reference_request) {
+            (void)snprintf(values[0],12,"%lu",(unsigned long)o->reference_tick);
+            (void)snprintf(values[1],12,"%lu",(unsigned long)TaskComms_SensorAge(now,o->sample_tick));
+            (void)snprintf(values[10],12,"%lu",(unsigned long)o->reference_request);
+        }
+        if(o->state==IMU_YAW_VALID)
+            (void)snprintf(values[2],12,"%ld",(long)(o->degrees*1000.0));
+        if(o->comparison_state==IMU_COMPARE_VALID && o->state==IMU_YAW_VALID) {
+            (void)snprintf(values[3],12,"%lu",(unsigned long)TaskComms_SensorAge(now,o->comparison_tick));
+            (void)snprintf(values[4],12,"%lu",(unsigned long)o->comparison_tick);
+            const float angles[]={o->gyro_delta_deg,o->encoder_delta_deg,o->difference_deg,o->encoder_reference_deg};
+            for(unsigned i=0;i<4U;++i)(void)snprintf(values[5+i],12,"%ld",(long)(angles[i]*1000.0f));
+            (void)snprintf(values[9],12,"%u",(unsigned)o->encoder_calibration);
+        }
+        int extra=snprintf(response+n-1,sizeof(response)-(size_t)n+1U,
+            ",%u,%u,%s,%s,%s,%u,%s,%s,%s,%s,%s,%s,%s,%s\n",
+            (unsigned)o->state,(unsigned)o->reason,values[0],values[1],values[2],
+            (unsigned)o->comparison_state,values[3],values[4],values[5],values[6],values[7],values[8],values[9],values[10]);
+        if(extra<0 || (size_t)extra>=sizeof(response)-(size_t)n+1U)return;
+        n=n-1+extra;
+    }
     if (n > 0 && (size_t)n < sizeof(response)) DrvUart_SendString(uart, response);
 }
 
-static bool TaskComms_ImuQuery(const char *message, uint32_t *query, bool extended) {
-    const char *name=extended ? "IMU2" : "IMU";
+static bool TaskComms_ImuQuery(const char *message, uint32_t *query, unsigned version) {
+    const char *name=version==3U ? "IMU3" : version==2U ? "IMU2" : "IMU";
     if (strcmp(message, name) == 0) { *query = 0U; return true; }
-    unsigned prefix=extended ? 7U : 6U;
-    if (strncmp(message, extended ? "IMU2 Q=" : "IMU Q=", prefix) != 0) return false;
+    unsigned prefix=version>=2U ? 7U : 6U;
+    if (strncmp(message, version==3U ? "IMU3 Q=" : version==2U ? "IMU2 Q=" : "IMU Q=", prefix) != 0) return false;
     /* Reuse the strict decimal query grammar without accepting other frames. */
     char sensors[32];
     int n = snprintf(sensors, sizeof(sensors), "SENSORS Q=%s", message + prefix);
@@ -137,9 +163,9 @@ static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickT
             DrvUart_SendString(uart,ack); return;
         }
     }
-    bool extended=strncmp(message,"IMU2",4U)==0;
-    if (TaskComms_ImuQuery(message, &query,extended)) {
-        TaskComms_SendImu(uart, query,extended);
+    unsigned version=strncmp(message,"IMU3",4U)==0 ? 3U : strncmp(message,"IMU2",4U)==0 ? 2U : 1U;
+    if (TaskComms_ImuQuery(message, &query,version)) {
+        TaskComms_SendImu(uart, query,version);
         return;
     }
     if (Mapping_Query(message, &query, &mapping_part)) {

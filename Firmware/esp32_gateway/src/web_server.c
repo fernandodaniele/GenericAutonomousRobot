@@ -287,7 +287,7 @@ static esp_err_t WebServer_ManualScript(httpd_req_t *r);
 
 static esp_err_t WebServer_Imu(httpd_req_t *request)
 {
-    static char response[1024]; /* Single HTTP task, keep formatting off its stack. */
+    static char response[1792]; /* Single HTTP task, including IMU-3 orientation. */
     Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
     int n = Stm32Imu_Json(response, sizeof(response), status.connected, !WebCommands_CanPollSensors());
     if (n < 0) return ESP_FAIL;

@@ -17,10 +17,15 @@ typedef struct {
     bool cal_known;
     uint32_t cal_state, cal_reason, cal_samples, cal_request, cal_age;
     int32_t cal_sum[3];
+    bool yaw_known, yaw_reference;
+    uint32_t yaw_state, yaw_reason, yaw_reference_tick, yaw_reference_request, yaw_age;
+    int32_t yaw_mdeg;
+    uint32_t compare_state, compare_age, compare_tick, encoder_calibration;
+    int32_t compare_mdeg[4]; /* gyro delta, encoder delta, difference, encoder zero. */
 } ImuSnapshot;
 static portMUX_TYPE s_imu_lock = portMUX_INITIALIZER_UNLOCKED;
 static ImuSnapshot s_imu;
-static char s_imu_line[192];
+static char s_imu_line[256];
 static size_t s_imu_length;
 static bool s_imu_discard;
 static uint32_t s_imu_counter, s_imu_pending;
@@ -123,9 +128,9 @@ static void ImuAccept(void) {
     }
     if (strncmp(s_imu_line, "IMU,", 4U) != 0) return;
     const char *p = s_imu_line + 4;
-    int64_t v[20]={0}; bool has[20]={0};
-    if(!ImuField(&p,&v[0],&has[0],false)||!has[0]||(v[0]!=1 && v[0]!=2))return;
-    unsigned fields=v[0]==2 ? 20U : 12U;
+    int64_t v[34]={0}; bool has[34]={0};
+    if(!ImuField(&p,&v[0],&has[0],false)||!has[0]||(v[0]<1 || v[0]>3))return;
+    unsigned fields=v[0]==3 ? 34U : v[0]==2 ? 20U : 12U;
     for (unsigned i = 1; i < fields; ++i)
         if (!ImuField(&p, &v[i], &has[i], i == fields-1U)) return;
     for (unsigned i = 0; i < 5U; ++i) if (!has[i] || v[i] < 0) return;
@@ -137,7 +142,7 @@ static void ImuAccept(void) {
         if (has[i] != measurement) return;
         if (has[i] && (v[i] < INT16_MIN || v[i] > INT16_MAX)) return;
     }
-    if(v[0]==2) {
+    if(v[0]>=2) {
         for(unsigned i=12;i<=15U;++i)if(!has[i]||v[i]<0)return;
         if(v[12]>3 || v[13]>5 || v[14]>250)return;
         if((v[12]!=3 && v[13]!=0)||(v[12]==3 && v[13]==0))return;
@@ -150,6 +155,22 @@ static void ImuAccept(void) {
             if(has[i] && (i==16 ? v[i]<0 : v[i]<-8192000LL || v[i]>8191750LL))return;
         }
     }
+    if(v[0]==3) {
+        if(!has[20] || v[20]<0 || v[20]>2 || !has[21] || v[21]<0 || v[21]>5 ||
+           !has[25] || v[25]<0 || v[25]>3)return;
+        bool yaw=v[20]==1, reference=has[22], compare=v[25]==1;
+        if((v[20]==2)!=(v[21]!=0) || has[23]!=reference || has[33]!=reference ||
+           (reference && (v[22]<0 || v[23]<0 || v[33]<=0)) ||
+           (v[20]==0 && reference) || has[24]!=yaw)return;
+        if(yaw && (!measurement || v[12]!=2 || !reference || v[33]!=v[15] || v[23]!=v[5] ||
+                   v[24]<-INT32_MAX+1LL || v[24]>INT32_MAX-1LL))return;
+        if((!yaw && v[25]!=3 && !(v[20]==0 && v[25]==0)) || (yaw && v[25]==3))return;
+        for(unsigned i=26;i<=32U;++i) {
+            if(has[i]!=compare)return;
+            if(compare && (i<=27 ? v[i]<0 : i==32 ? v[i]<1 || v[i]>2 : v[i]<-180000 || v[i]>180000))return;
+        }
+        if(compare && (!yaw || v[26]<v[23]))return;
+    }
     int64_t now = esp_timer_get_time();
     if (s_imu_pending != (uint32_t)v[1] || now < s_imu_sent ||
         now - s_imu_sent >= IMU_REPLY_MS * 1000) return;
@@ -159,11 +180,20 @@ static void ImuAccept(void) {
     if (next.sample_age > UINT32_MAX - rtt) next.sample_age = UINT32_MAX;
     else next.sample_age += rtt; /* Conservative transport age; never mix board clocks. */
     for (unsigned i = 0; i < 6U; ++i) if (measurement) next.raw[i] = (int16_t)v[i+6];
-    if(v[0]==2) {
+    if(v[0]>=2) {
         next.cal_known=true; next.cal_state=(uint32_t)v[12];next.cal_reason=(uint32_t)v[13];next.cal_samples=(uint32_t)v[14];next.cal_request=(uint32_t)v[15];
         next.cal_age=(uint32_t)v[16];
         if(next.cal_age>UINT32_MAX-rtt)next.cal_age=UINT32_MAX;else next.cal_age+=rtt;
         for(unsigned i=0;i<3U;++i)next.cal_sum[i]=(int32_t)v[17+i];
+    }
+    if(v[0]==3) {
+        next.yaw_known=true; next.yaw_state=(uint32_t)v[20];next.yaw_reason=(uint32_t)v[21];
+        next.yaw_reference=has[22];next.yaw_reference_tick=(uint32_t)v[22];next.yaw_reference_request=(uint32_t)v[33];
+        next.yaw_age=v[23]>UINT32_MAX-rtt ? UINT32_MAX : (uint32_t)v[23]+rtt;
+        next.yaw_mdeg=(int32_t)v[24];next.compare_state=(uint32_t)v[25];
+        next.compare_age=v[26]>UINT32_MAX-rtt ? UINT32_MAX : (uint32_t)v[26]+rtt;
+        next.compare_tick=(uint32_t)v[27]; next.encoder_calibration=(uint32_t)v[32];
+        for(unsigned i=0;i<4U;++i)next.compare_mdeg[i]=(int32_t)v[28+i];
     }
     s_imu_pending = 0U;
     taskENTER_CRITICAL(&s_imu_lock);
@@ -248,5 +278,37 @@ int Stm32Imu_Json(char *out, size_t capacity, bool stm32_connected, bool paused)
         "\"reason\":\"%s\",\"samples\":%" PRIu32 ",\"target_samples\":250,\"request\":%" PRIu32 ",\"age_ms\":%s,\"offset_dps\":[%s],\"request_phase\":\"%s\"}}",
         raw,corrected,s.cal_known?"true":"false",s.cal_known?cal_states[s.cal_state]:"unavailable",calibrated?"true":"false",
         reasons[s.cal_reason],s.cal_samples,s.cal_request,cal_age,offset,requests[request_phase]);
+    if(extra<0 || (size_t)extra>=capacity-(size_t)n+1U)return -1;
+    n=n-1+extra;
+    uint32_t yaw_age=s.yaw_age>UINT32_MAX-response_age?UINT32_MAX:s.yaw_age+response_age;
+    uint32_t compare_age=s.compare_age>UINT32_MAX-response_age?UINT32_MAX:s.compare_age+response_age;
+    bool yaw_valid=calibrated && s.yaw_known && s.yaw_state==1U && yaw_age<=IMU_SAMPLE_MAX_AGE_MS;
+    bool compare_valid=yaw_valid && s.compare_state==1U && compare_age<=IMU_SAMPLE_MAX_AGE_MS;
+    char yaw[32]="null",angles[4][24]={{"null"},{"null"},{"null"},{"null"}};
+    char reference[12]="null",reference_request[12]="null",used_age[12]="null",comp_age[12]="null",comp_tick[12]="null";
+    if(s.yaw_known && s.yaw_reference) {
+        (void)snprintf(reference,sizeof(reference),"%" PRIu32,s.yaw_reference_tick);
+        (void)snprintf(reference_request,sizeof(reference_request),"%" PRIu32,s.yaw_reference_request);
+        (void)snprintf(used_age,sizeof(used_age),"%" PRIu32,yaw_age);
+    }
+    if(yaw_valid)(void)snprintf(yaw,sizeof(yaw),"%.3f",s.yaw_mdeg/1000.0);
+    if(s.yaw_known && s.compare_state==1U) {
+        (void)snprintf(comp_age,sizeof(comp_age),"%" PRIu32,compare_age);
+        (void)snprintf(comp_tick,sizeof(comp_tick),"%" PRIu32,s.compare_tick);
+    }
+    if(compare_valid)for(unsigned i=0;i<4U;++i)
+        (void)snprintf(angles[i],sizeof(angles[i]),"%.3f",s.compare_mdeg[i]/1000.0);
+    static const char *yaw_states[]={"pending","valid","invalid"};
+    static const char *yaw_reasons[]={"none","calibration","i2c","timing","numeric","reinitialized"};
+    static const char *compare_states[]={"waiting_reference","valid","odometry_unavailable","yaw_unavailable"};
+    extra=snprintf(out+n-1,capacity-(size_t)n+1U,
+        ",\"orientation\":{\"available\":%s,\"state\":\"%s\",\"valid\":%s,\"requires_calibration\":%s,\"reason\":\"%s\","
+        "\"degrees\":%s,\"sample_age_ms\":%s,\"reference_tick\":%s,\"reference_request\":%s},"
+        "\"comparison\":{\"state\":\"%s\",\"valid\":%s,\"sample_tick\":%s,\"sample_age_ms\":%s,"
+        "\"gyro_delta_deg\":%s,\"encoder_delta_deg\":%s,\"difference_deg\":%s,\"encoder_reference_deg\":%s,\"encoder_calibration\":%u}}",
+        s.yaw_known?"true":"false",s.yaw_known?yaw_states[s.yaw_state]:"unavailable",yaw_valid?"true":"false",
+        s.yaw_known && s.yaw_state!=1U?"true":"false",yaw_reasons[s.yaw_reason],yaw,used_age,reference,reference_request,
+        s.yaw_known?compare_states[s.compare_state]:"unavailable",compare_valid?"true":"false",comp_tick,comp_age,
+        angles[0],angles[1],angles[2],angles[3],(unsigned)s.encoder_calibration);
     return extra>=0 && (size_t)extra<capacity-(size_t)n+1U ? n-1+extra : -1;
 }

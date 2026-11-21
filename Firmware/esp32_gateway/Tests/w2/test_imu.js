@@ -1,3 +1,52 @@
+async function runImuOrientationTests(source) {
+  const check=(v,s)=>{if(!v)throw new Error(s);};
+  const api=new Function("let lastStatus=null;\n"+source+"\nreturn {imuValidate,createImuPanel,setStatus:s=>{lastStatus=s;}};")();
+  const good=()=>({received:true,connected:true,stm32_connected:true,paused:false,valid:true,stale:false,state:"valid",hal_status:0,i2c_error:0,
+    response_age_ms:0,sample_age_ms:0,max_age_ms:1500,accel_g:[0,0,1],gyro_dps:[0,0,0],gyro_raw:[0,0,0],gyro_corrected_dps:[0,0,0],
+    calibration:{available:true,state:"valid",valid:true,reason:"none",samples:250,target_samples:250,request:7,age_ms:100,offset_dps:[0,0,0],request_phase:"accepted"},
+    orientation:{available:true,state:"valid",valid:true,requires_calibration:false,reason:"none",degrees:450,sample_age_ms:0,reference_tick:0,reference_request:7},
+    comparison:{state:"valid",valid:true,sample_tick:80,sample_age_ms:20,gyro_delta_deg:88,encoder_delta_deg:87,difference_deg:1,encoder_reference_deg:-30,encoder_calibration:1}});
+  const cases=[];
+  let time=0,id=0,data=good(),pending=false;const nodes=new Map(),timers=new Map(),requests=[];
+  const doc={getElementById(name){if(!nodes.has(name))nodes.set(name,{textContent:"",disabled:false,addEventListener(){}});return nodes.get(name);}};
+  class Controller {constructor(){this.signal={};}abort(){this.signal.reject?.(new Error("timeout"));}}
+  const fetcher=async(url,options)=>{
+    check(url==="/api/imu"&&!options.method&&!options.body,"orientation never commands movement or resets odometry");requests.push(url);
+    if(pending)return new Promise((resolve,reject)=>{options.signal.reject=reject;});
+    return {ok:true,json:async()=>data};
+  };
+  const flush=async()=>{for(let i=0;i<16;++i)await Promise.resolve();};
+  const panel=api.createImuPanel(doc,fetcher,()=>time,(fn,delay)=>{timers.set(++id,{fn,at:time+delay});return id;},n=>timers.delete(n),Controller);
+  const text=name=>doc.getElementById(name).textContent;
+  async function advance(ms){const end=time+ms;while(true){const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];if(!next||next[1].at>end)break;time=next[1].at;timers.delete(next[0]);next[1].fn();await flush();}time=end;await flush();}
+  check(api.imuValidate(data),"IMU-3 valid schema");panel.start();await flush();
+  check(text("imu-yaw").includes("450.00°")&&text("imu-reference").includes("tick STM32 0")&&
+    text("imu-common-angles").includes("88.00° / Encoders 87.00°")&&text("imu-angle-difference").includes("1.00°")&&text("imu-angle-difference").includes("provisional"),"common reference comparison, not 450 minus encoder origin");
+  cases.push("IMU-3 accumulated gyro yaw, legitimate reference tick zero and same-origin deltas render separately with provisional encoder label");
+  data=good();data.orientation.degrees=-90;data.comparison={...data.comparison,state:"odometry_unavailable",valid:false,sample_tick:null,sample_age_ms:null,
+    gyro_delta_deg:null,encoder_delta_deg:null,difference_deg:null,encoder_reference_deg:null,encoder_calibration:0};
+  await advance(500);check(text("imu-yaw").includes("-90.00°")&&text("imu-common-angles").includes("Sin pose")&&text("imu-angle-difference")==="Sin comparación vigente","negative yaw without encoder pose");
+  cases.push("IMU-3 unavailable encoder association does not suppress useful gyro yaw or fabricate an angular error");
+  data=good();data.orientation={...data.orientation,state:"invalid",valid:false,requires_calibration:true,reason:"timing",degrees:null,sample_age_ms:500};
+  data.comparison={...data.comparison,state:"yaw_unavailable",valid:false,sample_tick:null,sample_age_ms:null,gyro_delta_deg:null,encoder_delta_deg:null,difference_deg:null,encoder_reference_deg:null,encoder_calibration:0};
+  await advance(500);check(text("imu-yaw").includes("calibrar nuevamente")&&!text("imu-yaw").includes("450.00"),"invalid timing needs explicit calibration");
+  data=good();data.orientation={...data.orientation,degrees:0,reference_tick:5000};await advance(500);
+  check(text("imu-yaw").includes("0.00°")&&text("imu-reference").includes("5000"),"new calibration reference shown");
+  cases.push("IMU-3 invalid acquisition continuity hides previous yaw and successful recalibration visibly changes its reference");
+  pending=true;await advance(1700);check(!text("imu-yaw").includes("0.00°")&&text("imu-angle-difference")==="Sin comparación vigente","browser aging hides stale angles");
+  pending=false;await advance(1000);api.setStatus({connected:false});await advance(100);
+  check(!text("imu-yaw").includes("0.00°"),"STATUS disconnect invalidates orientation immediately");
+  api.setStatus(null);cases.push("IMU-3 paused/unanswered telemetry and STATUS loss cannot retain apparently current angles or resume commands");
+  for(const change of [s=>{s.orientation.degrees=NaN;},s=>{s.orientation.reference_request=8;},s=>{s.orientation.valid=false;},
+    s=>{s.comparison.encoder_calibration=0;},s=>{s.comparison.difference_deg=181;},s=>{s.comparison.sample_tick=null;},
+    s=>{s.orientation.requires_calibration=true;},s=>{s.orientation.reference_tick=null;},s=>{delete s.calibration;}]) {
+    const s=good();change(s);check(!api.imuValidate(s),"inconsistent orientation schema rejected");
+  }
+  check(requests.length>1,"automatic polling retained");
+  cases.push("IMU-3 web schema rejects nonfinite angles, unrelated references, impossible validity/calibration and out-of-range comparisons");
+  return cases;
+}
+
 async function runImuTests(source) {
   const check=(v,s)=>{if(!v)throw new Error(s);};
   const api=new Function("let lastStatus=null;\n"+source+"\nreturn {imuValidate,createImuPanel,setStatus:s=>{lastStatus=s;}};")();

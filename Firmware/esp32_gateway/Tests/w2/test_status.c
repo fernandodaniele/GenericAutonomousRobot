@@ -462,5 +462,6 @@ int main(void)
     test_mapping();
     test_imu();
     test_imu_calibration();
+    test_imu_orientation();
     printf("RESULT %u native W1-W7 test groups passed; no hardware validation\n",cases); return 0;
 }

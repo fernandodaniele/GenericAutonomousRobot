@@ -16,7 +16,7 @@ static void loop_reply(void) {
     else if (sscanf(frame,"MAPPING Q=%" SCNu32 " S=%u",&query,&part)==2) {
         if (!part) n=snprintf(loop_response,sizeof loop_response,"POSE,2,%" PRIu32 ",7,0,2,1,0,0,0,0,0,0,0,0\n",query);
         else n=snprintf(loop_response,sizeof loop_response,"RAY,1,%" PRIu32 ",7,0,%u,0,0,0,-,-,-,-,-\n",query,part-1U);
-    } else if (sscanf(frame,"IMU2 Q=%" SCNu32,&query)==1 || sscanf(frame,"IMU Q=%" SCNu32,&query)==1) {
+    } else if (sscanf(frame,"IMU3 Q=%" SCNu32,&query)==1 || sscanf(frame,"IMU2 Q=%" SCNu32,&query)==1 || sscanf(frame,"IMU Q=%" SCNu32,&query)==1) {
         assert(loop_imu_count<32U); loop_imu_times[loop_imu_count++]=clock_us;
         if (loop_imu_mode==1U)
             n=snprintf(loop_response,sizeof loop_response,"IMU,1,%" PRIu32 ",2,0,0,0,0,0,16384,0,0,0\n",query);
@@ -81,7 +81,7 @@ static void test_imu(void) {
         "IMU,1,1,3,1,4294967296,-,-,-,-,-,-,-\n", "MOVE_ACCEPTED\n"
     };
     for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) { reset(); Stm32Imu_BeginQuery(); imu_feed(bad[i]); assert(!s_imu.received); }
-    reset(); Stm32Imu_BeginQuery(); char oversized[160]; memset(oversized,'x',sizeof oversized);
+    reset(); Stm32Imu_BeginQuery(); char oversized[sizeof(s_imu_line)+1U]; memset(oversized,'x',sizeof oversized);
     Stm32Imu_Feed((const uint8_t *)oversized,sizeof oversized); imu_feed(imu_line); assert(!s_imu.received);
     imu_feed(imu_line); assert(s_imu.received);
     reset(); Stm32Imu_BeginQuery(); const char nul[]="IMU,1,1,2,0,0,0,0,0,0,0,0,0\0\n";
@@ -107,7 +107,7 @@ static void test_imu(void) {
     s_status.valid=false; imu_api(); assert(strstr(reply,"\"stm32_connected\":false") && strstr(reply,"\"valid\":false"));
     pass("IMU link and sample ages expire independently; new samples recover, STATUS loss immediately hides measurements");
     reset(); clock_us=500000; Uart_PollImu(); Uart_PollImu();
-    assert(tx_count==1 && !strcmp(frames[0],"IMU2 Q=1\n")); clock_us+=10000000; Uart_PollImu(); Uart_PollImu(); assert(tx_count==2);
+    assert(tx_count==1 && !strcmp(frames[0],"IMU3 Q=1\n")); clock_us+=10000000; Uart_PollImu(); Uart_PollImu(); assert(tx_count==2);
     manual_ready(); clock_us+=500000; Uart_PollImu(); assert(!tx_count);
     reset(); clock_us=500000; wait_hook=stop_during_send; Uart_PollImu(); assert(!tx_count);
     WebCommands_ProcessPending(); assert(!strcmp(frames[0],"STOP\n"));
@@ -148,6 +148,82 @@ static esp_err_t imu_cal_post(const char *body) {
 }
 static void imu_cal_ready(void) {
     reset();feed("STATE=3 FAULTS=4 STOP=1\n");imu2_reply("0,0,0,0,-,-,-,-");
+}
+
+static void imu3_reply(const char *orientation) {
+    uint32_t q=Stm32Imu_BeginQuery();char line[256];
+    int n=snprintf(line,sizeof line,"IMU,3,%" PRIu32 ",2,0,0,0,0,0,16384,131,-262,66,2,0,250,7,100,32750,-65500,16500,%s\r\n",q,orientation);
+    assert(n>0 && (size_t)n<sizeof line);
+    for(int i=0;i<n;++i)Stm32Imu_Feed((const uint8_t *)line+i,1);
+}
+static DWORD WINAPI imu3_writer(void *arg) {
+    (void)arg;
+    for(unsigned n=0;n<10000;++n) {
+        uint32_t q=Stm32Imu_BeginQuery();char line[256];int sign=n%2?1:-1;
+        snprintf(line,sizeof line,"IMU,3,%u,2,0,0,0,0,0,16384,0,0,%d,2,0,250,7,100,0,0,0,1,0,0,0,%d,1,20,80,%d,%d,0,0,1,7\n",
+            q,sign*131,sign*90000,sign*88000,sign*88000);
+        imu_feed(line);
+    }
+    return 0;
+}
+static void test_imu_orientation(void) {
+    imu_cal_ready();imu_api();
+    assert(strstr(reply,"\"orientation\":{\"available\":false") && strstr(reply,"\"degrees\":null"));
+    imu3_reply("1,0,0,0,90000,1,20,80,88000,87000,1000,-30000,1,7");imu_api();
+    assert(s_imu.yaw_known && s_imu.yaw_reference && s_imu.yaw_reference_tick==0);
+    assert(strstr(reply,"\"degrees\":90.000") && strstr(reply,"\"reference_tick\":0") && strstr(reply,"\"reference_request\":7") &&
+        strstr(reply,"\"gyro_delta_deg\":88.000,\"encoder_delta_deg\":87.000,\"difference_deg\":1.000") &&
+        strstr(reply,"\"encoder_reference_deg\":-30.000,\"encoder_calibration\":1"));
+    pass("IMU-3 fragmented v3 carries unwrapped yaw and timestamp-associated common deltas; legacy v2 remains available without invented angles");
+    imu3_reply("1,0,0,0,-90000,2,-,-,-,-,-,-,-,7");imu_api();
+    assert(strstr(reply,"\"degrees\":-90.000") && strstr(reply,"\"state\":\"odometry_unavailable\"") && strstr(reply,"\"gyro_delta_deg\":null"));
+    pass("IMU-3 negative yaw remains usable when encoder reference/history is unavailable; no subtraction of unrelated origins");
+    const char *bad[]={
+        "1,0,-,0,90000,2,-,-,-,-,-,-,-,7", "1,0,0,0,90000,2,-,-,-,-,-,-,-,8",
+        "1,0,0,0,2147483647,2,-,-,-,-,-,-,-,7", "1,3,0,0,90000,2,-,-,-,-,-,-,-,7",
+        "2,0,0,0,-,3,-,-,-,-,-,-,-,7", "0,0,0,0,-,0,-,-,-,-,-,-,-,7",
+        "1,0,0,0,90000,1,20,80,180001,87000,1000,0,1,7",
+        "1,0,0,0,90000,1,20,80,88000,87000,1000,0,0,7",
+        "1,0,0,0,90000,3,-,-,-,-,-,-,-,7", "1,0,0,0,-,2,-,-,-,-,-,-,-,7",
+        "1,0,0,0,90000,1,20,80,88000,87000,1000,0,1"};
+    for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) {
+        imu_cal_ready();imu3_reply(bad[i]);assert(!s_imu.yaw_known);
+    }
+    pass("IMU-3 strict v3 rejects missing references, mismatched calibration IDs, overflow, malformed validity and impossible comparisons");
+    imu_cal_ready();imu3_reply("2,3,0,500,-,3,-,-,-,-,-,-,-,7");imu_api();
+    assert(strstr(reply,"\"requires_calibration\":true,\"reason\":\"timing\"") && strstr(reply,"\"degrees\":null") && strstr(reply,"\"sample_age_ms\":500"));
+    imu3_reply("1,0,5000,0,0,2,-,-,-,-,-,-,-,7");imu_api();
+    assert(strstr(reply,"\"degrees\":0.000") && strstr(reply,"\"reference_tick\":5000"));
+    pass("IMU-3 discontinuity explicitly requires recalibration and a new reference zero is distinguishable from a hidden angle reset");
+    imu_cal_ready();uint32_t q=Stm32Imu_BeginQuery();char line[256];
+    snprintf(line,sizeof line,"IMU,3,%" PRIu32 ",2,0,0,0,0,0,16384,0,0,0,2,0,250,7,100,0,0,0,1,0,0,0,90000,1,20,80,88000,87000,1000,0,2,7\n",q);
+    clock_us+=199999;imu_feed(line);imu_api();
+    assert(strstr(reply,"\"sample_age_ms\":200") && strstr(reply,"\"sample_age_ms\":220") && strstr(reply,"\"degrees\":90.000"));
+    clock_us+=100000;imu_feed(line);imu_api();assert(strstr(reply,"\"sample_age_ms\":300"));
+    s_status.valid=false;imu_api();assert(strstr(reply,"\"degrees\":null") && strstr(reply,"\"difference_deg\":null"));
+    pass("IMU-3 conservatively ages the original integration/comparison samples, duplicate replies cannot rejuvenate them, STATUS loss hides angles");
+    imu_cal_ready();imu3_reply("1,0,0,0,90000,1,20,80,88000,87000,1000,0,1,7");clock_us+=1500000;imu_api();
+    assert(strstr(reply,"\"degrees\":null") && strstr(reply,"\"difference_deg\":null") && strstr(reply,"\"requires_calibration\":false"));
+    feed("STATE=3 FAULTS=4 STOP=1\n");imu3_reply("1,0,0,0,91000,2,-,-,-,-,-,-,-,7");imu_api();assert(strstr(reply,"\"degrees\":91.000"));
+    pass("IMU-3 telemetry expiration does not fabricate calibration loss or integrate web gaps; fresh source data alone restores display");
+    imu_cal_ready();q=Stm32Imu_BeginQuery();
+    snprintf(line,sizeof line,"IMU,3,%" PRIu32 ",4,3,32,100,-,-,-,-,-,-,3,2,250,7,-,-,-,-,2,2,0,100,-,3,-,-,-,-,-,-,-,7\n",q);
+    imu_feed(line);imu_api();assert(s_imu.yaw_state==2 && s_imu.cal_state==3 && strstr(reply,"\"requires_calibration\":true,\"reason\":\"i2c\""));
+    pass("IMU-3 real API distinguishes received I2C failure and invalid angular reference from missing UART response");
+    imu_cal_ready();q=Stm32Imu_BeginQuery();
+    snprintf(line,sizeof line,"IMU,3,%" PRIu32 ",2,0,0,0,-32768,-32768,-32768,-32768,-32768,-32768,2,0,250,4294967295,4294967295,-8192000,-8192000,-8192000,1,0,0,0,-2147483646,1,20,0,-180000,-180000,0,-180000,2,4294967295\n",q);
+    rx_data=line;rx_size=strlen(line);Uart_ReadResponse();imu_api();
+    assert(s_imu.yaw_reference_request==UINT32_MAX && strstr(reply,"\"degrees\":-2147483.646") && strlen(reply)<1792);
+    printf("IMU-3 largest-value JSON: %u/1792 bytes\n",(unsigned)strlen(reply));
+    pass("IMU-3 large signed fields and full 32-bit reference pass the actual sole UART reader and bounded HTTP response");
+    imu_cal_ready();HANDLE thread=CreateThread(NULL,0,imu3_writer,NULL,0,NULL);assert(thread);
+    for(unsigned n=0;n<10000;++n) {
+        imu_api();
+        if(strstr(reply,"\"degrees\":90.000"))assert(strstr(reply,"\"gyro_delta_deg\":88.000,\"encoder_delta_deg\":88.000"));
+        if(strstr(reply,"\"degrees\":-90.000"))assert(strstr(reply,"\"gyro_delta_deg\":-88.000,\"encoder_delta_deg\":-88.000"));
+    }
+    assert(WaitForSingleObject(thread,10000)==WAIT_OBJECT_0);CloseHandle(thread);
+    pass("IMU-3 parser and concurrent HTTP obtain coherent orientation/reference/comparison copies using the existing lock");
 }
 static void test_imu_calibration(void) {
     imu_cal_ready();imu_api();

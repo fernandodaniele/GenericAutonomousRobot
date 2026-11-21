@@ -38,6 +38,22 @@ typedef struct {
     uint8_t state, reason;
 } TaskIMUCalibration_t;
 
+/* Relative, unwrapped degrees: left/CCW positive. No fusion or pose update.
+ * The same 40 ms continuity criterion used by calibration applies to yaw. */
+#define IMU_YAW_MAX_GAP_MS IMU_CAL_MAX_GAP_MS
+enum { IMU_YAW_PENDING=0, IMU_YAW_VALID=1, IMU_YAW_INVALID=2 };
+enum { IMU_YAW_NONE=0, IMU_YAW_CALIBRATION=1, IMU_YAW_I2C=2,
+       IMU_YAW_TIMING=3, IMU_YAW_NUMERIC=4, IMU_YAW_REINITIALIZED=5 };
+enum { IMU_COMPARE_WAITING=0, IMU_COMPARE_VALID=1, IMU_COMPARE_ODOMETRY=2,
+       IMU_COMPARE_YAW=3 };
+typedef struct {
+    double degrees;
+    TickType_t reference_tick, sample_tick, comparison_tick;
+    uint32_t reference_request; /* Together with reference_tick, scoped to boot. */
+    float gyro_delta_deg, encoder_delta_deg, difference_deg, encoder_reference_deg;
+    uint8_t state, reason, comparison_state, encoder_calibration;
+} TaskIMUOrientation_t;
+
 /* One coherent queue copy. Only IMU_VALID authorizes current measurements.
  * sample_tick dates the last successful acquisition start; zero is legitimate.
  * Raw axes are sensor axes, not calibrated robot/chassis coordinates. */
@@ -49,6 +65,7 @@ typedef struct {
     HAL_StatusTypeDef hal_status;
     bool has_sample;
     TaskIMUCalibration_t calibration;
+    TaskIMUOrientation_t orientation;
 } TaskIMUSnapshot_t;
 
 bool TaskIMU_GetSnapshot(TaskIMUSnapshot_t *snapshot);

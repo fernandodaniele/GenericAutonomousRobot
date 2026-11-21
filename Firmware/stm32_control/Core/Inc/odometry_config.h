@@ -10,20 +10,20 @@
 #define ODOM_CHASSIS_WIDTH_M 0.170f
 /* Diametros [m], 26.5 mm nominales. Calibrar por rodadura bajo carga o medir
  * cada rueda; radios derivados, NO editar por separado. */
-#define ODOM_LEFT_DIAMETER_M 0.0265f
-#define ODOM_RIGHT_DIAMETER_M 0.0265f
+#define ODOM_LEFT_DIAMETER_M 0.0254f
+#define ODOM_RIGHT_DIAMETER_M 0.0254f
 #define ODOM_LEFT_RADIUS_M (ODOM_LEFT_DIAMETER_M * 0.5f)
 #define ODOM_RIGHT_RADIUS_M (ODOM_RIGHT_DIAMETER_M * 0.5f)
 /* CPR efectivo [cuentas/vuelta DE RUEDA], incluye cuadratura y reductora.
  * DESCONOCIDO: 0 bloquea toda metrica/ocupacion. Medir independientemente:
  * abs(conteo_final-conteo_inicial)/vueltas, usando /api/map (strings int64).
  * No multiplicar por 4 nuevamente un valor medido con TIM1/TIM2. */
-#define ODOM_LEFT_WHEEL_CPR 0.0f
-#define ODOM_RIGHT_WHEEL_CPR 0.0f
+#define ODOM_LEFT_WHEEL_CPR 1435.2f
+#define ODOM_RIGHT_WHEEL_CPR 1421.6f
 /* Base [m], 150 mm nominales entre centros de ruedas. Medir fisicamente;
  * ajustar base efectiva en un ensayo posterior autorizado. No usar el
  * ROBOT_WHEEL_BASE=200 de mid_kinematics como medida real. */
-#define ODOM_TRACK_M 0.150f
+#define ODOM_TRACK_M 0.1492f
 /* 1 solo tras validar CPR, radios y base. 0 permite metrica PROVISIONAL si
  * todos los valores indispensables son completos/coherentes; nunca con CPR=0. */
 #define ODOM_CALIBRATION_CONFIRMED 0

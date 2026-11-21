@@ -2,6 +2,7 @@
 #include "stm32_status.h"
 #include "stm32_sensors.h"
 #include "stm32_mapping.h"
+#include "stm32_imu.h"
 #include "web_commands.h"
 
 #include <string.h>
@@ -118,6 +119,20 @@ void Uart_PollMapping(void)
     xSemaphoreGive(s_tx_gate);
 }
 
+void Uart_PollImu(void)
+{
+    if (!Stm32Imu_PollDue()) return;
+    Stm32Imu_DeferPoll(); /* No catch-up bursts, even when paused or TX fails. */
+    if (!WebCommands_CanPollSensors() || !TxBegin()) return;
+    if (WebCommands_CanPollSensors()) {
+        char message[24];
+        uint32_t query = Stm32Imu_BeginQuery();
+        int n = snprintf(message, sizeof(message), "IMU Q=%" PRIu32 "\n", query);
+        if (n <= 0 || (size_t)n >= sizeof(message) || !TxWrite(message)) Stm32Imu_QueryFailed();
+    }
+    xSemaphoreGive(s_tx_gate);
+}
+
 bool Uart_SendControl(UartControlCommand command)
 {
     const char *message;
@@ -210,6 +225,7 @@ void Uart_ReadResponse(void) {
         Stm32Status_Feed(rx_buffer, (size_t)length);
         Stm32Sensors_Feed(rx_buffer, (size_t)length);
         Stm32Mapping_Feed(rx_buffer, (size_t)length);
+        Stm32Imu_Feed(rx_buffer, (size_t)length);
         rx_buffer[length] = '\0';
         printf("[STM32] %s", (char *)rx_buffer);
     }

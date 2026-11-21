@@ -30,6 +30,7 @@ void Uart_SendStatus(void);
 /* Solo app_main; se omite durante controles/sesiones y sin acumular consultas. */
 void Uart_PollSensors(void);
 void Uart_PollMapping(void);
+void Uart_PollImu(void);
 
 void Uart_SendReset(void);
 

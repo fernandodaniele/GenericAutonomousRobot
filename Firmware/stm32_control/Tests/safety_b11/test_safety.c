@@ -45,6 +45,13 @@ static jmp_buf finish;
 #include "../../Core/Src/mid_navigation.c"
 #include "../../Core/Src/mid_odometry.c"
 #include "../../Core/Src/mid_mapping.c"
+static TaskIMUSnapshot_t imu_snapshot;
+static bool imu_snapshot_available;
+bool TaskIMU_GetSnapshot(TaskIMUSnapshot_t *out) {
+    if (!imu_snapshot_available) return false;
+    *out = imu_snapshot;
+    return true;
+}
 static TaskControlRobotEventMessage_t events[8];
 
 /* Real encoder driver under distinct host-only names; task injection remains
@@ -279,6 +286,7 @@ int32_t Encoder_ReadDelta(EncoderHandle_t *encoder) {
 }
 
 static void setup(void) {
+    imu_snapshot_available = false;
     CHECK(critical_depth == 0 && scheduler_depth == 0);
     clock_tick = 1000U;
     advance_tick_on_motor_receive = 0U;
@@ -514,6 +522,42 @@ static bool uart_consume(DrvUart_t *uart) {
     if (!DrvUart_GetMessageTimed(uart, frame, sizeof(frame), &tick)) return false;
     TaskComms_ProcessMessage(uart, frame, tick);
     return true;
+}
+
+static void test_imu_protocol(void) {
+    setup(); DrvUart_t uart; UART_HandleTypeDef peripheral = {0}; DrvUart_Init(&uart, &peripheral);
+    uart_feed(&uart, "IMU Q=1\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response, "IMU,1,1,0,0,0,-,-,-,-,-,-,-\n") == 0);
+    PASS("IMU read-only query exposes initialization without invented values");
+    imu_snapshot_available = true;
+    imu_snapshot = (TaskIMUSnapshot_t){ .state=IMU_VALID, .has_sample=true, .sample_tick=0U,
+        .data={.Accel_X_RAW=-32768,.Accel_Y_RAW=0,.Accel_Z_RAW=16384,.Gyro_X_RAW=131,.Gyro_Y_RAW=-131,.Gyro_Z_RAW=32767} };
+    clock_tick=0U; uart_feed(&uart,"IMU Q=4294967295\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response,"IMU,1,4294967295,2,0,0,0,-32768,0,16384,131,-131,32767\n")==0);
+    CHECK(!target_pending); expect_zero();
+    PASS("IMU raw signed axes query correlation and legitimate zero tick do not emit motion");
+    imu_snapshot.sample_tick=UINT32_MAX-9U; clock_tick=10U;
+    uart_feed(&uart,"IMU\n"); CHECK(uart_consume(&uart)); CHECK(strstr(uart_response,",2,0,0,20,"));
+    PASS("IMU sample age uses unsigned FreeRTOS tick wrap");
+    imu_snapshot.state=IMU_READ_ERROR; imu_snapshot.hal_status=HAL_TIMEOUT; imu_snapshot.i2c_error=32;
+    uart_feed(&uart,"IMU Q=2\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response,"IMU,1,2,4,3,32,20,-,-,-,-,-,-\n")==0);
+    PASS("IMU failed read withdraws axes while preserving last-success age and HAL error");
+    const char *bad[]={"IMU Q=0\n","IMU Q=-1\n","IMU Q=4294967296\n","IMU Q=2extra\n"};
+    for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) {
+        uart_feed(&uart,bad[i]); CHECK(uart_consume(&uart)); CHECK(strcmp(uart_response,"ERR_UNKNOWN\n")==0);
+    }
+    PASS("IMU malformed query numbers cannot reach acquisition or motion");
+    uart_feed(&uart,"STOP\nIMU Q=4\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response,"STOP_QUEUED\n")==0); expect_zero();
+    setup(); DrvUart_Init(&uart,&peripheral); uart_feed(&uart,"IMU Q=4\nDETENER\n"); CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response,"MOVE_ACCEPTED\n")==0); expect_zero();
+    PASS("STOP and DETENER retain mailbox priority over read-only IMU telemetry");
+    uart_feed(&uart,"IMU Q=4\nSENSORS Q=5\n"); CHECK(uart_consume(&uart));
+    CHECK(strncmp(uart_response,"SENSORS,1,5,",12U)==0);
+    uart_feed(&uart,"IMU Q=4\nMAPPING Q=6 S=0\n"); CHECK(uart_consume(&uart));
+    CHECK(strncmp(uart_response,"POSE,2,6,",9U)==0);
+    PASS("existing SENSORS and MAPPING outrank IMU without changing mailbox priority classes");
 }
 static void test_motion_commands(void) {
     static const char *frames[] = {
@@ -1053,7 +1097,7 @@ static void test_w6_integration(void) {
 static void test_w7_integration(void) {
     setup();left_encoder_delta=-13;right_encoder_delta=24;run_motor(2);
     OdometrySnapshot od;Odometry_GetSnapshot(&od);
-    CHECK(od.left_count==-26&&od.right_count==48&&od.state==1U);
+    CHECK(od.left_count==-26&&od.right_count==48&&od.state==2U&&od.calibration==ODOM_GEOMETRY_PROVISIONAL);
     CHECK(left_encoder_reads==3U&&right_encoder_reads==3U);
     CHECK(task_context.left_speed_cps==-1300&&task_context.right_speed_cps==2400);
     PASS("W7 real MotorControl feeds both deltas to odometry once, after PWM, without changing speed conversion");
@@ -1062,9 +1106,9 @@ static void test_w7_integration(void) {
     PASS("W7 STOP preserves measured odometry counts while clearing PI targets and PWM");
     DrvUart_t uart;UART_HandleTypeDef peripheral={0};DrvUart_Init(&uart,&peripheral);
     uart_feed(&uart,"MAPPING Q=24 S=0\n");CHECK(uart_consume(&uart));
-    CHECK(strncmp(uart_response,"POSE,2,24,",10U)==0&&strstr(uart_response,",1,0,-26,48,-,-,-,-,-,0\n"));
+    CHECK(strncmp(uart_response,"POSE,2,24,",10U)==0&&strstr(uart_response,",2,1,-26,48,"));
     CHECK(!target_pending&&robot_state==ROBOT_STATE_MANUAL);expect_zero();
-    PASS("W7 actual TaskComms reads a consistent uncalibrated pose without issuing movement or changing STATUS/SENSORS");
+    PASS("W7 actual TaskComms reads a consistent provisional pose without issuing movement or changing STATUS/SENSORS");
     uart_feed(&uart,"MAPPING Q=25 S=1\nSTATUS\n");CHECK(uart_consume(&uart)&&strncmp(uart_response,"STATE=",6U)==0);
     uart_feed(&uart,"MAPPING Q=26 S=0\nSTOP\n");CHECK(uart_consume(&uart)&&strcmp(uart_response,"STOP_QUEUED\n")==0);
     run_fsm(1);expect_zero();CHECK(robot_state==ROBOT_STATE_IDLE);
@@ -1406,6 +1450,7 @@ int run_permanent_regressions(void) {
     test_motor_encoder_regressions();
     test_public_velocity_control();
     test_motion_commands();
+    test_imu_protocol();
     test_stop_b65();
     test_log_producers();
     test_sensor_telemetry();

@@ -2,6 +2,12 @@
 #define TEST_HAL_H
 #include <stdint.h>
 typedef enum { HAL_OK = 0, HAL_ERROR, HAL_BUSY, HAL_TIMEOUT } HAL_StatusTypeDef;
+typedef struct { uint32_t ErrorCode; } I2C_HandleTypeDef;
+#define I2C_MEMADD_SIZE_8BIT 1U
+HAL_StatusTypeDef HAL_I2C_Mem_Read(I2C_HandleTypeDef *, uint16_t, uint16_t, uint16_t, uint8_t *, uint16_t, uint32_t);
+HAL_StatusTypeDef HAL_I2C_Mem_Write(I2C_HandleTypeDef *, uint16_t, uint16_t, uint16_t, uint8_t *, uint16_t, uint32_t);
+uint32_t HAL_I2C_GetError(I2C_HandleTypeDef *);
+uint32_t HAL_GetTick(void);
 typedef struct { unsigned unused; } UART_HandleTypeDef;
 HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *, uint8_t *, uint16_t);
 HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *, uint8_t *, uint16_t, uint32_t);

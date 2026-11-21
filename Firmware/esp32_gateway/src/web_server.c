@@ -8,6 +8,7 @@
 #include "stm32_status.h"
 #include "stm32_sensors.h"
 #include "stm32_mapping.h"
+#include "stm32_imu.h"
 #include "web_commands.h"
 #include "esp_timer.h"
 #include "esp_http_server.h"
@@ -284,13 +285,35 @@ static esp_err_t WebServer_ManualEnd(httpd_req_t *r) { return WebServer_Manual(r
 static esp_err_t WebServer_ManualHalt(httpd_req_t *r) { return WebServer_Manual(r, 3U); }
 static esp_err_t WebServer_ManualScript(httpd_req_t *r);
 
+static esp_err_t WebServer_Imu(httpd_req_t *request)
+{
+    char response[512];
+    Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
+    int n = Stm32Imu_Json(response, sizeof(response), status.connected, !WebCommands_CanPollSensors());
+    if (n < 0) return ESP_FAIL;
+    esp_err_t err = httpd_resp_set_type(request, "application/json; charset=utf-8");
+    if (err != ESP_OK) return err;
+    err = httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    if (err != ESP_OK) return err;
+    return httpd_resp_send(request, response, n);
+}
+
+static esp_err_t WebServer_ImuScript(httpd_req_t *request)
+{
+    extern const uint8_t start[] asm("_binary_imu_js_start");
+    extern const uint8_t end[] asm("_binary_imu_js_end");
+    const WebResource script = { start, end, "application/javascript; charset=utf-8" };
+    request->user_ctx = (void *)&script;
+    return WebServer_Resource(request);
+}
+
 esp_err_t WebServer_Start(void)
 {
     if (s_attempted) return s_result;
     s_attempted = true;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.recv_wait_timeout = 1; /* Lecturas POST acotadas; sin esperar UART. */
-    config.max_uri_handlers = 15;
+    config.max_uri_handlers = 17;
     config.lru_purge_enable = true;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
@@ -312,7 +335,9 @@ esp_err_t WebServer_Start(void)
         { .uri = "/api/sensors", .method = HTTP_GET, .handler = WebServer_Sensors },
         { .uri = "/sensors.js", .method = HTTP_GET, .handler = WebServer_SensorsScript },
         { .uri = "/api/map", .method = HTTP_GET, .handler = WebServer_Map },
-        { .uri = "/map.js", .method = HTTP_GET, .handler = WebServer_MapScript }
+        { .uri = "/map.js", .method = HTTP_GET, .handler = WebServer_MapScript },
+        { .uri = "/api/imu", .method = HTTP_GET, .handler = WebServer_Imu },
+        { .uri = "/imu.js", .method = HTTP_GET, .handler = WebServer_ImuScript }
     };
     for (size_t i = 0U; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);

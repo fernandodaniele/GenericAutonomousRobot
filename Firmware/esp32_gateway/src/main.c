@@ -6,6 +6,7 @@
 #include "web_server.h"
 #include "stm32_status.h"
 #include "stm32_sensors.h"
+#include "stm32_imu.h"
 #include "web_commands.h"
 
 // Tarea encargada de leer comandos del monitor serial.
@@ -82,7 +83,10 @@ void app_main(void)
         WebManual_Process();
         if (Stm32Status_PollDue()) Uart_SendStatus();
         else if (Stm32Sensors_PollDue()) Uart_PollSensors();
-        else Uart_PollMapping(); /* Ultima prioridad, nunca dos consultas juntas. */
+        /* A 100-ms UART read can keep 100-ms mapping continuously due.
+         * Service a due IMU poll first so mapping cannot starve diagnostics. */
+        else if (Stm32Imu_PollDue()) Uart_PollImu();
+        else Uart_PollMapping();
         Uart_ReadResponse();
         vTaskDelay(pdMS_TO_TICKS(10));
     }

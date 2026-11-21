@@ -21,7 +21,7 @@ void DrvUart_StartReceive(DrvUart_t *uart) {
     (void)HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1U);
 }
 
-/* Mailbox acotado: STOP > DETENER > movimiento/modo > STATUS/PING > SENSORS > MAPPING.
+/* Mailbox: STOP > DETENER > movimiento/modo > STATUS/PING > SENSORS > MAPPING > IMU.
  * No acumula movimientos; una consulta nunca desplaza una orden operativa.
  * ISR solo ensambla/fecha mensajes: no actua sobre FSM ni motores.
  */
@@ -38,11 +38,14 @@ void DrvUart_RxCallback(DrvUart_t *uart) {
                      strcmp(frame, "GIRAR_IZQUIERDA") == 0 || strcmp(frame, "GIRAR_DERECHA") == 0 ||
                      strcmp(frame, "RESET") == 0 || strcmp(frame, "MANUAL") == 0 ||
                      strcmp(frame, "AUTO") == 0) priority = 2U;
-            else if (strcmp(frame, "SENSORS") == 0 || strncmp(frame, "SENSORS Q=", 10U) == 0 ||
+            else if (strcmp(frame, "IMU") == 0 || strncmp(frame, "IMU Q=", 6U) == 0 ||
+                     strcmp(frame, "SENSORS") == 0 || strncmp(frame, "SENSORS Q=", 10U) == 0 ||
                      strncmp(frame, "MAPPING Q=", 10U) == 0) priority = 0U;
             bool sensor_over_mapping = priority == 0U && strncmp(frame, "SENSORS", 7U) == 0 &&
                                        strncmp(uart->rx_buffer, "MAPPING Q=", 10U) == 0;
-            if (!uart->message_ready || priority > uart->message_priority || sensor_over_mapping) {
+            bool over_imu = priority == 0U && strncmp(frame, "IMU", 3U) != 0 &&
+                            strncmp(uart->rx_buffer, "IMU", 3U) == 0;
+            if (!uart->message_ready || priority > uart->message_priority || sensor_over_mapping || over_imu) {
                 memcpy(uart->rx_buffer, uart->frame_buffer, uart->rx_index + 1U);
                 uart->message_tick = uart->frame_tick;
                 uart->message_priority = priority;

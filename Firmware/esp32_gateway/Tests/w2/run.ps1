@@ -10,7 +10,7 @@ foreach ($header in @('esp_err.h','esp_log.h','esp_timer.h','esp_random.h','esp_
     Set-Content -LiteralPath $path -Value '#include "sdk.h"' -Encoding Ascii
 }
 $assembly = ".section .rdata,`"dr`"`n"
-foreach ($name in @('index.html','style.css','app.js','manual.js','sensors.js','map.js')) {
+foreach ($name in @('index.html','style.css','app.js','manual.js','sensors.js','map.js','imu.js')) {
     $symbol = $name.Replace('.','_')
     $asset = (Join-Path $firmware "web/$name").Replace('\','/')
     $assembly += ".global _binary_${symbol}_start`n_binary_${symbol}_start:`n.incbin `"$asset`"`n.global _binary_${symbol}_end`n_binary_${symbol}_end:`n"

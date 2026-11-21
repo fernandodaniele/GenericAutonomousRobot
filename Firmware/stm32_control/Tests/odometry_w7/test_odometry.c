@@ -20,10 +20,11 @@ int main(void){
     OdometrySnapshot p;OdometryRay ray;float x,y,a;
     Odometry_GetSnapshot(&p);CHECK(p.state==0U);Odometry_Update(10,10,0);CHECK(read_pose().state==0U);
     PASS("no encoder baseline means no odometry sample");
-    Odometry_Init(0);Odometry_Update(100,-50,10);p=read_pose();
+    OdometryConfig incomplete=config();incomplete.left_cpr=0;
+    Odometry_InitConfig(&incomplete,0);Odometry_Update(100,-50,10);p=read_pose();
     CHECK(p.state==1U&&!p.calibrated&&p.left_count==100&&p.right_count==-50);
     CHECK(!Odometry_PoseAt(0,&x,&y,&a));Odometry_Observe(0,0.5f,0,true);Odometry_GetRay(0,&ray);
-    CHECK(ray.state==2U&&ray.sequence==1U);PASS("production defaults expose real signed counts, no invented metric pose or mapped echo");
+    CHECK(ray.state==2U&&ray.sequence==1U);PASS("explicit missing-CPR fixture exposes real signed counts without invented metric pose or mapped echo");
     OdometryConfig c=config();Odometry_InitConfig(&c,0);Odometry_Update(100,100,10);p=read_pose();
     NEAR(p.x_m,0.031415927f,1e-6f);NEAR(p.y_m,0,1e-6f);NEAR(p.theta_rad,0,1e-6f);
     CHECK(p.state==2U&&p.calibrated&&p.tick==10U);NEAR(p.increment_m,p.x_m,1e-6f);
@@ -108,19 +109,21 @@ int main(void){
     s_odom.left_count=INT64_MIN;s_odom.right_count=INT64_MAX;
     n=Mapping_Format(line,sizeof line,UINT32_MAX,0,UINT32_MAX);
     CHECK(n>0&&n<160&&strstr(line,"-9223372036854775808,9223372036854775807,"));
-    Odometry_Init(0);n=Mapping_Format(line,sizeof line,4,0,0);CHECK(n>0&&strstr(line,",0,1,0,0,0,-,-,-,-,-,0\n"));
+    Odometry_InitConfig(&incomplete,0);n=Mapping_Format(line,sizeof line,4,0,0);CHECK(n>0&&strstr(line,",0,1,0,0,0,-,-,-,-,-,0\n"));
     PASS("full signed counts do not depend on newlib-nano long-long printf; absent metrics are dashes");
 
     Odometry_Init(0);OdometryConfig nominal=s_odom_config;
     NEAR(ODOM_CHASSIS_LENGTH_M,0.170f,1e-7f);NEAR(ODOM_CHASSIS_WIDTH_M,0.170f,1e-7f);
-    NEAR(nominal.left_radius_m,0.01325f,1e-7f);NEAR(nominal.right_radius_m,0.01325f,1e-7f);
-    NEAR(nominal.track_m,0.150f,1e-7f);NEAR(nominal.sensor_x[0],0.085f,1e-7f);NEAR(nominal.sensor_x[1],-0.085f,1e-7f);
+    NEAR(nominal.left_radius_m,ODOM_LEFT_RADIUS_M,1e-7f);NEAR(nominal.right_radius_m,ODOM_RIGHT_RADIUS_M,1e-7f);
+    NEAR(nominal.track_m,ODOM_TRACK_M,1e-7f);NEAR(nominal.sensor_x[0],0.085f,1e-7f);NEAR(nominal.sensor_x[1],-0.085f,1e-7f);
     NEAR(nominal.sensor_y[0],0,1e-7f);NEAR(nominal.sensor_y[1],0,1e-7f);
     NEAR(nominal.sensor_yaw[0],0,1e-7f);NEAR(nominal.sensor_yaw[1],ODOM_PI,1e-7f);
-    CHECK(nominal.left_cpr==0&&nominal.right_cpr==0&&!nominal.confirmed&&!nominal.sensors_confirmed);
-    CHECK(read_pose().calibration==ODOM_GEOMETRY_INCOMPLETE);
-    PASS("W7.4 production geometry is 170-mm chassis, 26.5-mm wheels, 150-mm base and +/-85-mm sensor offsets; no invented CPR");
-    /* CPR conocidos SOLO sinteticos: se verifica escala independiente por rueda. */
+    NEAR(nominal.left_cpr,ODOM_LEFT_WHEEL_CPR,0.001f);NEAR(nominal.right_cpr,ODOM_RIGHT_WHEEL_CPR,0.001f);
+    CHECK(nominal.left_cpr>0&&nominal.right_cpr>0&&!nominal.confirmed&&!nominal.sensors_confirmed);
+    CHECK(read_pose().calibration==ODOM_GEOMETRY_PROVISIONAL);
+    PASS("current production geometry uses configured measured CPR and remains provisional until physical confirmation");
+    /* Synthetic radius/CPR fixture stays independent of physical calibration. */
+    nominal.left_radius_m=nominal.right_radius_m=0.01325f;
     nominal.left_cpr=1000;nominal.right_cpr=2000;
     Odometry_InitConfig(&nominal,0);Odometry_Update(500,1000,10);p=read_pose();
     CHECK(p.state==2U&&p.calibration==ODOM_GEOMETRY_PROVISIONAL&&!p.calibrated);

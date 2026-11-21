@@ -8,6 +8,7 @@
 #include "mid_motion.h"
 #include "task_sensores.h"
 #include "mid_mapping.h"
+#include "task_imu.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -73,12 +74,48 @@ static bool TaskComms_SensorsQuery(const char *message, uint32_t *query) {
     return *p == '\0' && *query != 0U;
 }
 
+/* IMU v1: raw signed axes, no float formatting, no new I2C acquisition.
+ * State, HAL result, I2C error bits, age of last successful acquisition.
+ * Missing age/axes are '-', never invented zero measurements. */
+static void TaskComms_SendImu(DrvUart_t *uart, uint32_t query) {
+    TaskIMUSnapshot_t s = { .state = IMU_INITIALIZING };
+    (void)TaskIMU_GetSnapshot(&s);
+    char age[11] = "-", response[128];
+    if (s.has_sample) (void)snprintf(age, sizeof(age), "%lu",
+        (unsigned long)TaskComms_SensorAge(xTaskGetTickCount(), s.sample_tick));
+    int n;
+    if (s.state == IMU_VALID && s.has_sample) {
+        n = snprintf(response, sizeof(response),
+            "IMU,1,%lu,2,0,0,%s,%d,%d,%d,%d,%d,%d\n", (unsigned long)query, age,
+            (int)s.data.Accel_X_RAW, (int)s.data.Accel_Y_RAW, (int)s.data.Accel_Z_RAW,
+            (int)s.data.Gyro_X_RAW, (int)s.data.Gyro_Y_RAW, (int)s.data.Gyro_Z_RAW);
+    } else {
+        n = snprintf(response, sizeof(response), "IMU,1,%lu,%u,%u,%lu,%s,-,-,-,-,-,-\n",
+            (unsigned long)query, (unsigned)s.state, (unsigned)s.hal_status,
+            (unsigned long)s.i2c_error, age);
+    }
+    if (n > 0 && (size_t)n < sizeof(response)) DrvUart_SendString(uart, response);
+}
+
+static bool TaskComms_ImuQuery(const char *message, uint32_t *query) {
+    if (strcmp(message, "IMU") == 0) { *query = 0U; return true; }
+    if (strncmp(message, "IMU Q=", 6U) != 0) return false;
+    /* Reuse the strict decimal query grammar without accepting other frames. */
+    char sensors[32];
+    int n = snprintf(sensors, sizeof(sensors), "SENSORS Q=%s", message + 6);
+    return n > 0 && (size_t)n < sizeof(sensors) && TaskComms_SensorsQuery(sensors, query);
+}
+
 /**
  * @brief Procesa los mensajes recibidos desde el ESP32.
  */
 static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickType_t issued_tick) {
     uint32_t query;
     unsigned mapping_part;
+    if (TaskComms_ImuQuery(message, &query)) {
+        TaskComms_SendImu(uart, query);
+        return;
+    }
     if (Mapping_Query(message, &query, &mapping_part)) {
         static char mapping_response[160]; /* Una sola tarea; no crece el stack. */
         int n = Mapping_Format(mapping_response, sizeof(mapping_response), query,

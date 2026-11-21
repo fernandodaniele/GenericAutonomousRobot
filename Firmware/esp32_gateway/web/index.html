@@ -9,6 +9,7 @@
   <script src="/app.js" defer></script>
   <script src="/manual.js" defer></script>
   <script src="/sensors.js" defer></script>
+  <script src="/imu.js" defer></script>
 </head>
 <body>
   <div class="page">
@@ -83,6 +84,20 @@
         </div>
         <p id="sensor-ir-detail" class="description">Sin lectura IR disponible</p>
         <p class="safety-note">El monitoreo conserva la última información y puede mostrar datos históricos entre consultas. Una lectura IR no diagnostica el cableado. Safety conserva la autoridad de parada.</p>
+      </section>
+
+      <section class="card sensor-card" aria-labelledby="imu-title">
+        <p class="eyebrow">IMU · MEDICIONES REALES · SOLO LECTURA</p>
+        <h2 id="imu-title">MPU6050 · Acelerómetro y giroscopio</h2>
+        <p id="imu-state" class="description" role="status" aria-live="polite">Esperando telemetría IMU</p>
+        <dl class="readings">
+          <div><dt>Aceleración X / Y / Z (g)</dt><dd id="imu-accel">Sin muestra</dd></div>
+          <div><dt>Giro X / Y / Z (°/s)</dt><dd id="imu-gyro">Sin muestra</dd></div>
+          <div><dt>Antigüedad de la última lectura</dt><dd id="imu-age">Sin muestra</dd></div>
+          <div><dt>Comunicación I²C</dt><dd id="imu-error">Sin información</dd></div>
+        </dl>
+        <p class="safety-note">Ejes físicos del sensor, sin calibración de offsets ni fusión con odometría. El acelerómetro incluye gravedad. Las consultas se pausan durante control manual; los datos vencidos no se muestran como válidos.</p>
+        <p class="endpoint">Consulta automática <code>GET /api/imu</code></p>
       </section>
 
       <section class="card controls" aria-labelledby="controls-title">

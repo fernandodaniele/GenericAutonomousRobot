@@ -3,6 +3,29 @@
 
 #include <stdbool.h>
 #include "mpu6050.h"
+#include "FreeRTOS.h"
+
+typedef enum {
+    IMU_INITIALIZING = 0,
+    IMU_READY = 1,
+    IMU_VALID = 2,
+    IMU_INIT_ERROR = 3,
+    IMU_READ_ERROR = 4
+} TaskIMUState_t;
+
+/* One coherent queue copy. Only IMU_VALID authorizes current measurements.
+ * sample_tick dates the last successful acquisition start; zero is legitimate.
+ * Raw axes are sensor axes, not calibrated robot/chassis coordinates. */
+typedef struct {
+    MPU6050_t data;
+    TickType_t sample_tick;
+    uint32_t i2c_error;
+    TaskIMUState_t state;
+    HAL_StatusTypeDef hal_status;
+    bool has_sample;
+} TaskIMUSnapshot_t;
+
+bool TaskIMU_GetSnapshot(TaskIMUSnapshot_t *snapshot);
 
 /**
  * @brief Crea la tarea periódica de adquisición de datos de la IMU.

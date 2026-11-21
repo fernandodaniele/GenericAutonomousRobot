@@ -287,7 +287,7 @@ static esp_err_t WebServer_ManualScript(httpd_req_t *r);
 
 static esp_err_t WebServer_Imu(httpd_req_t *request)
 {
-    char response[512];
+    static char response[1024]; /* Single HTTP task, keep formatting off its stack. */
     Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
     int n = Stm32Imu_Json(response, sizeof(response), status.connected, !WebCommands_CanPollSensors());
     if (n < 0) return ESP_FAIL;
@@ -296,6 +296,19 @@ static esp_err_t WebServer_Imu(httpd_req_t *request)
     err = httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     if (err != ESP_OK) return err;
     return httpd_resp_send(request, response, n);
+}
+
+static esp_err_t WebServer_ImuCalibrate(httpd_req_t *request)
+{
+    char id[33],body[10];
+    if(!CommandHeaders(request,id) || !CommandBody(request,body,sizeof(body)))return ESP_FAIL;
+    if(request->content_len!=9U || memcmp(body,"CALIBRATE",9U)!=0)
+        return CommandReply(request,"400 Bad Request","{\"accepted\":false,\"error\":\"operation\"}",false);
+    int result=Stm32Imu_RequestCalibration(id);
+    if(result==0)return CommandReply(request,"202 Accepted","{\"accepted\":true,\"phase\":\"queued\"}",false);
+    return CommandReply(request,result==3 ? "412 Precondition Failed" : "409 Conflict",
+        result==1 ? "{\"accepted\":false,\"error\":\"replay\"}" :
+        result==2 ? "{\"accepted\":false,\"error\":\"busy\"}" : "{\"accepted\":false,\"error\":\"unsafe\"}",false);
 }
 
 static esp_err_t WebServer_ImuScript(httpd_req_t *request)
@@ -313,7 +326,7 @@ esp_err_t WebServer_Start(void)
     s_attempted = true;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.recv_wait_timeout = 1; /* Lecturas POST acotadas; sin esperar UART. */
-    config.max_uri_handlers = 17;
+    config.max_uri_handlers = 18;
     config.lru_purge_enable = true;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
@@ -337,7 +350,8 @@ esp_err_t WebServer_Start(void)
         { .uri = "/api/map", .method = HTTP_GET, .handler = WebServer_Map },
         { .uri = "/map.js", .method = HTTP_GET, .handler = WebServer_MapScript },
         { .uri = "/api/imu", .method = HTTP_GET, .handler = WebServer_Imu },
-        { .uri = "/imu.js", .method = HTTP_GET, .handler = WebServer_ImuScript }
+        { .uri = "/imu.js", .method = HTTP_GET, .handler = WebServer_ImuScript },
+        { .uri = "/api/imu/calibrate", .method = HTTP_POST, .handler = WebServer_ImuCalibrate }
     };
     for (size_t i = 0U; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);

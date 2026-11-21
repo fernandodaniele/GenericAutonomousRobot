@@ -16,4 +16,9 @@ uint32_t Stm32Imu_BeginQuery(void);
 void Stm32Imu_QueryFailed(void);
 void Stm32Imu_Feed(const uint8_t *bytes, size_t length);
 int Stm32Imu_Json(char *out, size_t capacity, bool stm32_connected, bool paused);
+/* Request only: HTTP never writes UART. 0=queued, 1=replay, 2=busy, 3=unsafe. */
+int Stm32Imu_RequestCalibration(const char *id);
+bool Stm32Imu_CalibrationPending(void);
+bool Stm32Imu_ClaimCalibration(uint32_t *request);
+void Stm32Imu_CalibrationTxFailed(void);
 #endif

@@ -51,3 +51,63 @@ async function runImuTests(source) {
   cases.push("IMU schema rejects malformed, incoherent, nonfinite and out-of-range values");
   return cases;
 }
+
+async function runImuCalibrationTests(source) {
+  const check=(v,s)=>{if(!v)throw new Error(s);};
+  const api=new Function("let lastStatus=null;\n"+source+"\nreturn {imuValidate,createImuPanel,setStatus:s=>{lastStatus=s;}};")();
+  const base=()=>({received:true,connected:true,stm32_connected:true,paused:false,valid:true,stale:false,state:"valid",hal_status:0,i2c_error:0,
+    response_age_ms:0,sample_age_ms:0,max_age_ms:1500,accel_g:[0,0,1],gyro_dps:[1,-2,0.5],gyro_raw:[131,-262,66],gyro_corrected_dps:[null,null,null],
+    calibration:{available:true,state:"pending",valid:false,reason:"none",samples:0,target_samples:250,request:0,age_ms:null,offset_dps:[null,null,null],request_phase:"idle"}});
+  const cases=[];
+  async function fixture() {
+    let time=0,id=0,data=base(),postMode="ok";const nodes=new Map(),timers=new Map(),requests=[];
+    const doc={getElementById(name){if(!nodes.has(name))nodes.set(name,{textContent:"",disabled:false,events:{},addEventListener(n,fn){this.events[n]=fn;}});return nodes.get(name);}};
+    class Controller{constructor(){this.signal={};}abort(){this.signal.reject?.(new Error("timeout"));}}
+    const fetcher=async(url,options)=>{
+      requests.push({url,options});
+      if(url==="/api/imu/calibrate") {
+        check(options.method==="POST"&&options.body==="CALIBRATE"&&options.headers["X-Request-ID"].length===32,"closed calibration request only");
+        if(postMode==="pending")return new Promise((resolve,reject)=>{options.signal.reject=reject;});
+        return {ok:postMode==="ok",json:async()=>({accepted:postMode==="ok",phase:"queued",error:"unsafe"})};
+      }
+      check(url==="/api/imu"&&!options.method&&!options.body,"only monitoring GET otherwise");
+      return {ok:true,json:async()=>data};
+    };
+    const flush=async()=>{for(let i=0;i<16;++i)await Promise.resolve();};
+    const panel=api.createImuPanel(doc,fetcher,()=>time,(fn,delay)=>{timers.set(++id,{fn,at:time+delay});return id;},n=>timers.delete(n),Controller,()=>"1234567890abcdef1234567890abcdef");
+    panel.start();await flush();
+    async function advance(ms){const end=time+ms;while(true){const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];if(!next||next[1].at>end)break;time=next[1].at;timers.delete(next[0]);next[1].fn();await flush();}time=end;await flush();}
+    return {node:name=>doc.getElementById(name),requests,advance,setData:v=>{data=v;},setMode:m=>{postMode=m;},click(){return doc.getElementById("imu-calibrate").events.click();}};
+  }
+  api.setStatus({valid:true,connected:true,state:3,age_ms:0});let f=await fixture();
+  check(!f.node("imu-calibrate").disabled&&f.node("imu-calibration").textContent.includes("Pendiente")&&f.requests.length===1,"explicit start only");
+  const first=f.click();await f.click();await first;
+  check(f.requests.filter(r=>r.options.method==="POST").length===1&&f.node("imu-calibration-message").textContent.includes("no confirma"),"one accepted POST is not success");
+  cases.push("IMU-2 button starts one explicit deduplicated request, never calibrates on load or declares success from HTTP acceptance");
+  let d=base();d.calibration={...d.calibration,state:"running",samples:125,request:7,request_phase:"accepted"};f.setData(d);await f.advance(500);
+  check(f.node("imu-calibrate").disabled&&f.node("imu-calibration").textContent.includes("125/250")&&f.node("imu-gyro-corrected").textContent==="Sin calibración vigente","progress only");
+  d=base();d.gyro_corrected_dps=[0,0,0];d.calibration={...d.calibration,state:"valid",valid:true,samples:250,request:7,age_ms:0,offset_dps:[1,-2,0.5],request_phase:"accepted"};
+  f.setData(d);await f.advance(500);
+  check(f.node("imu-calibration").textContent.includes("Válida")&&f.node("imu-offset").textContent.includes("-2.0000")&&f.node("imu-gyro-corrected").textContent==="0.000 / 0.000 / 0.000"&&f.node("imu-gyro").textContent.includes("1.000")&&f.node("imu-gyro-raw").textContent==="131 / -262 / 66","raw and corrected independent");
+  cases.push("IMU-2 shows sample progress and measured offsets, preserves raw angular velocity and adds corrected velocity only after real valid calibration");
+  d=base();d.calibration={...d.calibration,state:"failed",reason:"motion",samples:100,request:7,request_phase:"accepted"};f.setData(d);await f.advance(500);
+  check(f.node("imu-calibration").textContent.includes("Movimiento")&&!f.node("imu-calibrate").disabled&&f.node("imu-gyro-corrected").textContent==="Sin calibración vigente","failed motion");
+  d={...d,state:"read_error",valid:false,stale:true,hal_status:3,i2c_error:32,accel_g:[null,null,null],gyro_dps:[null,null,null],gyro_raw:[null,null,null],calibration:{...d.calibration,reason:"i2c"}};
+  f.setData(d);await f.advance(500);check(f.node("imu-calibrate").disabled&&f.node("imu-calibration").textContent.includes("Falla I²C"),"bus failure disables start");
+  d=base();d.calibration={...d.calibration,state:"failed",reason:"i2c",samples:100,request:7,request_phase:"accepted"};f.setData(d);await f.advance(500);
+  check(!f.node("imu-calibrate").disabled&&f.requests.filter(r=>r.options.method==="POST").length===1,"recovery is explicit");
+  cases.push("IMU-2 motion and I2C failures remain visible, recovery never reuses offsets or automatically restarts calibration");
+  for(const mode of [1,2]) {api.setStatus({valid:true,connected:true,state:mode,age_ms:0});await f.advance(100);await f.click();check(f.node("imu-calibrate").disabled,"operating mode refused");}
+  api.setStatus({valid:true,connected:false,state:3,age_ms:3000});await f.advance(100);check(f.node("imu-calibrate").disabled,"link lost");
+  cases.push("IMU-2 mode and freshness controls disable calibration without changing MANUAL or AUTO controls");
+  api.setStatus({valid:true,connected:true,state:0,age_ms:0});f=await fixture();f.setMode("pending");const post=f.click();await f.advance(1600);await post;
+  check(f.requests.filter(r=>r.options.method==="POST").length===1&&f.node("imu-calibration-message").textContent.includes("No se pudo confirmar"),"timeout no retry");
+  cases.push("IMU-2 network timeout does not retry, issue motion, or turn an unconfirmed request into successful calibration");
+  const good=base();
+  for(const c of [{...good.calibration,state:"valid",samples:249},{...good.calibration,state:"failed"},{...good.calibration,valid:true},
+    {...good.calibration,target_samples:0},{...good.calibration,request_phase:"unknown"}])check(!api.imuValidate({...good,calibration:c}),"bad calibration contract rejected");
+  check(!api.imuValidate({...good,gyro_raw:[0.5,0,0]}),"raw integer check");
+  check(!api.imuValidate({...good,gyro_corrected_dps:[1,2,3]}),"uncalibrated corrected data rejected");
+  cases.push("IMU-2 schema rejects inconsistent progress, invalid correction, unknown phases and noninteger raw axes");
+  return cases;
+}

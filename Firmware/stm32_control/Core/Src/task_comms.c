@@ -77,32 +77,47 @@ static bool TaskComms_SensorsQuery(const char *message, uint32_t *query) {
 /* IMU v1: raw signed axes, no float formatting, no new I2C acquisition.
  * State, HAL result, I2C error bits, age of last successful acquisition.
  * Missing age/axes are '-', never invented zero measurements. */
-static void TaskComms_SendImu(DrvUart_t *uart, uint32_t query) {
+static void TaskComms_SendImu(DrvUart_t *uart, uint32_t query, bool extended) {
     TaskIMUSnapshot_t s = { .state = IMU_INITIALIZING };
     (void)TaskIMU_GetSnapshot(&s);
-    char age[11] = "-", response[128];
+    char age[11] = "-";
+    static char response[192]; /* One Comms task; bounded packet without stack growth. */
     if (s.has_sample) (void)snprintf(age, sizeof(age), "%lu",
         (unsigned long)TaskComms_SensorAge(xTaskGetTickCount(), s.sample_tick));
     int n;
     if (s.state == IMU_VALID && s.has_sample) {
         n = snprintf(response, sizeof(response),
-            "IMU,1,%lu,2,0,0,%s,%d,%d,%d,%d,%d,%d\n", (unsigned long)query, age,
+            "IMU,%u,%lu,2,0,0,%s,%d,%d,%d,%d,%d,%d\n", extended ? 2U : 1U, (unsigned long)query, age,
             (int)s.data.Accel_X_RAW, (int)s.data.Accel_Y_RAW, (int)s.data.Accel_Z_RAW,
             (int)s.data.Gyro_X_RAW, (int)s.data.Gyro_Y_RAW, (int)s.data.Gyro_Z_RAW);
     } else {
-        n = snprintf(response, sizeof(response), "IMU,1,%lu,%u,%u,%lu,%s,-,-,-,-,-,-\n",
-            (unsigned long)query, (unsigned)s.state, (unsigned)s.hal_status,
+        n = snprintf(response, sizeof(response), "IMU,%u,%lu,%u,%u,%lu,%s,-,-,-,-,-,-\n",
+            extended ? 2U : 1U, (unsigned long)query, (unsigned)s.state, (unsigned)s.hal_status,
             (unsigned long)s.i2c_error, age);
+    }
+    if (extended && n>0 && (size_t)n<sizeof(response)) {
+        char cal_age[11]="-", sums[3][12]={{"-"},{"-"},{"-"}};
+        if(s.calibration.state==IMU_CAL_VALID) {
+            (void)snprintf(cal_age,sizeof(cal_age),"%lu",(unsigned long)TaskComms_SensorAge(xTaskGetTickCount(),s.calibration.completed_tick));
+            for(unsigned i=0;i<3U;++i)(void)snprintf(sums[i],sizeof(sums[i]),"%ld",(long)s.calibration.sum[i]);
+        }
+        int extra=snprintf(response+n-1,sizeof(response)-(size_t)n+1U,",%u,%u,%u,%lu,%s,%s,%s,%s\n",
+            (unsigned)s.calibration.state,(unsigned)s.calibration.reason,(unsigned)s.calibration.samples,
+            (unsigned long)s.calibration.request,cal_age,sums[0],sums[1],sums[2]);
+        if(extra<0 || (size_t)extra>=sizeof(response)-(size_t)n+1U)return;
+        n=n-1+extra;
     }
     if (n > 0 && (size_t)n < sizeof(response)) DrvUart_SendString(uart, response);
 }
 
-static bool TaskComms_ImuQuery(const char *message, uint32_t *query) {
-    if (strcmp(message, "IMU") == 0) { *query = 0U; return true; }
-    if (strncmp(message, "IMU Q=", 6U) != 0) return false;
+static bool TaskComms_ImuQuery(const char *message, uint32_t *query, bool extended) {
+    const char *name=extended ? "IMU2" : "IMU";
+    if (strcmp(message, name) == 0) { *query = 0U; return true; }
+    unsigned prefix=extended ? 7U : 6U;
+    if (strncmp(message, extended ? "IMU2 Q=" : "IMU Q=", prefix) != 0) return false;
     /* Reuse the strict decimal query grammar without accepting other frames. */
     char sensors[32];
-    int n = snprintf(sensors, sizeof(sensors), "SENSORS Q=%s", message + 6);
+    int n = snprintf(sensors, sizeof(sensors), "SENSORS Q=%s", message + prefix);
     return n > 0 && (size_t)n < sizeof(sensors) && TaskComms_SensorsQuery(sensors, query);
 }
 
@@ -112,8 +127,19 @@ static bool TaskComms_ImuQuery(const char *message, uint32_t *query) {
 static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickType_t issued_tick) {
     uint32_t query;
     unsigned mapping_part;
-    if (TaskComms_ImuQuery(message, &query)) {
-        TaskComms_SendImu(uart, query);
+    if (strncmp(message,"IMUCAL N=",9U)==0) {
+        char numeric[32];
+        int n=snprintf(numeric,sizeof(numeric),"SENSORS Q=%s",message+9);
+        if(n>0 && (size_t)n<sizeof(numeric) && TaskComms_SensorsQuery(numeric,&query)) {
+            bool queued=TaskIMU_RequestCalibration(query,issued_tick);
+            char ack[40];
+            (void)snprintf(ack,sizeof(ack),"IMUCAL,1,%lu,%u\n",(unsigned long)query,queued?1U:0U);
+            DrvUart_SendString(uart,ack); return;
+        }
+    }
+    bool extended=strncmp(message,"IMU2",4U)==0;
+    if (TaskComms_ImuQuery(message, &query,extended)) {
+        TaskComms_SendImu(uart, query,extended);
         return;
     }
     if (Mapping_Query(message, &query, &mapping_part)) {

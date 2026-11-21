@@ -16,7 +16,7 @@ static void loop_reply(void) {
     else if (sscanf(frame,"MAPPING Q=%" SCNu32 " S=%u",&query,&part)==2) {
         if (!part) n=snprintf(loop_response,sizeof loop_response,"POSE,2,%" PRIu32 ",7,0,2,1,0,0,0,0,0,0,0,0\n",query);
         else n=snprintf(loop_response,sizeof loop_response,"RAY,1,%" PRIu32 ",7,0,%u,0,0,0,-,-,-,-,-\n",query,part-1U);
-    } else if (sscanf(frame,"IMU Q=%" SCNu32,&query)==1) {
+    } else if (sscanf(frame,"IMU2 Q=%" SCNu32,&query)==1 || sscanf(frame,"IMU Q=%" SCNu32,&query)==1) {
         assert(loop_imu_count<32U); loop_imu_times[loop_imu_count++]=clock_us;
         if (loop_imu_mode==1U)
             n=snprintf(loop_response,sizeof loop_response,"IMU,1,%" PRIu32 ",2,0,0,0,0,0,16384,0,0,0\n",query);
@@ -107,7 +107,7 @@ static void test_imu(void) {
     s_status.valid=false; imu_api(); assert(strstr(reply,"\"stm32_connected\":false") && strstr(reply,"\"valid\":false"));
     pass("IMU link and sample ages expire independently; new samples recover, STATUS loss immediately hides measurements");
     reset(); clock_us=500000; Uart_PollImu(); Uart_PollImu();
-    assert(tx_count==1 && !strcmp(frames[0],"IMU Q=1\n")); clock_us+=10000000; Uart_PollImu(); Uart_PollImu(); assert(tx_count==2);
+    assert(tx_count==1 && !strcmp(frames[0],"IMU2 Q=1\n")); clock_us+=10000000; Uart_PollImu(); Uart_PollImu(); assert(tx_count==2);
     manual_ready(); clock_us+=500000; Uart_PollImu(); assert(!tx_count);
     reset(); clock_us=500000; wait_hook=stop_during_send; Uart_PollImu(); assert(!tx_count);
     WebCommands_ProcessPending(); assert(!strcmp(frames[0],"STOP\n"));
@@ -135,4 +135,77 @@ static void test_imu(void) {
     pass("actual scheduler transmits IMU requests even when only IMU responses are absent; STATUS and other telemetry continue");
     run_imu_loop(4U); imu_api(); assert(strstr(reply,"\"state\":\"read_error\"") && strstr(reply,"\"valid\":false") && strstr(reply,"\"gyro_dps\":[null,null,null]"));
     pass("actual IMU read-error reply propagates through sole UART reader and HTTP with no old valid measurements");
+}
+
+static void imu2_reply(const char *calibration) {
+    uint32_t q=Stm32Imu_BeginQuery(); char line[192];
+    int n=snprintf(line,sizeof(line),"IMU,2,%" PRIu32 ",2,0,0,0,0,0,16384,131,-262,66,%s\n",q,calibration);
+    assert(n>0 && (size_t)n<sizeof(line));imu_feed(line);
+}
+static esp_err_t imu_cal_post(const char *body) {
+    request_body=body;body_offset=0;httpd_req_t r={.content_len=strlen(body)};
+    return WebServer_ImuCalibrate(&r);
+}
+static void imu_cal_ready(void) {
+    reset();feed("STATE=3 FAULTS=4 STOP=1\n");imu2_reply("0,0,0,0,-,-,-,-");
+}
+static void test_imu_calibration(void) {
+    imu_cal_ready();imu_api();
+    assert(strstr(reply,"\"state\":\"pending\"") && strstr(reply,"\"gyro_raw\":[131,-262,66]") && strstr(reply,"\"gyro_corrected_dps\":[null,null,null]"));
+    imu2_reply("1,0,100,7,-,-,-,-");imu_api();
+    assert(strstr(reply,"\"state\":\"running\"") && strstr(reply,"\"samples\":100") && strstr(reply,"\"offset_dps\":[null,null,null]"));
+    imu2_reply("2,0,250,7,0,25125,-65500,16500");imu_api();
+    assert(strstr(reply,"\"gyro_dps\":[1.000000,-2.000000,0.503817]") &&
+        strstr(reply,"\"gyro_corrected_dps\":[0.232824,0.000000,0.000000]") &&
+        strstr(reply,"\"offset_dps\":[0.767176,-2.000000,0.503817]"));
+    pass("IMU-2 v2 preserves IMU-1 units and raw axes while exposing pending, running and exact fractional mean correction");
+    imu2_reply("3,1,120,7,-,-,-,-");imu_api();
+    assert(strstr(reply,"\"state\":\"failed\"") && strstr(reply,"\"reason\":\"motion\"") && strstr(reply,"\"valid\":true") && strstr(reply,"\"gyro_corrected_dps\":[null,null,null]"));
+    uint32_t q=Stm32Imu_BeginQuery();char line[192];
+    snprintf(line,sizeof line,"IMU,2,%" PRIu32 ",4,3,32,500,-,-,-,-,-,-,3,2,120,7,-,-,-,-\n",q);imu_feed(line);imu_api();
+    assert(strstr(reply,"\"reason\":\"i2c\"") && strstr(reply,"\"valid\":false") && strstr(reply,"\"gyro_raw\":[null,null,null]"));
+    imu2_reply("3,2,120,7,-,-,-,-");imu_api();
+    assert(strstr(reply,"\"valid\":true") && strstr(reply,"\"gyro_corrected_dps\":[null,null,null]"));
+    pass("IMU-2 calibration failure never hides useful uncorrected data, and I2C recovery cannot revive invalid offsets");
+    const char *bad[]={"2,0,249,7,0,1,2,3","2,0,250,0,0,1,2,3","2,0,250,7,-,1,2,3","2,0,250,7,0,8192001,2,3",
+        "1,0,250,7,-,-,-,-","0,0,1,0,-,-,-,-","3,0,1,7,-,-,-,-","3,6,1,7,-,-,-,-","1,0,10,7,0,-,-,-"};
+    for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);++i) {
+        imu_cal_ready();uint32_t before=s_imu.cal_samples;imu2_reply(bad[i]);
+        assert(s_imu.cal_state==0 && s_imu.cal_samples==before);
+    }
+    pass("IMU-2 parser rejects incomplete, contradictory, out-of-range or falsely calibrated v2 metadata");
+    imu_cal_ready();imu2_reply("2,0,250,7,0,32750,-65500,16500");clock_us+=1500000;imu_api();
+    assert(strstr(reply,"\"gyro_corrected_dps\":[null,null,null]") && strstr(reply,"\"offset_dps\":[null,null,null]"));
+    feed("STATE=3 FAULTS=4 STOP=1\n");imu2_reply("2,0,250,7,1500,32750,-65500,16500");imu_api();assert(strstr(reply,"\"gyro_corrected_dps\":[0.000000,0.000000,0.000000]"));
+    s_status.valid=false;imu_api();assert(strstr(reply,"\"gyro_corrected_dps\":[null,null,null]"));
+    pass("IMU-2 corrected measurements require fresh source data and STATUS, independently of a previously valid calibration");
+    imu_cal_ready();assert(WebServer_Start()==ESP_OK && routes[17].method==HTTP_POST && !strcmp(routes[17].uri,"/api/imu/calibrate"));
+    assert(imu_cal_post("CALIBRATE")==ESP_OK && !strncmp(response_status,"202",3) && !tx_count);
+    assert(imu_cal_post("CALIBRATE")==ESP_OK && !strncmp(response_status,"409",3) && strstr(reply,"replay"));
+    request_id="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";assert(imu_cal_post("CALIBRATE")==ESP_OK && strstr(reply,"busy"));
+    assert(Uart_SendImuCalibration() && tx_count==1 && !strncmp(frames[0],"IMUCAL N=",9));
+    uint32_t number=s_imu_cal_request.number;
+    snprintf(line,sizeof line,"IMUCAL,1,%" PRIu32 ",1\n",number);imu_feed(line);imu_api();
+    assert(strstr(reply,"\"request_phase\":\"accepted\"") && strstr(reply,"\"state\":\"pending\""));
+    snprintf(line,sizeof line,"1,0,25,%" PRIu32 ",-,-,-,-",number);imu2_reply(line);imu_api();
+    assert(strstr(reply,"\"state\":\"running\"") && strstr(reply,"\"samples\":25"));
+    pass("IMU-2 explicit POST queues one UART request, deduplicates IDs, rejects concurrent starts and does not confuse ACK with calibration success");
+    imu_cal_ready();assert(Stm32Imu_RequestCalibration("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")==0);
+    feed("STATE=2 FAULTS=0 STOP=0\n");assert(!Uart_SendImuCalibration() && !tx_count);imu_api();assert(strstr(reply,"\"request_phase\":\"rejected\""));
+    imu_cal_ready();assert(Stm32Imu_RequestCalibration("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")==0);
+    wait_hook=stop_during_send;assert(!Uart_SendImuCalibration() && !tx_count);WebCommands_ProcessPending();assert(!strcmp(frames[0],"STOP\n"));
+    pass("IMU-2 revalidates mode and pending STOP inside UART gate; calibration never displaces operational commands");
+    imu_cal_ready();assert(Stm32Imu_RequestCalibration("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")==0);clock_us+=500000;
+    assert(!Uart_SendImuCalibration() && !tx_count);imu_api();assert(strstr(reply,"\"request_phase\":\"expired\""));
+    imu_cal_ready();assert(Stm32Imu_RequestCalibration("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")==0);tx_error=1;
+    assert(!Uart_SendImuCalibration());unsigned sent=tx_count;assert(!Uart_SendImuCalibration() && tx_count==sent);imu_api();assert(strstr(reply,"\"request_phase\":\"tx_error\""));
+    imu_cal_ready();assert(Stm32Imu_RequestCalibration("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")==0);assert(Uart_SendImuCalibration());clock_us+=500000;
+    imu_api();assert(strstr(reply,"\"request_phase\":\"expired\""));
+    snprintf(line,sizeof line,"1,0,25,%" PRIu32 ",-,-,-,-",s_imu_cal_request.number);imu2_reply(line);imu_api();
+    assert(strstr(reply,"\"request_phase\":\"accepted\"") && strstr(reply,"\"state\":\"running\"") && strstr(reply,"\"gyro_corrected_dps\":[null,null,null]"));
+    pass("IMU-2 stale requests, UART short writes and missing ACK expire without automatic retries or movement");
+    imu_cal_ready();request_origin="http://foreign";imu_cal_post("CALIBRATE");assert(!strncmp(response_status,"403",3) && !tx_count);
+    request_origin="http://192.168.4.1";imu_cal_post("AVANZAR");assert(!strncmp(response_status,"400",3) && !tx_count);
+    feed("STATE=2 FAULTS=0 STOP=0\n");imu_cal_post("CALIBRATE");assert(!strncmp(response_status,"412",3) && !tx_count);
+    pass("IMU-2 POST uses closed operation, Origin/Host/body checks and refuses calibration in MANUAL without changing its behavior");
 }

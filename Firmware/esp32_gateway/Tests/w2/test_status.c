@@ -43,7 +43,7 @@ static int body_error;
 static int64_t body_delay;
 static const char *rx_data, *keys;
 static size_t rx_size;
-static httpd_uri_t routes[17];
+static httpd_uri_t routes[18];
 static unsigned route_count, server_count, server_stops, fail_route;
 static int http_error, network_error;
 static unsigned loop_limit = 15U;
@@ -94,10 +94,10 @@ int uart_read_bytes(int port,void *bytes,uint32_t size,unsigned timeout)
 }
 esp_err_t WifiAp_Start(void) { return network_error ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_start(httpd_handle_t *out,const httpd_config_t *cfg)
-{ assert(cfg->server_port==80 && cfg->lru_purge_enable && cfg->max_uri_handlers==17 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
+{ assert(cfg->server_port==80 && cfg->lru_purge_enable && cfg->max_uri_handlers==18 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
 esp_err_t httpd_stop(httpd_handle_t handle) { assert(handle); ++server_stops; return ESP_OK; }
 esp_err_t httpd_register_uri_handler(httpd_handle_t handle,const httpd_uri_t *r)
-{ assert(handle && route_count<17); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12)) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
+{ assert(handle && route_count<18); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12) || !strcmp(r->uri,"/api/imu/calibrate")) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type)
 { assert(r && type && !lock_depth); return http_error==1 ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value)
@@ -131,6 +131,8 @@ void vTaskDelay(unsigned ticks)
 static int console_getchar(void) { return *keys ? *keys++ : EOF; }
 static void reset(void)
 {
+    memset(&s_imu_cal_request,0,sizeof s_imu_cal_request);memset(s_imu_cal_ids,0,sizeof s_imu_cal_ids);
+    s_imu_cal_next=s_imu_cal_counter=0;
     loop_limit=15U; rx_data_delay=0; rx_prepare_hook=NULL;
     memset(&s_imu,0,sizeof s_imu); s_imu_length=0; s_imu_discard=false;
     s_imu_counter=s_imu_pending=0; s_imu_sent=s_imu_poll=0;
@@ -292,7 +294,7 @@ int main(void)
         assert(!strcmp(frames[0],"STATUS\n"));
     }
     pass("actual app_main polls at 1 Hz without new tasks, including AP failure");
-    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==17);
+    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==18);
     const char *paths[]={"/","/style.css","/app.js","/health","/api/status"};
     for(unsigned i=0;i<5;++i) {
         assert(!strcmp(routes[i].uri,paths[i])); httpd_req_t r={.user_ctx=routes[i].user_ctx}; assert(routes[i].handler(&r)==ESP_OK);
@@ -459,5 +461,6 @@ int main(void)
     test_auto();
     test_mapping();
     test_imu();
+    test_imu_calibration();
     printf("RESULT %u native W1-W7 test groups passed; no hardware validation\n",cases); return 0;
 }

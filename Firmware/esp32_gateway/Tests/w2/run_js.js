@@ -8,6 +8,7 @@ async function runJavaScriptTests(sources) {
     ["W5", "test_sensors", "runSensorTests", [sensors]],
     ["W7", "test_map", "runMapTests", [sources["web/map.js"]]],
     ["IMU-1", "test_imu", "runImuTests", [sources["web/imu.js"]]],
+    ["IMU-2", "test_imu", "runImuCalibrationTests", [sources["web/imu.js"]]],
     ["W4+W5 endpoint unavailable", "test_manual", "runManualTests", [app, manual, () => {}, sensors]],
     ["W4+W5+W7 endpoints unavailable", "test_manual", "runManualTests", [app, manual, () => {}, sensors, sources["web/map.js"]]],
     ["W4+W5+W7+IMU endpoints unavailable", "test_manual", "runManualTests", [app, manual, () => {}, sensors + "\n" + sources["web/imu.js"], sources["web/map.js"]]]

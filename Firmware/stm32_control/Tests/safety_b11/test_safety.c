@@ -47,10 +47,17 @@ static jmp_buf finish;
 #include "../../Core/Src/mid_mapping.c"
 static TaskIMUSnapshot_t imu_snapshot;
 static bool imu_snapshot_available;
+static bool imu_cal_accepted;
+static uint32_t imu_cal_number;
+static TickType_t imu_cal_issued;
 bool TaskIMU_GetSnapshot(TaskIMUSnapshot_t *out) {
     if (!imu_snapshot_available) return false;
     *out = imu_snapshot;
     return true;
+}
+bool TaskIMU_RequestCalibration(uint32_t request, TickType_t issued) {
+    imu_cal_issued=issued;imu_cal_number=request;
+    return imu_cal_accepted; /* Actual task admission is tested in imu_1. */
 }
 static TaskControlRobotEventMessage_t events[8];
 
@@ -78,7 +85,7 @@ static uint32_t mock_pwm_arr;
 static unsigned autoreload_reads;
 /* Approved motor checkpoint: 40% of the normal TIM4 period (8400 counts). */
 enum { TEST_PWM_LIMIT = 3360, TEST_SHORT_PERIOD_LIMIT = 800 };
-static char uart_response[128];
+static char uart_response[192];
 static unsigned uart_rearms;
 static void run_motor(int count);
 
@@ -287,6 +294,7 @@ int32_t Encoder_ReadDelta(EncoderHandle_t *encoder) {
 
 static void setup(void) {
     imu_snapshot_available = false;
+    imu_cal_accepted=false;imu_cal_number=0U;
     CHECK(critical_depth == 0 && scheduler_depth == 0);
     clock_tick = 1000U;
     advance_tick_on_motor_receive = 0U;
@@ -558,6 +566,28 @@ static void test_imu_protocol(void) {
     uart_feed(&uart,"IMU Q=4\nMAPPING Q=6 S=0\n"); CHECK(uart_consume(&uart));
     CHECK(strncmp(uart_response,"POSE,2,6,",9U)==0);
     PASS("existing SENSORS and MAPPING outrank IMU without changing mailbox priority classes");
+    setup();DrvUart_Init(&uart,&peripheral);imu_snapshot_available=true;
+    imu_snapshot=(TaskIMUSnapshot_t){.state=IMU_VALID,.has_sample=true,.sample_tick=clock_tick,
+        .data={.Accel_Z_RAW=16384,.Gyro_X_RAW=131,.Gyro_Y_RAW=-262,.Gyro_Z_RAW=66},
+        .calibration={.state=IMU_CAL_VALID,.samples=250,.request=7,.completed_tick=clock_tick,.sum={32750,-65500,16500}}};
+    uart_feed(&uart,"IMU2 Q=8\n");CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response,"IMU,2,8,2,0,0,0,0,0,16384,131,-262,66,2,0,250,7,0,32750,-65500,16500\n")==0);
+    uart_feed(&uart,"IMU Q=9\n");CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response,"IMU,1,9,2,0,0,0,0,0,16384,131,-262,66\n")==0);
+    PASS("IMU-2 v2 adds measured calibration sums and age while legacy IMU response remains byte-compatible");
+    imu_cal_accepted=true;uart_feed(&uart,"IMUCAL N=17\n");CHECK(uart_consume(&uart));
+    CHECK(imu_cal_number==17U && imu_cal_issued==clock_tick && strcmp(uart_response,"IMUCAL,1,17,1\n")==0);expect_zero();
+    imu_cal_accepted=false;uart_feed(&uart,"IMUCAL N=18\n");CHECK(uart_consume(&uart));
+    CHECK(strcmp(uart_response,"IMUCAL,1,18,0\n")==0);expect_zero();
+    uart_feed(&uart,"IMUCAL N=0\n");CHECK(uart_consume(&uart));CHECK(strcmp(uart_response,"ERR_UNKNOWN\n")==0);
+    uart_feed(&uart,"IMUCAL N=4294967296\n");CHECK(uart_consume(&uart));CHECK(strcmp(uart_response,"ERR_UNKNOWN\n")==0);
+    PASS("IMU-2 explicit bounded calibration command reports admission, rejects invalid IDs and never emits motor targets");
+    clock_tick=UINT32_MAX;imu_snapshot.sample_tick=imu_snapshot.calibration.completed_tick=0U;
+    imu_snapshot.data.Accel_X_RAW=imu_snapshot.data.Accel_Y_RAW=imu_snapshot.data.Accel_Z_RAW=INT16_MIN;
+    imu_snapshot.data.Gyro_X_RAW=imu_snapshot.data.Gyro_Y_RAW=imu_snapshot.data.Gyro_Z_RAW=INT16_MIN;
+    uart_feed(&uart,"IMU2 Q=4294967295\n");CHECK(uart_consume(&uart));
+    CHECK(strlen(uart_response)<192U && strstr(uart_response,",4294967295,-32768,-32768,-32768,") && uart_response[strlen(uart_response)-1U]=='\n');
+    PASS("IMU-2 worst signed axes and full 32-bit ages fit the bounded UART response without truncation");
 }
 static void test_motion_commands(void) {
     static const char *frames[] = {

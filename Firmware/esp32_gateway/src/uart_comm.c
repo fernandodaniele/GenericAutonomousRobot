@@ -127,10 +127,25 @@ void Uart_PollImu(void)
     if (WebCommands_CanPollSensors()) {
         char message[24];
         uint32_t query = Stm32Imu_BeginQuery();
-        int n = snprintf(message, sizeof(message), "IMU Q=%" PRIu32 "\n", query);
+        int n = snprintf(message, sizeof(message), "IMU2 Q=%" PRIu32 "\n", query);
         if (n <= 0 || (size_t)n >= sizeof(message) || !TxWrite(message)) Stm32Imu_QueryFailed();
     }
     xSemaphoreGive(s_tx_gate);
+}
+
+bool Uart_SendImuCalibration(void)
+{
+    if (!TxBegin()) { Stm32Imu_CalibrationTxFailed(); return false; }
+    uint32_t request;
+    bool sent=false;
+    if (Stm32Imu_ClaimCalibration(&request)) {
+        char message[24];
+        int n=snprintf(message,sizeof(message),"IMUCAL N=%" PRIu32 "\n",request);
+        sent=n>0 && (size_t)n<sizeof(message) && TxWrite(message);
+        if(!sent)Stm32Imu_CalibrationTxFailed();
+    }
+    xSemaphoreGive(s_tx_gate);
+    return sent;
 }
 
 bool Uart_SendControl(UartControlCommand command)

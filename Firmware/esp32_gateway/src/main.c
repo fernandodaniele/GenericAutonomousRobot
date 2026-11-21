@@ -83,6 +83,7 @@ void app_main(void)
         WebManual_Process();
         if (Stm32Status_PollDue()) Uart_SendStatus();
         else if (Stm32Sensors_PollDue()) Uart_PollSensors();
+        else if (Stm32Imu_CalibrationPending()) (void)Uart_SendImuCalibration();
         /* A 100-ms UART read can keep 100-ms mapping continuously due.
          * Service a due IMU poll first so mapping cannot starve diagnostics. */
         else if (Stm32Imu_PollDue()) Uart_PollImu();

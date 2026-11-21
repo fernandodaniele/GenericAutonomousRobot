@@ -92,11 +92,17 @@
         <p id="imu-state" class="description" role="status" aria-live="polite">Esperando telemetría IMU</p>
         <dl class="readings">
           <div><dt>Aceleración X / Y / Z (g)</dt><dd id="imu-accel">Sin muestra</dd></div>
-          <div><dt>Giro X / Y / Z (°/s)</dt><dd id="imu-gyro">Sin muestra</dd></div>
+          <div><dt>Giro sin corregir X / Y / Z (°/s)</dt><dd id="imu-gyro">Sin muestra</dd></div>
+          <div><dt>Giroscopio RAW X / Y / Z (cuentas)</dt><dd id="imu-gyro-raw">Sin muestra</dd></div>
+          <div><dt>Calibración del giroscopio</dt><dd id="imu-calibration">Pendiente de información</dd></div>
+          <div><dt>Offsets X / Y / Z (°/s)</dt><dd id="imu-offset">Sin offsets vigentes</dd></div>
+          <div><dt>Giro corregido X / Y / Z (°/s)</dt><dd id="imu-gyro-corrected">Sin calibración vigente</dd></div>
           <div><dt>Antigüedad de la última lectura</dt><dd id="imu-age">Sin muestra</dd></div>
           <div><dt>Comunicación I²C</dt><dd id="imu-error">Sin información</dd></div>
         </dl>
-        <p class="safety-note">Ejes físicos del sensor, sin calibración de offsets ni fusión con odometría. El acelerómetro incluye gravedad. Las consultas se pausan durante control manual; los datos vencidos no se muestran como válidos.</p>
+        <button id="imu-calibrate" type="button" disabled>Calibrar giroscopio</button>
+        <p id="imu-calibration-message" class="description" role="status">Dejá el chasis inmóvil antes de iniciar. Se toman 250 muestras en aproximadamente 5 segundos, solo en En espera o Detenido por seguridad.</p>
+        <p class="safety-note">Ejes físicos del sensor, sin fusión con odometría. El acelerómetro incluye gravedad. Los offsets se pierden al reiniciar la STM32. Las variaciones pueden invalidar la calibración; un giro lento constante no siempre puede distinguirse del offset. Las consultas se pausan durante control manual y los datos vencidos no se muestran como válidos.</p>
         <p class="endpoint">Consulta automática <code>GET /api/imu</code></p>
       </section>
 

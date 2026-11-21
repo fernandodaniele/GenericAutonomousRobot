@@ -26,8 +26,8 @@ static void b73_advance(void) {
     CHECK(queued_target.mode == ROBOT_STATE_AUTONOMOUS);
     CHECK(queued_target.navigation_session == navigation.session);
     run_motor(1);
-    CHECK(pwm.compare[0] > 0U && pwm.compare[0] <= 840U);
-    CHECK(pwm.compare[1] > 0U && pwm.compare[1] <= 840U);
+    CHECK(pwm.compare[0] > 0U && pwm.compare[0] <= TEST_PWM_LIMIT);
+    CHECK(pwm.compare[1] > 0U && pwm.compare[1] <= TEST_PWM_LIMIT);
 }
 static void b73_terminal(void) {
     CHECK(Navigation_GetState() == NAV_DETENIDO); expect_zero();

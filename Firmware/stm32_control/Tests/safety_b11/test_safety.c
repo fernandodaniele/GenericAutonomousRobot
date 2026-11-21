@@ -69,6 +69,8 @@ static int32_t left_encoder_delta, right_encoder_delta;
 static unsigned left_encoder_reads, right_encoder_reads, pi_calls;
 static uint32_t mock_pwm_arr;
 static unsigned autoreload_reads;
+/* Approved motor checkpoint: 40% of the normal TIM4 period (8400 counts). */
+enum { TEST_PWM_LIMIT = 3360, TEST_SHORT_PERIOD_LIMIT = 800 };
 static char uart_response[128];
 static unsigned uart_rearms;
 static void run_motor(int count);
@@ -317,7 +319,8 @@ static void setup(void) {
     left_motor = (MotorHandle_t){ .htim = &pwm, .channel = 0U,
         .port_a = &pins, .pin_a = 1U, .port_b = &pins, .pin_b = 2U };
     right_motor = (MotorHandle_t){ .htim = &pwm, .channel = 1U,
-        .port_a = &pins, .pin_a = 4U, .port_b = &pins, .pin_b = 8U };
+        /* main.c: port_a=BIN1/PD3, port_b=BIN2/PD2. */
+        .port_a = &pins, .pin_a = 8U, .port_b = &pins, .pin_b = 4U };
     TaskMotorControl_Create(&left_encoder, &right_encoder, &left_motor, &right_motor);
 }
 static void run_safety(int count) {
@@ -359,15 +362,20 @@ static void expect_residual_speed(void) {
 }
 
 static void test_motor_encoder_regressions(void) {
-    setup(); CHECK(Motor_GetPwmLimit(&left_motor) == 840U && Motor_GetPwmLimit(&right_motor) == 840U);
+    setup();
+    CHECK(MOTOR_PWM_MAX_PERCENT == 40U);
+    CHECK(MOTOR_PI_KP == 2.20f && MOTOR_PI_KI == 0.10f && MOTOR_PI_DT_S == 0.010f);
+    PASS("motor checkpoint uses approved 40 percent ceiling and PI gains without changing control period");
+
+    setup(); CHECK(Motor_GetPwmLimit(&left_motor) == TEST_PWM_LIMIT && Motor_GetPwmLimit(&right_motor) == TEST_PWM_LIMIT);
     Motor_SetSpeed(&left_motor, INT16_MAX); Motor_SetSpeed(&right_motor, INT16_MIN);
-    CHECK(left_motor.current_speed == 840 && right_motor.current_speed == -840);
-    CHECK(pwm.compare[0] == 840U && pwm.compare[1] == 840U);
-    CHECK((pins.pins & 3U) == 1U && (pins.pins & 12U) == 8U);
+    CHECK(left_motor.current_speed == TEST_PWM_LIMIT && right_motor.current_speed == -TEST_PWM_LIMIT);
+    CHECK(pwm.compare[0] == TEST_PWM_LIMIT && pwm.compare[1] == TEST_PWM_LIMIT);
+    CHECK((pins.pins & 3U) == 1U && (pins.pins & 12U) == 4U);
     PASS("permanent driver cap is symmetric and preserves electrical sign");
 
-    setup(); mock_pwm_arr = 1999U; Motor_SetSpeed(&left_motor, 800); Motor_SetSpeed(&right_motor, -800);
-    CHECK(pwm.compare[0] == 200U && pwm.compare[1] == 200U);
+    setup(); mock_pwm_arr = 1999U; Motor_SetSpeed(&left_motor, INT16_MAX); Motor_SetSpeed(&right_motor, INT16_MIN);
+    CHECK(pwm.compare[0] == TEST_SHORT_PERIOD_LIMIT && pwm.compare[1] == TEST_SHORT_PERIOD_LIMIT);
     PASS("permanent driver limit follows actual ARR for both motors");
 
     setup(); mock_pwm_arr = 0U; Motor_SetSpeed(&left_motor, 800); Motor_SetSpeed(&right_motor, -800);
@@ -388,14 +396,14 @@ static void test_motor_encoder_regressions(void) {
     PASS("Safety block reaches immediate zero before any limit calculation");
 
     setup(); TaskMotorControl_SetTargetSpeeds(100000, -100000); run_motor(10);
-    CHECK(pwm.compare[0] == 840U && pwm.compare[1] == 840U);
+    CHECK(pwm.compare[0] == TEST_PWM_LIMIT && pwm.compare[1] == TEST_PWM_LIMIT);
     CHECK(task_context.left_integral == 0.0f && task_context.right_integral == 0.0f);
     PASS("real PI and driver share saturation without accumulating integral");
 
     setup(); mock_pwm_arr = 1999U; TaskMotorControl_SetTargetSpeeds(1700, -1700); run_motor(2);
-    CHECK(pwm.compare[0] == 200U && pwm.compare[1] == 200U);
+    CHECK(pwm.compare[0] == TEST_SHORT_PERIOD_LIMIT && pwm.compare[1] == TEST_SHORT_PERIOD_LIMIT);
     CHECK(task_context.left_integral == 0.0f && task_context.right_integral == 0.0f);
-    PASS("antiwindup follows effective driver ceiling rather than obsolete 840");
+    PASS("antiwindup follows effective driver ceiling for a smaller ARR");
 
     setup(); float integral = 500.0f;
     CHECK(MotorPI_Calculate(100, 100, &integral, 200U) == 200 && integral == 200.0f);
@@ -416,10 +424,10 @@ static void test_motor_encoder_regressions(void) {
     PASS("zero target or zero ceiling never integrates residual movement");
 
     setup(); integral = 0.0f;
-    int16_t correct = MotorPI_Calculate(1700, 500, &integral, 840U);
+    int16_t correct = MotorPI_Calculate(1700, 500, &integral, TEST_PWM_LIMIT);
     integral = 0.0f;
-    int16_t reversed = MotorPI_Calculate(1700, -500, &integral, 840U);
-    CHECK(correct > 0 && correct < reversed && reversed == 840);
+    int16_t reversed = MotorPI_Calculate(1700, -500, &integral, TEST_PWM_LIMIT);
+    CHECK(correct > 0 && correct < reversed && reversed == TEST_PWM_LIMIT);
     PASS("demonstrates negative measured sign increases positive target error");
 
     setup(); CHECK(TaskMotorControl_DeltaToCps(1) == 100 && TaskMotorControl_DeltaToCps(-1) == -100);
@@ -464,16 +472,16 @@ static void test_public_velocity_control(void) {
         TaskMotorControl_SetTargetSpeeds(left ? target : 0, left ? 0 : target);
         run_motor(1);
         CHECK(pi_calls == 1U);
-        CHECK(pwm.compare[left ? 0 : 1] == 840U && pwm.compare[left ? 1 : 0] == 0U);
-        CHECK((left ? left_motor.current_speed : right_motor.current_speed) == (target > 0 ? 840 : -840));
+        CHECK(pwm.compare[left ? 0 : 1] == TEST_PWM_LIMIT && pwm.compare[left ? 1 : 0] == 0U);
+        CHECK((left ? left_motor.current_speed : right_motor.current_speed) == (target > 0 ? TEST_PWM_LIMIT : -TEST_PWM_LIMIT));
         if (left) left_encoder_delta = target > 0 ? 5 : -5;
         else right_encoder_delta = target > 0 ? 5 : -5;
         run_motor(1);
         int32_t measured = left ? task_context.left_speed_cps : task_context.right_speed_cps;
         int16_t applied = left ? left_motor.current_speed : right_motor.current_speed;
         CHECK(measured == (target > 0 ? 500 : -500));
-        CHECK((target > 0 && applied > 0 && applied < 840) ||
-              (target < 0 && applied < 0 && applied > -840));
+        CHECK((target > 0 && applied > 0 && applied < TEST_PWM_LIMIT) ||
+              (target < 0 && applied < 0 && applied > -TEST_PWM_LIMIT));
         CHECK(pwm.compare[left ? 1 : 0] == 0U && pi_calls == 2U);
         PASS("public PI individually controls either motor in either direction with signed feedback");
     }
@@ -528,8 +536,12 @@ static void test_motion_commands(void) {
         CHECK(task_context.right_target_cps == expected[i][1]);
         CHECK((left_motor.current_speed > 0) == (expected[i][0] > 0));
         CHECK((right_motor.current_speed > 0) == (expected[i][1] > 0));
-        CHECK(pwm.compare[0] > 0 && pwm.compare[0] <= 840U);
-        CHECK(pwm.compare[1] > 0 && pwm.compare[1] <= 840U);
+        CHECK(pwm.compare[0] > 0 && pwm.compare[0] <= TEST_PWM_LIMIT);
+        CHECK(pwm.compare[1] > 0 && pwm.compare[1] <= TEST_PWM_LIMIT);
+        CHECK((pins.pins & 3U) == (expected[i][0] > 0 ? 1U : 2U));
+        CHECK((pins.pins & 12U) == (expected[i][1] > 0 ? 8U : 4U));
+        CHECK(pwm.compare[0] == (i < 2U ? TEST_PWM_LIMIT : 2641U));
+        CHECK(pwm.compare[1] == (i < 2U ? TEST_PWM_LIMIT : 2641U));
         PASS("B6 UART mapping exercises real motion layer PI and limited driver");
     }
     setup(); DrvUart_Init(&uart, &peripheral);

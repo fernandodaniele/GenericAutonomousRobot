@@ -20,7 +20,7 @@ static void b75_reverse(void) {
     run_motor(1);
     CHECK(task_context.left_target_cps == -1600 && task_context.right_target_cps == -1600);
     CHECK(left_motor.current_speed < 0 && right_motor.current_speed < 0);
-    CHECK(pwm.compare[0] > 0U && pwm.compare[0] <= 840U && pwm.compare[1] <= 840U);
+    CHECK(pwm.compare[0] > 0U && pwm.compare[0] <= TEST_PWM_LIMIT && pwm.compare[1] <= TEST_PWM_LIMIT);
 }
 static void test_navigation_b75(void) {
     b73_advance(); CHECK(Navigation_GetState() == NAV_AVANZAR);

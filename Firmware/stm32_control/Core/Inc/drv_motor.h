@@ -17,7 +17,7 @@
  * No compensa VM ni representa una especificacion electrica del motor.
  */
 #ifndef MOTOR_PWM_MAX_PERCENT
-#define MOTOR_PWM_MAX_PERCENT 10U
+#define MOTOR_PWM_MAX_PERCENT 40U
 #endif
 #if MOTOR_PWM_MAX_PERCENT > 100 || MOTOR_PWM_MAX_PERCENT < 0
 #error "MOTOR_PWM_MAX_PERCENT must be between 0 and 100"

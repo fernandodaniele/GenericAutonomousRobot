@@ -16,7 +16,7 @@
 
 // Parametros iniciales para pruebas de software.
 // No representan una calibracion de los motores reales.
-#define MOTOR_PI_KP 0.50f
+#define MOTOR_PI_KP 2.20f
 #define MOTOR_PI_KI 0.10f
 #define MOTOR_PI_DT_S 0.010f
 

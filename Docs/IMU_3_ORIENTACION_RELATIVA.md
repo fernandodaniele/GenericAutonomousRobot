@@ -1,5 +1,9 @@
 # IMU-3: orientación relativa y comparación con encoders
 
+Alcance de este documento: estimaciones independientes de IMU-3. La extensión
+[IMU-4](IMU_4_FUSION_EXPERIMENTAL.md) añade una tercera estimación diagnóstica
+complementaria, conservando las estimaciones y el protocolo aquí descritos.
+
 Implementación de software, pendiente de validación física de esta etapa. No
 controla motores, no fusiona sensores y no modifica la odometría ni el mapa.
 
@@ -164,5 +168,5 @@ calibración web, AUTO o mapa.
 7. Si `requires_calibration=true`, inmovilizar y recalibrar. No unir series con
    referencias diferentes ni interpretar recuperación de Wi-Fi como recalibración.
 
-No fusionar ni usar estas mediciones para comandar movimiento todavía. El
+No usar estas mediciones para comandar movimiento todavía. El
 stack real, tiempos bajo carga y deriva térmica permanecen por validar en PCB.

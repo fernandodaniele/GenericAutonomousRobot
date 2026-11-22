@@ -136,6 +136,8 @@ static void reset(void)
     loop_limit=15U; rx_data_delay=0; rx_prepare_hook=NULL;
     memset(&s_imu,0,sizeof s_imu); s_imu_length=0; s_imu_discard=false;
     s_imu_counter=s_imu_pending=0; s_imu_sent=s_imu_poll=0;
+    memset(&s_imu_fusion,0,sizeof s_imu_fusion);
+    s_fusion_counter=s_fusion_pending=0;s_fusion_sent=s_fusion_poll=0;
     memset(&s_status,0,sizeof s_status); s_length=0; s_discard_line=false; s_poll_started=false; s_last_poll_us=0;
     memset(&s_sensor_data,0,sizeof s_sensor_data); s_sensor_received_us=0; s_sensor_length=0; s_sensor_discard=false;
     s_sensor_counter=s_sensor_pending=0; s_sensor_sent_us=s_sensor_poll_us=0;
@@ -463,5 +465,6 @@ int main(void)
     test_imu();
     test_imu_calibration();
     test_imu_orientation();
+    test_imu_fusion();
     printf("RESULT %u native W1-W7 test groups passed; no hardware validation\n",cases); return 0;
 }

@@ -78,7 +78,8 @@ static bool TaskComms_SensorsQuery(const char *message, uint32_t *query) {
  * State, HAL result, I2C error bits, age of last successful acquisition.
  * Missing age/axes are '-', never invented zero measurements. */
 static void TaskComms_SendImu(DrvUart_t *uart, uint32_t query, unsigned version) {
-    TaskIMUSnapshot_t s = { .state = IMU_INITIALIZING };
+    static TaskIMUSnapshot_t s; /* Single Comms task; bounded stack as snapshot grows. */
+    s=(TaskIMUSnapshot_t){ .state = IMU_INITIALIZING };
     (void)TaskIMU_GetSnapshot(&s);
     const TickType_t now=xTaskGetTickCount(); /* One age origin for the coherent reply. */
     char age[11] = "-";
@@ -147,12 +148,45 @@ static bool TaskComms_ImuQuery(const char *message, uint32_t *query, unsigned ve
     return n > 0 && (size_t)n < sizeof(sensors) && TaskComms_SensorsQuery(sensors, query);
 }
 
+/* Separate short read-only packet keeps IMU v1/v2/v3 byte-compatible and
+ * each reply below one ESP32 255-byte read, without increasing timeouts. */
+static void TaskComms_SendFusion(DrvUart_t *uart, uint32_t query) {
+    static TaskIMUSnapshot_t s;
+    s=(TaskIMUSnapshot_t){.state=IMU_INITIALIZING};(void)TaskIMU_GetSnapshot(&s);
+    const TaskIMUFusion_t *f=&s.fusion;
+    static char values[11][12], response[192];
+    for(unsigned i=0;i<11U;++i)strcpy(values[i],"-");
+    TickType_t now=xTaskGetTickCount();
+    if(f->reference_request) {
+        (void)snprintf(values[0],12,"%lu",(unsigned long)f->reference_request);
+        (void)snprintf(values[1],12,"%lu",(unsigned long)f->reference_tick);
+        (void)snprintf(values[2],12,"%lu",(unsigned long)f->sample_tick);
+        (void)snprintf(values[3],12,"%lu",(unsigned long)TaskComms_SensorAge(now,f->sample_tick));
+        (void)snprintf(values[9],12,"%lu",(unsigned long)(f->alpha*1000000.0f));
+        (void)snprintf(values[10],12,"%u",(unsigned)f->encoder_calibration);
+    }
+    if(f->state==IMU_FUSION_VALID) {
+        const double angles[]={f->gyro_degrees,f->encoder_degrees,f->degrees,f->difference_gyro_deg,f->difference_encoder_deg};
+        for(unsigned i=0;i<5U;++i)(void)snprintf(values[4+i],12,"%ld",(long)(angles[i]*1000.0));
+    }
+    int n=snprintf(response,sizeof response,"FUS,1,%lu,%u,%u,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%u,%s\n",
+        (unsigned long)query,(unsigned)f->state,(unsigned)f->reason,values[0],values[1],values[2],values[3],values[4],values[5],
+        values[6],values[7],values[8],values[9],(unsigned)IMU_FUSION_TAU_MS,values[10]);
+    if(n>0 && (size_t)n<sizeof response)DrvUart_SendString(uart,response);
+}
+
 /**
  * @brief Procesa los mensajes recibidos desde el ESP32.
  */
 static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickType_t issued_tick) {
     uint32_t query;
     unsigned mapping_part;
+    if(strncmp(message,"IMUF Q=",7U)==0) {
+        char numeric[32];int n=snprintf(numeric,sizeof numeric,"SENSORS Q=%s",message+7);
+        if(n>0 && (size_t)n<sizeof numeric && TaskComms_SensorsQuery(numeric,&query)) {
+            TaskComms_SendFusion(uart,query);return;
+        }
+    }
     if (strncmp(message,"IMUCAL N=",9U)==0) {
         char numeric[32];
         int n=snprintf(numeric,sizeof(numeric),"SENSORS Q=%s",message+9);

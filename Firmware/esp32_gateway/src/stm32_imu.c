@@ -25,6 +25,15 @@ typedef struct {
 } ImuSnapshot;
 static portMUX_TYPE s_imu_lock = portMUX_INITIALIZER_UNLOCKED;
 static ImuSnapshot s_imu;
+typedef struct {
+    bool received, reference;
+    uint32_t state, reason, request, reference_tick, tick, age, alpha_ppm, tau_ms, encoder_calibration;
+    int32_t angles[5]; /* gyro, encoder, fusion, fusion-gyro, fusion-encoder. */
+    int64_t received_us;
+} ImuFusionSnapshot;
+static ImuFusionSnapshot s_imu_fusion;
+static uint32_t s_fusion_counter, s_fusion_pending;
+static int64_t s_fusion_sent, s_fusion_poll;
 static char s_imu_line[256];
 static size_t s_imu_length;
 static bool s_imu_discard;
@@ -92,6 +101,13 @@ uint32_t Stm32Imu_BeginQuery(void) {
     return s_imu_pending;
 }
 void Stm32Imu_QueryFailed(void) { s_imu_pending = 0U; }
+bool Stm32Imu_FusionPollDue(void) { return esp_timer_get_time()-s_fusion_poll>=IMU_POLL_MS*1000; }
+void Stm32Imu_DeferFusionPoll(void) { s_fusion_poll=esp_timer_get_time(); }
+uint32_t Stm32Imu_BeginFusionQuery(void) {
+    if(++s_fusion_counter==0U)++s_fusion_counter;
+    s_fusion_pending=s_fusion_counter;s_fusion_sent=s_fusion_poll=esp_timer_get_time();return s_fusion_pending;
+}
+void Stm32Imu_FusionQueryFailed(void) { s_fusion_pending=0; }
 
 static bool ImuField(const char **cursor, int64_t *value, bool *present, bool last) {
     const char *p = *cursor;
@@ -116,6 +132,27 @@ static bool ImuField(const char **cursor, int64_t *value, bool *present, bool la
 }
 
 static void ImuAccept(void) {
+    if(strncmp(s_imu_line,"FUS,",4U)==0) {
+        const char *p=s_imu_line+4;int64_t v[16];bool has[16];
+        for(unsigned i=0;i<16U;++i)if(!ImuField(&p,&v[i],&has[i],i==15U))return;
+        for(unsigned i=0;i<4U;++i)if(!has[i]||v[i]<0)return;
+        if(v[0]!=1 || !v[1] || v[2]>3 || v[3]>5 || !has[14] || v[14]<=0)return;
+        bool valid=v[2]==1, reference=has[4];
+        if((v[2]<=1 && v[3]!=0) || (v[2]>=2 && v[3]==0) || (v[2]==2 && v[3]!=2) || (valid && !reference))return;
+        for(unsigned i=4;i<=7U;++i)if(has[i]!=reference || (has[i]&&(v[i]<0 || (i==4 && !v[i]))))return;
+        for(unsigned i=8;i<=12U;++i)if(has[i]!=valid || (has[i]&&
+            (i<=10 ? v[i]<-INT32_MAX+1LL || v[i]>INT32_MAX-1LL : v[i]<-180000 || v[i]>180000)))return;
+        if(has[13]!=reference || has[15]!=reference || (reference && (v[13]<=0 || v[13]>=1000000 || v[15]<1 || v[15]>2)))return;
+        int64_t now=esp_timer_get_time();
+        if(s_fusion_pending!=(uint32_t)v[1] || now<s_fusion_sent || now-s_fusion_sent>=IMU_REPLY_MS*1000)return;
+        uint32_t rtt=(uint32_t)((now-s_fusion_sent+999)/1000);
+        ImuFusionSnapshot next={.received=true,.reference=reference,.state=(uint32_t)v[2],.reason=(uint32_t)v[3],
+            .request=(uint32_t)v[4],.reference_tick=(uint32_t)v[5],.tick=(uint32_t)v[6],
+            .age=v[7]>UINT32_MAX-rtt?UINT32_MAX:(uint32_t)v[7]+rtt,.alpha_ppm=(uint32_t)v[13],
+            .tau_ms=(uint32_t)v[14],.encoder_calibration=(uint32_t)v[15],.received_us=now};
+        for(unsigned i=0;i<5U;++i)next.angles[i]=(int32_t)v[8+i];
+        s_fusion_pending=0;taskENTER_CRITICAL(&s_imu_lock);s_imu_fusion=next;taskEXIT_CRITICAL(&s_imu_lock);return;
+    }
     if(strncmp(s_imu_line,"IMUCAL,",7U)==0) {
         const char *ack=s_imu_line+7; int64_t v[3];bool has[3];
         for(unsigned i=0;i<3U;++i)if(!ImuField(&ack,&v[i],&has[i],i==2U)||!has[i])return;
@@ -225,9 +262,10 @@ void Stm32Imu_Feed(const uint8_t *bytes, size_t length) {
 
 int Stm32Imu_Json(char *out, size_t capacity, bool stm32_connected, bool paused) {
     static const char *states[] = { "initializing", "ready", "valid", "init_error", "read_error" };
-    ImuSnapshot s;unsigned request_phase; int64_t now = esp_timer_get_time();
+    ImuSnapshot s;ImuFusionSnapshot f;unsigned request_phase; int64_t now = esp_timer_get_time();
     taskENTER_CRITICAL(&s_imu_lock);
     s = s_imu;
+    f=s_imu_fusion;
     if(s_imu_cal_request.phase==CAL_REQ_SENT && now-s_imu_cal_request.sent_us>=500000)s_imu_cal_request.phase=CAL_REQ_EXPIRED;
     request_phase=s_imu_cal_request.phase;
     taskEXIT_CRITICAL(&s_imu_lock);
@@ -310,5 +348,34 @@ int Stm32Imu_Json(char *out, size_t capacity, bool stm32_connected, bool paused)
         s.yaw_known && s.yaw_state!=1U?"true":"false",yaw_reasons[s.yaw_reason],yaw,used_age,reference,reference_request,
         s.yaw_known?compare_states[s.compare_state]:"unavailable",compare_valid?"true":"false",comp_tick,comp_age,
         angles[0],angles[1],angles[2],angles[3],(unsigned)s.encoder_calibration);
+    if(extra<0 || (size_t)extra>=capacity-(size_t)n+1U)return -1;
+    n=n-1+extra;
+    uint64_t fusion_elapsed=f.received && now>=f.received_us?(uint64_t)(now-f.received_us)/1000U:UINT32_MAX;
+    uint32_t fusion_response=fusion_elapsed>UINT32_MAX?UINT32_MAX:(uint32_t)fusion_elapsed;
+    uint32_t fusion_age=f.age>UINT32_MAX-fusion_response?UINT32_MAX:f.age+fusion_response;
+    bool fusion_connected=f.received && fusion_response<IMU_LINK_MS && stm32_connected;
+    bool fusion_valid=yaw_valid && fusion_connected && f.state==1U && fusion_age<=IMU_SAMPLE_MAX_AGE_MS &&
+        f.request==s.yaw_reference_request && f.reference_tick==s.yaw_reference_tick;
+    char fusion_angles[5][24]={{"null"},{"null"},{"null"},{"null"},{"null"}};
+    char fusion_meta[6][16]={{"null"},{"null"},{"null"},{"null"},{"null"},{"null"}};
+    if(f.received)(void)snprintf(fusion_meta[5],16,"%" PRIu32,f.tau_ms);
+    if(f.reference) {
+        (void)snprintf(fusion_meta[0],16,"%" PRIu32,f.request);
+        (void)snprintf(fusion_meta[1],16,"%" PRIu32,f.reference_tick);
+        (void)snprintf(fusion_meta[2],16,"%" PRIu32,f.tick);
+        (void)snprintf(fusion_meta[3],16,"%" PRIu32,fusion_age);
+        (void)snprintf(fusion_meta[4],16,"%.6f",f.alpha_ppm/1000000.0);
+    }
+    if(fusion_valid)for(unsigned i=0;i<5U;++i)(void)snprintf(fusion_angles[i],24,"%.3f",f.angles[i]/1000.0);
+    static const char *fusion_states[]={"pending","valid","degraded","invalid"};
+    static const char *fusion_reasons[]={"none","imu","encoder","timing","numeric","reference"};
+    extra=snprintf(out+n-1,capacity-(size_t)n+1U,
+        ",\"fusion\":{\"experimental\":true,\"received\":%s,\"connected\":%s,\"valid\":%s,\"state\":\"%s\",\"reason\":\"%s\","
+        "\"requires_calibration\":%s,\"encoder_only\":false,\"reference_request\":%s,\"reference_tick\":%s,\"sample_tick\":%s,"
+        "\"sample_age_ms\":%s,\"alpha\":%s,\"tau_ms\":%s,\"gyro_degrees\":%s,\"encoder_degrees\":%s,\"degrees\":%s,"
+        "\"difference_gyro_deg\":%s,\"difference_encoder_deg\":%s,\"encoder_calibration\":%u}}",
+        f.received?"true":"false",fusion_connected?"true":"false",fusion_valid?"true":"false",f.received?fusion_states[f.state]:"unavailable",
+        fusion_reasons[f.reason],f.received && f.state>=2U?"true":"false",fusion_meta[0],fusion_meta[1],fusion_meta[2],fusion_meta[3],
+        fusion_meta[4],fusion_meta[5],fusion_angles[0],fusion_angles[1],fusion_angles[2],fusion_angles[3],fusion_angles[4],(unsigned)f.encoder_calibration);
     return extra>=0 && (size_t)extra<capacity-(size_t)n+1U ? n-1+extra : -1;
 }

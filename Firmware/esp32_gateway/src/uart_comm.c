@@ -133,6 +133,19 @@ void Uart_PollImu(void)
     xSemaphoreGive(s_tx_gate);
 }
 
+void Uart_PollImuFusion(void)
+{
+    if(!Stm32Imu_FusionPollDue())return;
+    Stm32Imu_DeferFusionPoll();
+    if(!WebCommands_CanPollSensors() || !TxBegin())return;
+    if(WebCommands_CanPollSensors()) {
+        char message[24];uint32_t query=Stm32Imu_BeginFusionQuery();
+        int n=snprintf(message,sizeof message,"IMUF Q=%" PRIu32 "\n",query);
+        if(n<=0 || (size_t)n>=sizeof message || !TxWrite(message))Stm32Imu_FusionQueryFailed();
+    }
+    xSemaphoreGive(s_tx_gate);
+}
+
 bool Uart_SendImuCalibration(void)
 {
     if (!TxBegin()) { Stm32Imu_CalibrationTxFailed(); return false; }

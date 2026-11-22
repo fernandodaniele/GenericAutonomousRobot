@@ -87,6 +87,7 @@ void app_main(void)
         /* A 100-ms UART read can keep 100-ms mapping continuously due.
          * Service a due IMU poll first so mapping cannot starve diagnostics. */
         else if (Stm32Imu_PollDue()) Uart_PollImu();
+        else if (Stm32Imu_FusionPollDue()) Uart_PollImuFusion();
         else Uart_PollMapping();
         Uart_ReadResponse();
         vTaskDelay(pdMS_TO_TICKS(10));

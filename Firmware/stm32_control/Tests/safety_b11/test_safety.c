@@ -615,6 +615,26 @@ static void test_imu_protocol(void) {
     TaskComms_SendImu(&uart,UINT32_MAX,3);
     CHECK(strlen(uart_response)<=240U && uart_response[strlen(uart_response)-1]=='\n');
     PASS("IMU-3 worst signed axes, millidegrees, sums, request IDs and 32-bit ages stay below a single 255-byte UART read");
+    imu_snapshot.fusion=(TaskIMUFusion_t){.state=IMU_FUSION_VALID,.reference_request=7,.reference_tick=0,.sample_tick=0,
+        .gyro_degrees=90,.encoder_degrees=88,.degrees=89,.difference_gyro_deg=-1,.difference_encoder_deg=1,
+        .alpha=1000.0f/1020,.encoder_calibration=1};clock_tick=20;
+    uart_feed(&uart,"IMUF Q=21\n");CHECK(uart_consume(&uart));
+    CHECK(strstr(uart_response,"FUS,1,21,1,0,7,0,0,20,90000,88000,89000,-1000,1000,980392,1000,1\n"));
+    expect_zero();
+    uart_feed(&uart,"IMUF Q=21\nSTOP\n");CHECK(uart_consume(&uart));CHECK(!strcmp(uart_response,"STOP_QUEUED\n"));
+    uart_feed(&uart,"IMUF Q=21\nDETENER\n");CHECK(uart.message_priority==3U);CHECK(uart_consume(&uart));expect_zero();
+    PASS("IMU-4 short read-only fusion reply preserves zero ticks, coefficient and source signs with STOP/DETENER priority and no actuation");
+    imu_snapshot.fusion.state=IMU_FUSION_DEGRADED;imu_snapshot.fusion.reason=IMU_FUSION_ENCODER;
+    uart_feed(&uart,"IMUF Q=22\n");CHECK(uart_consume(&uart));
+    CHECK(strstr(uart_response,"FUS,1,22,2,2,7,0,0,20,-,-,-,-,-,980392,1000,1\n"));
+    PASS("IMU-4 unavailable source removes all fusion/source angles instead of serializing stale or encoder-only data as fused");
+    imu_snapshot.fusion.state=IMU_FUSION_VALID;imu_snapshot.fusion.reason=0;
+    imu_snapshot.fusion.reference_request=UINT32_MAX;imu_snapshot.fusion.reference_tick=UINT32_MAX;
+    imu_snapshot.fusion.gyro_degrees=imu_snapshot.fusion.encoder_degrees=imu_snapshot.fusion.degrees=-2147483.646;
+    imu_snapshot.fusion.difference_gyro_deg=imu_snapshot.fusion.difference_encoder_deg=-180;
+    clock_tick=UINT32_MAX;TaskComms_SendFusion(&uart,UINT32_MAX);
+    CHECK(strlen(uart_response)<192 && uart_response[strlen(uart_response)-1]=='\n');
+    PASS("IMU-4 full 32-bit references/ages and signed millidegrees fit a single bounded short reply without changing old versions");
 }
 static void test_motion_commands(void) {
     static const char *frames[] = {

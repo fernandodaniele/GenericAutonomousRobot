@@ -3,8 +3,8 @@ static void imu_api(void) { httpd_req_t r={0}; assert(WebServer_Imu(&r)==ESP_OK)
 static const char *imu_line="IMU,1,1,2,0,0,0,0,0,16384,131,-131,0\r\n";
 /* Exercise actual app_main, TX, sole RX and all real parsers at the UART
  * driver's allowed 100-ms read duration, with valid mapping replies. */
-static unsigned loop_replied, loop_imu_mode, loop_imu_count;
-static int64_t loop_imu_times[32];
+static unsigned loop_replied, loop_imu_mode, loop_imu_count, loop_fusion_count;
+static int64_t loop_imu_times[32], loop_fusion_times[32];
 static char loop_response[192];
 static void loop_reply(void) {
     if (loop_replied==tx_count) return;
@@ -16,6 +16,9 @@ static void loop_reply(void) {
     else if (sscanf(frame,"MAPPING Q=%" SCNu32 " S=%u",&query,&part)==2) {
         if (!part) n=snprintf(loop_response,sizeof loop_response,"POSE,2,%" PRIu32 ",7,0,2,1,0,0,0,0,0,0,0,0\n",query);
         else n=snprintf(loop_response,sizeof loop_response,"RAY,1,%" PRIu32 ",7,0,%u,0,0,0,-,-,-,-,-\n",query,part-1U);
+    } else if(sscanf(frame,"IMUF Q=%" SCNu32,&query)==1) {
+        assert(loop_fusion_count<32U);loop_fusion_times[loop_fusion_count++]=clock_us;
+        n=snprintf(loop_response,sizeof loop_response,"FUS,1,%" PRIu32 ",0,0,-,-,-,-,-,-,-,-,-,-,1000,-\n",query);
     } else if (sscanf(frame,"IMU3 Q=%" SCNu32,&query)==1 || sscanf(frame,"IMU2 Q=%" SCNu32,&query)==1 || sscanf(frame,"IMU Q=%" SCNu32,&query)==1) {
         assert(loop_imu_count<32U); loop_imu_times[loop_imu_count++]=clock_us;
         if (loop_imu_mode==1U)
@@ -30,7 +33,7 @@ static void loop_reply(void) {
     if(n) { rx_data=loop_response; rx_size=(size_t)n; }
 }
 static void run_imu_loop(unsigned mode) {
-    reset(); loop_replied=loop_imu_count=0; loop_imu_mode=mode;
+    reset(); loop_replied=loop_imu_count=loop_fusion_count=0; loop_imu_mode=mode;
     loop_limit=60U; rx_data_delay=100000; rx_prepare_hook=loop_reply;
     if(!setjmp(task_end)) app_main();
     rx_prepare_hook=NULL;
@@ -47,6 +50,9 @@ static void run_imu_loop(unsigned mode) {
     }
     printf("IMU intervals: min=%" PRId64 " max=%" PRId64 " us\n",min_gap,max_gap);
     assert(frame_count("STATUS\n")>=6U);
+    assert(loop_fusion_count>=8U && s_imu_fusion.received);
+    for(unsigned i=1;i<loop_fusion_count;++i)assert(loop_fusion_times[i]-loop_fusion_times[i-1]>=500000 && loop_fusion_times[i]-loop_fusion_times[i-1]<=990000);
+    printf("Fusion schedule: %u requests; STATUS/SENSORS/map also received\n",loop_fusion_count);
 }
 static DWORD WINAPI imu_writer(void *arg) {
     (void)arg;
@@ -145,6 +151,87 @@ static void imu2_reply(const char *calibration) {
 static esp_err_t imu_cal_post(const char *body) {
     request_body=body;body_offset=0;httpd_req_t r={.content_len=strlen(body)};
     return WebServer_ImuCalibrate(&r);
+}
+static void imu_cal_ready(void);
+static void imu3_reply(const char *orientation);
+static void fusion_reply(const char *payload) {
+    uint32_t q=Stm32Imu_BeginFusionQuery();char line[192];
+    int n=snprintf(line,sizeof line,"FUS,1,%" PRIu32 ",%s\r\n",q,payload);
+    assert(n>0 && (size_t)n<sizeof line);
+    for(int i=0;i<n;++i)Stm32Imu_Feed((const uint8_t *)line+i,1);
+}
+static DWORD WINAPI fusion_writer(void *arg) {
+    (void)arg;
+    for(unsigned n=0;n<10000;++n) {
+        uint32_t q=Stm32Imu_BeginFusionQuery();char line[192];int sign=n%2?1:-1;
+        snprintf(line,sizeof line,"FUS,1,%u,1,0,7,0,80,0,%d,%d,%d,%d,%d,980392,1000,1\n",
+            q,sign*90000,sign*88000,sign*89000,-sign*1000,sign*1000);
+        imu_feed(line);
+    }
+    return 0;
+}
+static void test_imu_fusion(void) {
+    imu_cal_ready();imu3_reply("1,0,0,0,90000,1,20,80,88000,87000,1000,0,1,7");imu_api();
+    assert(strstr(reply,"\"fusion\":{\"experimental\":true,\"received\":false") && strstr(reply,"\"encoder_only\":false"));
+    fusion_reply("1,0,7,0,80,20,88000,87000,87500,-500,500,980392,1000,1");imu_api();
+    assert(s_imu_fusion.received && s_imu_fusion.reference && s_imu_fusion.reference_tick==0);
+    assert(strstr(reply,"\"alpha\":0.980392,\"tau_ms\":1000,\"gyro_degrees\":88.000,\"encoder_degrees\":87.000,\"degrees\":87.500") &&
+        strstr(reply,"\"difference_gyro_deg\":-0.500,\"difference_encoder_deg\":0.500"));
+    assert(strlen(reply)<1792);printf("IMU-4 complete API: %u/1792 bytes\n",(unsigned)strlen(reply));
+    pass("IMU-4 correlated fragmented CRLF fusion packet supplies three same-time estimates, signed residuals and actual coefficient without changing v3 fields");
+    const char *bad[]={"1,0,7,0,80,20,88000,87000,87500,-500,500,0,1000,1",
+        "1,0,7,0,80,20,88000,87000,87500,-500,500,1000000,1000,1",
+        "1,0,0,0,80,20,88000,87000,87500,-500,500,980392,1000,1",
+        "1,0,7,0,80,-,88000,87000,87500,-500,500,980392,1000,1",
+        "1,0,7,0,80,20,-,87000,87500,-500,500,980392,1000,1",
+        "1,0,7,0,80,20,88000,87000,2147483647,-500,500,980392,1000,1",
+        "2,0,7,0,80,20,-,-,-,-,-,980392,1000,1",
+        "2,1,7,0,80,20,-,-,-,-,-,980392,1000,1",
+        "1,0,7,0,80,20,88000,87000,87500,-500,500,980392,0,1",
+        "1,0,7,0,80,20,88000,87000,87500,-500,180001,980392,1000,1"};
+    for(unsigned i=0;i<sizeof bad/sizeof bad[0];++i) {
+        s_imu_fusion=(ImuFusionSnapshot){0};fusion_reply(bad[i]);assert(!s_imu_fusion.received);
+    }
+    pass("IMU-4 strict fusion parser rejects malformed states, references, angles, missing fields and impossible coefficients without touching IMU-1/2/3");
+    fusion_reply("2,2,7,0,80,500,-,-,-,-,-,980392,1000,1");imu_api();
+    assert(strstr(reply,"\"state\":\"degraded\",\"reason\":\"encoder\",\"requires_calibration\":true") && strstr(reply,"\"gyro_degrees\":null"));
+    fusion_reply("3,1,7,0,80,700,-,-,-,-,-,980392,1000,1");imu_api();
+    assert(strstr(reply,"\"state\":\"invalid\",\"reason\":\"imu\"") && strstr(reply,"\"encoder_only\":false"));
+    pass("IMU-4 degraded encoder and invalid IMU states never expose one-source operation as valid fusion and explicitly require recalibration");
+    fusion_reply("1,0,7,5000,5080,20,88000,87000,87500,-500,500,980392,1000,1");imu_api();
+    assert(strstr(reply,"\"gyro_degrees\":null"));
+    imu3_reply("1,0,5000,0,90000,1,20,5080,88000,87000,1000,0,1,7");imu_api();
+    assert(strstr(reply,"\"gyro_degrees\":88.000"));
+    s_status.valid=false;imu_api();assert(strstr(reply,"\"gyro_degrees\":null"));
+    pass("IMU-4 fusion and IMU-3 calibration epoch must match; STATUS loss hides fusion immediately");
+    imu_cal_ready();imu3_reply("1,0,0,0,90000,1,20,80,88000,87000,1000,0,1,7");
+    fusion_reply("1,0,7,0,80,20,88000,87000,87500,-500,500,980392,1000,1");clock_us+=1500000;imu_api();
+    assert(strstr(reply,"\"gyro_degrees\":null"));
+    feed("STATE=3 FAULTS=4 STOP=1\n");imu3_reply("1,0,0,0,90000,1,20,80,88000,87000,1000,0,1,7");imu_api();
+    assert(strstr(reply,"\"gyro_degrees\":null"));
+    fusion_reply("1,0,7,0,580,20,98000,97000,97500,-500,500,980392,1000,1");imu_api();assert(strstr(reply,"\"gyro_degrees\":98.000"));
+    pass("IMU-4 fusion age expires independently; ordinary IMU replies cannot rejuvenate missing fusion data, and only new source data restore display");
+    imu_cal_ready();uint32_t q=Stm32Imu_BeginFusionQuery();char line[192];
+    snprintf(line,sizeof line,"FUS,1,%" PRIu32 ",0,0,-,-,-,-,-,-,-,-,-,-,1000,-\n",q);
+    clock_us+=200000;imu_feed(line);assert(!s_imu_fusion.received);
+    clock_us=0;q=Stm32Imu_BeginFusionQuery();snprintf(line,sizeof line,"FUS,1,%" PRIu32 ",1,0,7,0,0,0,0,0,0,0,0,980392,1000,1\n",q);
+    clock_us=199999;imu_feed(line);assert(s_imu_fusion.received && s_imu_fusion.age==200);
+    imu_feed(line);assert(s_imu_fusion.age==200);
+    pass("IMU-4 query correlation and unchanged 200-ms deadline reject delayed/duplicate replies while conservatively aging source samples");
+    reset();clock_us=500000;Uart_PollImuFusion();Uart_PollImuFusion();assert(tx_count==1 && !strcmp(frames[0],"IMUF Q=1\n"));
+    manual_ready();clock_us+=500000;Uart_PollImuFusion();assert(!tx_count);
+    reset();clock_us=500000;wait_hook=stop_during_send;Uart_PollImuFusion();assert(!tx_count);WebCommands_ProcessPending();assert(!strcmp(frames[0],"STOP\n"));
+    reset();clock_us=500000;tx_error=1;Uart_PollImuFusion();assert(!s_fusion_pending);Uart_PollImuFusion();assert(tx_count==1);
+    pass("IMU-4 low-priority polling is nonaccumulating, paused during manual leases, revalidates STOP at TX gate and never retries failed UART writes");
+    imu_cal_ready();imu3_reply("1,0,0,0,90000,1,20,80,88000,87000,1000,0,1,7");
+    HANDLE thread=CreateThread(NULL,0,fusion_writer,NULL,0,NULL);assert(thread);
+    for(unsigned n=0;n<10000;++n) {
+        imu_api();
+        if(strstr(reply,"\"degrees\":89.000"))assert(strstr(reply,"\"gyro_degrees\":90.000,\"encoder_degrees\":88.000,\"degrees\":89.000"));
+        if(strstr(reply,"\"degrees\":-89.000"))assert(strstr(reply,"\"gyro_degrees\":-90.000,\"encoder_degrees\":-88.000,\"degrees\":-89.000"));
+    }
+    assert(WaitForSingleObject(thread,10000)==WAIT_OBJECT_0);CloseHandle(thread);
+    pass("IMU-4 concurrent real parser and HTTP never mix fused angle or residuals from different source snapshots");
 }
 static void imu_cal_ready(void) {
     reset();feed("STATE=3 FAULTS=4 STOP=1\n");imu2_reply("0,0,0,0,-,-,-,-");

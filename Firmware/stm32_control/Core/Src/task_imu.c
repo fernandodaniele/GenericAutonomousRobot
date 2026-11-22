@@ -28,17 +28,80 @@ static struct {
 /* TaskIMU owns these values. One-sample delay allows the odometry history to
  * bracket the IMU acquisition tick without extrapolating a current pose. */
 static struct {
-    double previous_rate, pending_degrees;
+    double previous_rate, pending_degrees, comparison_degrees;
     TickType_t pending_tick;
     bool pending, encoder_reference, reference_expired;
     float encoder_zero;
 } orientation_work;
 
+static double fusion_previous_encoder;
+
 static double IMU_WrapDegrees(double degrees) {
     double wrapped=fmod(degrees+180.0,360.0);
     return (wrapped<0.0 ? wrapped+360.0 : wrapped)-180.0;
 }
+static void IMU_FusionInvalidate(TaskIMUSnapshot_t *s, uint8_t state, uint8_t reason) {
+    s->fusion.state=state;s->fusion.reason=reason;
+}
+static void IMU_FusionObserve(TaskIMUSnapshot_t *s) {
+    TaskIMUFusion_t *f=&s->fusion;
+    const TaskIMUOrientation_t *o=&s->orientation;
+    if(s->calibration.state==IMU_CAL_RUNNING || s->calibration.state==IMU_CAL_PENDING) {
+        if(o->state==IMU_YAW_INVALID || f->reference_request)IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_IMU);
+        return;
+    }
+    if(s->state!=IMU_VALID || !s->has_sample || s->calibration.state!=IMU_CAL_VALID || o->state!=IMU_YAW_VALID) {
+        IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_IMU);return;
+    }
+    /* Never resume after losing an integration/reference interval. */
+    if(f->state==IMU_FUSION_INVALID || f->state==IMU_FUSION_DEGRADED)return;
+    if(o->comparison_state!=IMU_COMPARE_VALID) {
+        if(f->state==IMU_FUSION_VALID)IMU_FusionInvalidate(s,IMU_FUSION_DEGRADED,IMU_FUSION_ENCODER);
+        else if(orientation_work.reference_expired)IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_REFERENCE);
+        return;
+    }
+    if((uint64_t)(TickType_t)(s->sample_tick-o->comparison_tick)*1000U>
+       (uint64_t)IMU_YAW_MAX_GAP_MS*configTICK_RATE_HZ) {
+        IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_TIMING);return;
+    }
+    if(f->state==IMU_FUSION_PENDING) {
+        /* Start at IMU-3's zero, never rebase to an unrelated current pose. */
+        *f=(TaskIMUFusion_t){.reference_request=o->reference_request,.reference_tick=o->reference_tick,
+            .sample_tick=o->reference_tick,.alpha=(float)IMU_FUSION_TAU_MS/(IMU_FUSION_TAU_MS+TASK_IMU_PERIOD_MS),
+            .encoder_calibration=o->encoder_calibration};
+        fusion_previous_encoder=0.0;
+        if(o->comparison_tick==o->reference_tick && orientation_work.comparison_degrees==0.0) {
+            f->state=IMU_FUSION_VALID;return;
+        }
+    } else if(f->reference_request!=o->reference_request || f->reference_tick!=o->reference_tick) {
+        IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_REFERENCE);return;
+    }
+    TickType_t dt=(TickType_t)(o->comparison_tick-f->sample_tick);
+    if(!dt || (uint64_t)dt*1000U>(uint64_t)IMU_YAW_MAX_GAP_MS*configTICK_RATE_HZ) {
+        IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_TIMING);return;
+    }
+    double encoder_step=IMU_WrapDegrees(o->encoder_delta_deg-fusion_previous_encoder);
+    /* Exactly half a turn has no observable sign in a wrapped history. */
+    if(fabs(encoder_step)>=180.0) {
+        IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_REFERENCE);return;
+    }
+    double encoder=f->encoder_degrees+encoder_step;
+    double gyro=orientation_work.comparison_degrees;
+    double prediction=f->degrees+(gyro-f->gyro_degrees);
+    double alpha=(double)IMU_FUSION_TAU_MS/((double)IMU_FUSION_TAU_MS+(double)dt*1000.0/configTICK_RATE_HZ);
+    double next=prediction+(1.0-alpha)*IMU_WrapDegrees(encoder-prediction);
+    if(!isfinite(next) || !isfinite(encoder) || fabs(next)>(INT32_MAX-1)/1000.0 || fabs(encoder)>(INT32_MAX-1)/1000.0) {
+        IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_NUMERIC);return;
+    }
+    f->degrees=next;f->gyro_degrees=gyro;f->encoder_degrees=encoder;f->alpha=(float)alpha;
+    f->sample_tick=o->comparison_tick;f->encoder_calibration=o->encoder_calibration;
+    f->difference_gyro_deg=IMU_WrapDegrees(next-gyro);
+    f->difference_encoder_deg=IMU_WrapDegrees(next-encoder);
+    f->state=IMU_FUSION_VALID;f->reason=IMU_FUSION_NONE;
+    fusion_previous_encoder=o->encoder_delta_deg;
+}
 static void IMU_OrientationInvalidate(TaskIMUSnapshot_t *s, uint8_t reason) {
+    IMU_FusionInvalidate(s,IMU_FUSION_INVALID,IMU_FUSION_IMU);
     s->orientation.state=IMU_YAW_INVALID;
     s->orientation.reason=reason;
     s->orientation.comparison_state=IMU_COMPARE_YAW;
@@ -52,6 +115,7 @@ static void IMU_OrientationObserve(TaskIMUSnapshot_t *s, bool completed) {
     }
     double rate=((double)s->data.Gyro_Z_RAW-s->calibration.sum[2]/(double)IMU_CAL_SAMPLES)/131.0;
     if(completed) {
+        s->fusion=(TaskIMUFusion_t){0};fusion_previous_encoder=0.0;
         *o=(TaskIMUOrientation_t){.state=IMU_YAW_VALID,
             .reference_tick=s->sample_tick,.sample_tick=s->sample_tick,
             .reference_request=s->calibration.request};
@@ -91,6 +155,7 @@ static void IMU_OrientationObserve(TaskIMUSnapshot_t *s, bool completed) {
         OdometrySnapshot encoder;Odometry_GetSnapshot(&encoder);
         if(encoder.state==2U) {
             o->comparison_tick=orientation_work.pending_tick;
+            orientation_work.comparison_degrees=orientation_work.pending_degrees;
             o->encoder_reference_deg=orientation_work.encoder_zero*(180.0/3.14159265358979323846);
             o->encoder_delta_deg=IMU_WrapDegrees((theta-orientation_work.encoder_zero)*(180.0/3.14159265358979323846));
             o->gyro_delta_deg=IMU_WrapDegrees(orientation_work.pending_degrees);
@@ -127,6 +192,7 @@ static void IMU_CalibrationI2CError(TaskIMUSnapshot_t *s) {
         IMU_CalibrationFail(s,IMU_CAL_I2C);
 }
 static void IMU_CalibrationBegin(TaskIMUSnapshot_t *s, uint32_t request, TickType_t issued, TickType_t now) {
+    s->fusion=(TaskIMUFusion_t){0};fusion_previous_encoder=0.0;
     s->orientation=(TaskIMUOrientation_t){0};
     memset(&orientation_work,0,sizeof(orientation_work));
     s->calibration=(TaskIMUCalibration_t){ .request=request, .state=IMU_CAL_RUNNING };
@@ -251,6 +317,7 @@ static void TaskIMU_Run(void *parameters) {
             bool was_running=snapshot.calibration.state==IMU_CAL_RUNNING;
             IMU_CalibrationObserve(&snapshot,started);
             IMU_OrientationObserve(&snapshot,was_running && snapshot.calibration.state==IMU_CAL_VALID);
+            IMU_FusionObserve(&snapshot);
             (void)xQueueOverwrite(imu_data_queue, &snapshot);
         }
     }

@@ -54,6 +54,24 @@ typedef struct {
     uint8_t state, reason, comparison_state, encoder_calibration;
 } TaskIMUOrientation_t;
 
+/* Diagnostic complementary filter only. tau=1 s gives alpha=1000/1020 at
+ * 20 ms; recomputed from actual dt, not a calibrated noise/traction model. */
+#define IMU_FUSION_TAU_MS 1000U
+#if IMU_FUSION_TAU_MS == 0
+#error IMU_FUSION_TAU_MS must be positive
+#endif
+enum { IMU_FUSION_PENDING=0, IMU_FUSION_VALID=1, IMU_FUSION_DEGRADED=2, IMU_FUSION_INVALID=3 };
+enum { IMU_FUSION_NONE=0, IMU_FUSION_IMU=1, IMU_FUSION_ENCODER=2,
+       IMU_FUSION_TIMING=3, IMU_FUSION_NUMERIC=4, IMU_FUSION_REFERENCE=5 };
+typedef struct {
+    double degrees, gyro_degrees, encoder_degrees; /* Continuous common origin. */
+    TickType_t reference_tick, sample_tick;
+    uint32_t reference_request;
+    float alpha;
+    float difference_gyro_deg, difference_encoder_deg; /* Wrapped residuals. */
+    uint8_t state, reason, encoder_calibration;
+} TaskIMUFusion_t;
+
 /* One coherent queue copy. Only IMU_VALID authorizes current measurements.
  * sample_tick dates the last successful acquisition start; zero is legitimate.
  * Raw axes are sensor axes, not calibrated robot/chassis coordinates. */
@@ -66,6 +84,7 @@ typedef struct {
     bool has_sample;
     TaskIMUCalibration_t calibration;
     TaskIMUOrientation_t orientation;
+    TaskIMUFusion_t fusion;
 } TaskIMUSnapshot_t;
 
 bool TaskIMU_GetSnapshot(TaskIMUSnapshot_t *snapshot);

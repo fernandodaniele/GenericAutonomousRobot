@@ -101,12 +101,18 @@
           <div><dt>Origen y antigüedad de orientación</dt><dd id="imu-reference">Sin referencia angular</dd></div>
           <div><dt>Cambios desde una referencia común (±180°)</dt><dd id="imu-common-angles">Sin comparación vigente</dd></div>
           <div><dt>Diferencia giroscopio − encoders (±180°)</dt><dd id="imu-angle-difference">Sin comparación vigente</dd></div>
+          <div><dt>Estado de fusión experimental</dt><dd id="imu-fusion-state">Esperando información</dd></div>
+          <div><dt>Orientación fusionada experimental</dt><dd id="imu-fusion-angle">Sin estimación fusionada vigente</dd></div>
+          <div><dt>Fuentes desde la misma referencia e instante</dt><dd id="imu-fusion-sources">Sin fuentes comunes vigentes</dd></div>
+          <div><dt>Fusionada − fuente (±180°)</dt><dd id="imu-fusion-differences">Sin diferencias vigentes</dd></div>
+          <div><dt>Filtro complementario experimental</dt><dd id="imu-fusion-parameters">Sin parámetros recibidos de STM32</dd></div>
+          <div><dt>Referencia y antigüedad de fusión</dt><dd id="imu-fusion-age">Sin referencia común de fusión</dd></div>
           <div><dt>Antigüedad de la última lectura</dt><dd id="imu-age">Sin muestra</dd></div>
           <div><dt>Comunicación I²C</dt><dd id="imu-error">Sin información</dd></div>
         </dl>
         <button id="imu-calibrate" type="button" disabled>Calibrar giroscopio</button>
         <p id="imu-calibration-message" class="description" role="status">Dejá el chasis inmóvil antes de iniciar. Se toman 250 muestras en aproximadamente 5 segundos, solo en En espera o Detenido por seguridad.</p>
-        <p class="description">Cada calibración válida pone a cero únicamente el ángulo relativo del giroscopio. Izquierda positiva, derecha negativa. La comparación utiliza el mismo instante de referencia y muestra cambios módulo 360°; no cuenta vueltas completas ni constituye un error contra una referencia física. No se fusiona con la odometría ni modifica el mapa.</p>
+        <p class="description">Cada calibración válida establece una referencia nueva para giroscopio y fusión, sin reiniciar la odometría. Izquierda positiva, derecha negativa. La comparación IMU-3 y las diferencias son módulo 360°. La fusión experimental muestra además ángulos acumulados de sus tres estimaciones en el mismo instante. No representa exactitud física demostrada ni modifica el mapa o el movimiento. Ante pérdida de una fuente no se sustituye la fusión por encoders: requiere recalibración explícita.</p>
         <p class="safety-note">Ejes físicos del sensor, sin fusión con odometría. El acelerómetro incluye gravedad. Los offsets se pierden al reiniciar la STM32. Las variaciones pueden invalidar la calibración; un giro lento constante no siempre puede distinguirse del offset. Las consultas se pausan durante control manual y los datos vencidos no se muestran como válidos.</p>
         <p class="endpoint">Consulta automática <code>GET /api/imu</code></p>
       </section>

@@ -1,11 +1,36 @@
 "use strict";
 
+function imuFusionValidate(s) {
+  const f=s.fusion;
+  if(f===undefined)return true; // IMU-1/2/3 HTTP compatibility.
+  const number=n=>Number.isInteger(n)&&n>=0&&n<=4294967295;
+  const states=["unavailable","pending","valid","degraded","invalid"];
+  const reasons=["none","imu","encoder","timing","numeric","reference"];
+  if(!f||f.experimental!==true||f.encoder_only!==false||!states.includes(f.state)||!reasons.includes(f.reason)||
+    !["received","connected","valid","requires_calibration"].every(k=>typeof f[k]==="boolean")||
+    f.received!==(f.state!=="unavailable")||f.requires_calibration!==["degraded","invalid"].includes(f.state)||
+    (["degraded","invalid"].includes(f.state))!==(f.reason!=="none")||
+    (f.state==="degraded"&&f.reason!=="encoder")||(f.connected&&(!f.received||!s.stm32_connected)))return false;
+  if(![f.reference_request,f.reference_tick,f.sample_tick,f.sample_age_ms,f.tau_ms].every(n=>n===null||number(n))||
+    f.received!==(f.tau_ms!==null)||(f.tau_ms!==null&&f.tau_ms===0)||
+    !number(f.encoder_calibration)||f.encoder_calibration>2)return false;
+  const reference=f.reference_request!==null;
+  if([f.reference_tick,f.sample_tick,f.sample_age_ms].some(n=>(n!==null)!==reference)||
+    (reference&&(f.reference_request===0||f.encoder_calibration===0||typeof f.alpha!=="number"||!Number.isFinite(f.alpha)||f.alpha<=0||f.alpha>=1))||
+    (!reference&&(f.alpha!==null||f.encoder_calibration!==0))||(!f.received&&reference))return false;
+  if(f.valid&&(!f.connected||f.state!=="valid"||!s.valid||!s.calibration?.valid||!s.orientation?.valid||!reference||
+    f.reference_request!==s.orientation.reference_request||f.reference_tick!==s.orientation.reference_tick||f.sample_age_ms>s.max_age_ms))return false;
+  return [f.degrees,f.gyro_degrees,f.encoder_degrees,f.difference_gyro_deg,f.difference_encoder_deg].every((n,i)=>
+    f.valid?typeof n==="number"&&Number.isFinite(n)&&Math.abs(n)<=(i<3?2147483.647:180):n===null);
+}
+
 function imuValidate(s) {
   const states = ["no_data", "initializing", "ready", "valid", "init_error", "read_error"];
   const number = n => Number.isInteger(n) && n >= 0 && n <= 4294967295;
   if (!s || !states.includes(s.state) || !["received", "connected", "stm32_connected", "paused", "valid", "stale"].every(k => typeof s[k] === "boolean") ||
       !number(s.max_age_ms) || s.max_age_ms === 0 ||
       ![s.response_age_ms, s.sample_age_ms, s.hal_status, s.i2c_error].every(n => n === null || number(n))) return false;
+  if(!imuFusionValidate(s))return false;
   if (s.received !== (s.state !== "no_data") || (s.received && (s.hal_status === null || s.i2c_error === null || s.response_age_ms === null)) ||
       (!s.received && (s.sample_age_ms !== null || s.hal_status !== null || s.i2c_error !== null || s.response_age_ms !== null)) ||
       (s.hal_status !== null && s.hal_status > 3) || s.valid === s.stale) return false;
@@ -98,6 +123,19 @@ function createImuPanel(doc, fetcher, now, schedule, clear, Controller,
       p?.state==="odometry_unavailable"?"Sin pose de encoders asociable al mismo instante":"Sin comparación vigente");
     text("imu-angle-difference",comparisonValid?
       `${p.difference_deg.toFixed(2)}° · muestra común hace ${p.sample_age_ms+elapsed} ms · odometría ${p.encoder_calibration===2?"calibrada":"provisional"}`:"Sin comparación vigente");
+    const f=sample.fusion;
+    const fusionValid=valid&&f?.valid===true&&f.sample_age_ms+elapsed<=sample.max_age_ms;
+    const fusionReasons={imu:"Orientación IMU o calibración no válida",encoder:"Pose de encoders no disponible a tiempo",timing:"Intervalo de fusión discontinuo",
+      numeric:"Límite numérico",reference:"Referencia común no disponible o incompatible"};
+    text("imu-fusion-state",!f?.received?"Fusión experimental no disponible":
+      f.requires_calibration?`${f.state==="degraded"?"Degradada":"Inválida"} · ${fusionReasons[f.reason]} · recalibrar inmóvil`:
+      f.state==="pending"?"Esperando referencias y muestras sincronizadas":fusionValid?"Fusión experimental válida · solo diagnóstico":"Fusión sin información vigente");
+    text("imu-fusion-angle",fusionValid?`${f.degrees.toFixed(2)}° · relativa acumulada`:"Sin estimación fusionada vigente");
+    text("imu-fusion-sources",fusionValid?`Encoders ${f.encoder_degrees.toFixed(2)}° / Giroscopio ${f.gyro_degrees.toFixed(2)}°`:"Sin fuentes comunes vigentes");
+    text("imu-fusion-differences",fusionValid?`Con giroscopio ${f.difference_gyro_deg.toFixed(2)}° / Con encoders ${f.difference_encoder_deg.toFixed(2)}°`:"Sin diferencias vigentes");
+    text("imu-fusion-parameters",f?.tau_ms?`τ=${f.tau_ms} ms · α=${f.alpha===null?"sin actualización":f.alpha.toFixed(6)} (peso de predicción)`:
+      "Sin parámetros recibidos de STM32");
+    text("imu-fusion-age",f?.reference_request?`Referencia ${f.reference_request} · tick ${f.reference_tick} · muestra común hace ${f.sample_age_ms+elapsed} ms`:"Sin referencia común de fusión");
     const robot=lastKnownStatus();
     if(button)button.disabled=posting||now()<waitingUntil||!valid||!c?.available||c.state==="running"||
       ["queued","sent"].includes(c.request_phase)||!robot?.valid||!robot.connected||![0,3].includes(robot.state)||robot.age_ms>=2000;

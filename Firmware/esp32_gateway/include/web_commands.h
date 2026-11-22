@@ -20,7 +20,7 @@ typedef enum { WEB_CMD_ACCEPTED, WEB_CMD_DUPLICATE, WEB_CMD_BUSY, WEB_CMD_CONFLI
 #define WEB_AUTO_REQUEST_MS 500U
 /* AUTO usa la misma cola desde web y consola; revalidar bajo el turno UART. */
 bool WebCommands_RequestConsoleAuto(void);
-bool WebCommands_ClaimAuto(void);
+bool WebCommands_ClaimAuto(UartControlCommand command);
 
 WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, WebCommandReceipt *receipt);
 /* Solo app_main; ninguna E/S se realiza dentro del bloqueo. */

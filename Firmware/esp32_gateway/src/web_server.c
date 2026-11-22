@@ -139,7 +139,7 @@ static esp_err_t WebServer_Navigation(httpd_req_t *request)
     Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
     /* Unica tarea HTTP, envio sincrono: conservar el buffer fuera de su stack,
      * igual que /api/imu y /api/map. No se comparte con el receptor UART. */
-    static char response[1792];
+    static char response[NAVIGATION_JSON_CAPACITY];
     int n=Stm32Navigation_Json(response,sizeof response,status.connected,!WebCommands_CanPollSensors());
     const char *body=response;
     esp_err_t err;
@@ -222,7 +222,7 @@ static bool CommandBody(httpd_req_t *request, char *body, size_t capacity)
 
 static esp_err_t WebServer_Command(httpd_req_t *request)
 {
-    char id[33], body[7];
+    char id[33], body[11];
     if (!CommandHeaders(request, id) || !CommandBody(request, body, sizeof(body))) return ESP_FAIL;
     const size_t used = request->content_len;
     UartControlCommand command;
@@ -230,6 +230,8 @@ static esp_err_t WebServer_Command(httpd_req_t *request)
     else if (used == 5U && memcmp(body, "RESET", 5U) == 0) command = UART_CONTROL_RESET;
     else if (used == 6U && memcmp(body, "MANUAL", 6U) == 0) command = UART_CONTROL_MANUAL;
     else if (used == 4U && memcmp(body, "AUTO", 4U) == 0) command = UART_CONTROL_AUTO;
+    else if (used==9U && memcmp(body,"AUTO_TURN",9U)==0) command=UART_CONTROL_AUTO_TURN;
+    else if (used==10U && memcmp(body,"AUTO_EVADE",10U)==0) command=UART_CONTROL_AUTO_EVADE;
     else return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"unsupported_command\"}", false);
 
     WebCommandReceipt receipt;

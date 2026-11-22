@@ -142,6 +142,7 @@ void vTaskDelay(unsigned ticks)
 static int console_getchar(void) { return *keys ? *keys++ : EOF; }
 static void reset(void)
 {
+    s_navigation_turn_ready=false;s_navigation_turn_pending=0;s_navigation_turn_sent=0;
     navigation_format_error=false;reply_length=0U;response_count=0U;reply_type=reply_cache=NULL;
     memset(&s_navigation,0,sizeof s_navigation);s_navigation_received=0;
     s_navigation_length=0;s_navigation_discard=false;s_navigation_counter=s_navigation_pending=0;
@@ -240,6 +241,7 @@ static unsigned frame_count(const char *frame) { unsigned count=0; for(unsigned 
 #include "test_sensors.c"
 #include "test_navigation.c"
 #include "test_auto.c"
+#include "test_auto3.c"
 #include "test_mapping.c"
 #include "test_imu.c"
 
@@ -485,5 +487,6 @@ int main(void)
     test_imu_orientation();
     test_imu_fusion();
     test_navigation();
+    test_auto3();
     printf("RESULT %u native W1-W7 test groups passed; no hardware validation\n",cases); return 0;
 }

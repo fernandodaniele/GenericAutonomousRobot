@@ -9,7 +9,7 @@
 
 /* Base odometrica AUTO-1/AUTO-2.
  * 0 conserva el perfil B7 para regresiones explicitas.
- * No seleccionable por UART; no deshabilita Safety ni permisos del backend. */
+ * AUTO-1/B7 remain compile-time regressions; AUTO-3 is an explicit session request. */
 #ifndef NAV_AUTO1_ODOMETRY
 #define NAV_AUTO1_ODOMETRY 1
 #endif
@@ -20,7 +20,7 @@
 #error "AUTO-2 requires the odometry profile"
 #endif
 /* AUTO-2 operativo por defecto. AUTO-1: compilar NAV_AUTO2_ENABLED=0.
- * La seleccion es de compilacion; UART no cambia el perfil de una sesion. */
+ * AUTO-3 requests select a new session only; never change an active profile. */
 #define NAV_AUTO2_REVERSE_TARGET_MM 20U
 #define NAV_AUTO2_TURN_TARGET_DEG 10U
 #define NAV_AUTO2_PROGRESS_WINDOW_MS 200U
@@ -40,7 +40,8 @@
  * Safety y no detecta deslizamiento igual en ambas ruedas. */
 #define NAV_AUTO1_MAX_WHEEL_DIFFERENCE_MM 10U
 
-/* Solo compilacion. Requiere autorizacion fisica especifica; no hay mando UART. */
+/* Legacy experiment for regression builds only. Operational AUTO-3 instead
+ * requires an explicit one-shot AUTO_TURN/AUTO_EVADE request. */
 #ifndef NAV_EXPERIMENTAL_TURN_ENABLED
 #define NAV_EXPERIMENTAL_TURN_ENABLED 0
 #endif
@@ -66,7 +67,13 @@
 #define NAV_REVERSE_MAX_MS 300U
 #define NAV_SESSION_MAX_MS 2000U
 #endif
-#define NAV_TURN_MAX_MS 250U
+#define NAV_TURN_MAX_MS 250U /* Historical experimental profiles. */
+#define NAV_AUTO3_TURN_MAX_MS 800U
+#define NAV_AUTO3_SESSION_MAX_MS 4200U
+#define NAV_AUTO3_ISOLATED_MAX_MS 1400U /* data 200 + settle 200 + turn 800 + transitions 200 */
+#define NAV_AUTO3_MAX_WHEEL_DIFFERENCE_MM 3U /* center translation <=1.5 mm in the ideal model */
+/* Explicit one-shot requests only; ordinary AUTO always keeps AUTO-2F. */
+typedef enum { NAV_PROFILE_TURN = 3, NAV_PROFILE_EVASION = 4 } NavigationExperimentalProfile_t;
 #if NAV_TURN_LEFT
 #define NAV_TURN_LEFT_CPS (-MOTION_TURN_CPS)
 #define NAV_TURN_RIGHT_CPS MOTION_TURN_CPS
@@ -102,6 +109,8 @@ typedef enum {
 
 /* Begin solo al entrar efectivamente en AUTO; nunca al renovar consignas. */
 void Navigation_Begin(TickType_t entered_tick);
+void Navigation_BeginProfile(TickType_t entered_tick, uint8_t profile);
+bool Navigation_TurnEnabled(void);
 /* Revoca sesion/permisos, sin escribir salidas; Stop del controlador lo invoca. */
 void Navigation_Cancel(void);
 /* Cancela solo la sesion indicada; una consigna vieja no cancela otra nueva. */
@@ -125,6 +134,15 @@ typedef enum {
     NAV_ODOM_DISAGREEMENT, NAV_ODOM_RANGE
 } NavigationOdometryError_t;
 typedef struct {
+    /* 0 no solicitada, 1 esperando, 2 confirmada, 3 timeout, 4 cancelada. */
+    uint8_t settle_state;
+    uint16_t settle_observations, settle_window_observations;
+    uint32_t settle_elapsed_ms, settle_window_ms, settle_left_span, settle_right_span;
+    bool reverse_reference_available, reverse_entered;
+    TickType_t reverse_reference_tick, reverse_entry_tick;
+    int64_t reverse_reference_left, reverse_reference_right;
+} NavigationStabilization_t;
+typedef struct {
     uint32_t session_id, started_tick, elapsed_ms, phase_elapsed_ms;
     TickType_t observed_tick, decision_tick;
     NavigationState_t state, last_phase;
@@ -136,19 +154,29 @@ typedef struct {
     NavigationOdometryError_t odometry_error;
     bool deltas_available;
     int64_t left_delta, right_delta;
-    /* 0 no solicitada, 1 esperando, 2 confirmada, 3 timeout, 4 cancelada. */
-    uint8_t settle_state;
-    uint16_t settle_observations, settle_window_observations;
-    uint32_t settle_elapsed_ms, settle_window_ms, settle_left_span, settle_right_span;
-    bool reverse_reference_available, reverse_entered;
-    TickType_t reverse_reference_tick, reverse_entry_tick;
-    int64_t reverse_reference_left, reverse_reference_right;
+    /* Anonymous aliases preserve the existing reverse diagnostic fields. */
+    union {
+        NavigationStabilization_t reverse_wait;
+        struct {
+            /* 0 no solicitada, 1 esperando, 2 confirmada, 3 timeout, 4 cancelada. */
+            uint8_t settle_state;
+            uint16_t settle_observations, settle_window_observations;
+            uint32_t settle_elapsed_ms, settle_window_ms, settle_left_span, settle_right_span;
+            bool reverse_reference_available, reverse_entered;
+            TickType_t reverse_reference_tick, reverse_entry_tick;
+            int64_t reverse_reference_left, reverse_reference_right;
+        };
+    };
+    NavigationStabilization_t turn_wait;
+    uint8_t turn_flags; /* requested=1, published=2, applied=4, completed=8, measured=16 */
+    uint32_t turn_mdeg, turn_elapsed_ms;
 } NavigationDiagnostics_t;
 void Navigation_GetDiagnostics(NavigationDiagnostics_t *out);
 /* Solo TaskComms: copia bajo lock y formatea fuera. <=255 bytes con LF. */
 int Navigation_FormatDiagnostics(char *out, size_t capacity, uint32_t query);
 /* Parte complementaria de la MISMA copia/Q tomada al formatear NAV. */
 int Navigation_FormatStabilization(char *out, size_t capacity, uint32_t query);
+int Navigation_FormatTurn(char *out, size_t capacity, uint32_t query);
 
 /* Barreras internas del backend: permiso de emision de un solo uso y sesion
  * vigente tambien durante el consumo/PI. No consultan colas ni esperan. */

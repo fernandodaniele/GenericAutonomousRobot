@@ -127,10 +127,29 @@
           <button id="command-manual" type="button" disabled>Solicitar modo manual</button>
           <button id="command-auto" type="button" disabled>Solicitar modo autónomo</button>
         </div>
+        <details>
+          <summary>AUTO-3 experimental: ensayos supervisados</summary>
+          <p class="safety-note">Sin sensores laterales. Verifica visualmente el espacio barrido por el chasis. La confirmacion humana no mide el espacio ni reemplaza Safety.</p>
+          <label><input id="auto3-supervised" type="checkbox" autocomplete="off"> Robot supervisado y espacio lateral despejado para este unico ensayo.</label>
+          <div class="command-buttons">
+            <button id="command-auto-turn" type="button" disabled>Ensayo: giro aislado izquierdo 10 grados</button>
+            <button id="command-auto-evade" type="button" disabled>Ensayo: secuencia con giro izquierdo 10 grados</button>
+          </div>
+          <p class="description">Cada boton solicita una maniobra desde En espera. Giro: -1200/+1200 cps, hasta 800 ms. Secuencia: hasta 4,2 s. Sin reanudar avance; STOP vuelve a En espera. AUTO normal conserva AUTO-2F sin giro.</p>
+        </details>
         <p id="command-message" class="description" role="status" aria-live="polite">Controles disponibles al cargar JavaScript.</p>
-        <p class="description">AUTO-2 intenta avanzar 100 mm estimados, hasta 2 segundos. Ante un obstáculo puede detenerse y retroceder hasta 20 mm en 300 ms si la trasera está despejada. El giro experimental sigue deshabilitado por falta de cobertura lateral. La secuencia dura como máximo 3 segundos y termina detenida en modo autónomo: usá STOP para volver a En espera. STOP cancela cualquier fase.</p>
+        <p class="description">AUTO-2 intenta avanzar 100 mm estimados, hasta 2 segundos. Ante un obstáculo puede detenerse y retroceder hasta 20 mm en 800 ms si la trasera está despejada. El giro experimental sigue deshabilitado por falta de cobertura lateral. La secuencia dura como máximo 3 segundos y termina detenida en modo autónomo: usá STOP para volver a En espera. STOP cancela cualquier fase.</p>
         <p class="safety-note">STOP depende de Wi-Fi, ESP32, UART y STM32. No sustituye una parada de emergencia física certificada.</p>
         <noscript><p>Los controles requieren JavaScript; no se envía ninguna solicitud automáticamente.</p></noscript>
+      </section>
+
+      <section class="card" aria-labelledby="navigation-title">
+        <h2 id="navigation-title">Diagnostico de navegacion</h2>
+        <p id="navigation-status" data-navigation-panel="true" role="status">Esperando telemetria real.</p>
+        <p id="navigation-profile"></p><p id="navigation-phase"></p>
+        <p id="navigation-progress"></p><p id="navigation-turn"></p>
+        <p id="navigation-stabilization"></p><p id="navigation-result"></p>
+        <p class="description">Consigna aplicada no confirma desplazamiento. El progreso proviene de encoders. Los resultados se conservan tras STOP y pueden ser historicos.</p>
       </section>
 
       <section class="card controls" aria-labelledby="manual-title">

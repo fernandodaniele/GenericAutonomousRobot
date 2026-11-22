@@ -150,12 +150,12 @@ void Uart_PollImuFusion(void)
 void Uart_PollNavigation(void)
 {
     if (!Stm32Navigation_PollDue()) { return; }
-    bool stabilization=Stm32Navigation_WaitQueryDue();
+    unsigned part=Stm32Navigation_TurnQueryDue() ? 2U : Stm32Navigation_WaitQueryDue() ? 1U : 0U;
     Stm32Navigation_DeferPoll();
     if (!WebCommands_CanPollSensors() || !TxBegin()) { return; }
     if (WebCommands_CanPollSensors()) {
-        char message[24];uint32_t query=stabilization ? Stm32Navigation_BeginWaitQuery() : Stm32Navigation_BeginQuery();
-        int n=snprintf(message,sizeof message,stabilization ? "NAV Q=%" PRIu32 " S=1\n" : "NAV Q=%" PRIu32 "\n",query);
+        char message[24];uint32_t query=part==2U ? Stm32Navigation_BeginTurnQuery() : part==1U ? Stm32Navigation_BeginWaitQuery() : Stm32Navigation_BeginQuery();
+        int n=snprintf(message,sizeof message,part==2U ? "NAV Q=%" PRIu32 " S=2\n" : part==1U ? "NAV Q=%" PRIu32 " S=1\n" : "NAV Q=%" PRIu32 "\n",query);
         if (n<=0 || (size_t)n>=sizeof message || !TxWrite(message)) { Stm32Navigation_QueryFailed(); }
     }
     xSemaphoreGive(s_tx_gate);
@@ -184,6 +184,8 @@ bool Uart_SendControl(UartControlCommand command)
         case UART_CONTROL_RESET: message = "RESET\n"; break;
         case UART_CONTROL_MANUAL: message = "MANUAL\n"; break;
         case UART_CONTROL_AUTO: message = "AUTO\n"; break;
+        case UART_CONTROL_AUTO_TURN: message = "AUTO_TURN\n"; break;
+        case UART_CONTROL_AUTO_EVADE: message = "AUTO_EVADE\n"; break;
         default: return false;
     }
     WebManual_ControlBegin(command);
@@ -191,7 +193,7 @@ bool Uart_SendControl(UartControlCommand command)
     if (TxBegin()) {
         const bool halted = !WebManual_TakeHalt() || TxWrite("DETENER\n");
         if ((halted || command == UART_CONTROL_STOP) &&
-            (command != UART_CONTROL_AUTO || WebCommands_ClaimAuto())) sent = TxWrite(message);
+            (!Uart_ControlIsAuto(command) || WebCommands_ClaimAuto(command))) sent = TxWrite(message);
         xSemaphoreGive(s_tx_gate);
     }
     WebManual_ControlEnd();

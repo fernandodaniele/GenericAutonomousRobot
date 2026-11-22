@@ -28,7 +28,8 @@ bool Motion_Execute(MotionCommand_t command, RobotControlState_t required_mode,
 /* Rutas exclusivas de navegacion: permiso, fase y sesion validados en backend. */
 bool Motion_NavigationAdvance(TickType_t issued_tick, uint32_t session);
 bool Motion_NavigationReverse(TickType_t issued_tick, uint32_t session);
-/* Siempre rechaza si NAV_EXPERIMENTAL_TURN_ENABLED=0 (valor normal). */
+/* Only an explicitly authorized turn phase may emit these fixed targets.
+ * Ordinary AUTO-2F remains unable to turn with the default configuration. */
 bool Motion_NavigationTurn(TickType_t issued_tick, uint32_t session);
 
 #endif

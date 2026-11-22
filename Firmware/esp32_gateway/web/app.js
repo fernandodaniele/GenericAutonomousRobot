@@ -132,10 +132,12 @@ const commandButtons = {
   STOP: document.getElementById("command-stop"),
   RESET: document.getElementById("command-reset"),
   MANUAL: document.getElementById("command-manual"),
-  AUTO: document.getElementById("command-auto")
+  AUTO: document.getElementById("command-auto"),
+  AUTO_TURN: document.getElementById("command-auto-turn"),
+  AUTO_EVADE: document.getElementById("command-auto-evade")
 };
 let activeCommand = null;
-const lastCommandAt = { STOP: -Infinity, RESET: -Infinity, MANUAL: -Infinity, AUTO: -Infinity };
+const lastCommandAt = { STOP: -Infinity, RESET: -Infinity, MANUAL: -Infinity, AUTO: -Infinity, AUTO_TURN: -Infinity, AUTO_EVADE: -Infinity };
 
 function canRequestAuto() {
   return statusAvailable && lastStatus?.valid && lastStatus.connected && lastStatus.state === 0 &&
@@ -146,7 +148,7 @@ function canRequestAuto() {
 function updateCommandButtons() {
   for (const [command, button] of Object.entries(commandButtons)) {
     button.disabled = (Boolean(activeCommand) && !(command === "STOP" && activeCommand.name !== "STOP")) ||
-      (command === "AUTO" && !canRequestAuto());
+      (command.startsWith("AUTO") && !canRequestAuto());
   }
 }
 
@@ -171,7 +173,7 @@ function observeCommand(status) {
     if (status.valid && status.connected && receipt.status_after_send === true) {
       const matches = operation.name === "STOP" ? status.state === 0 || status.state === 3 :
         operation.name === "RESET" ? status.state === 0 && status.faults === 0 && status.stop === 0 :
-          status.state === (operation.name === "AUTO" ? 1 : 2) && status.faults === 0 && status.stop === 0;
+          status.state === (operation.name.startsWith("AUTO") ? 1 : 2) && status.faults === 0 && status.stop === 0;
       if (matches) finishCommand(operation, `Estado posterior observado: ${stateNames[status.state]}. Revisá las protecciones y el bloqueo. Es una observación de estado, no un acuse correlacionado del comando.`);
     }
   }
@@ -179,10 +181,15 @@ function observeCommand(status) {
 
 async function sendCommand(name) {
   if (!Object.prototype.hasOwnProperty.call(commandButtons, name)) return;
-  if (name === "AUTO" && !canRequestAuto()) {
+  if (name.startsWith("AUTO") && !canRequestAuto()) {
     setText("command-message", "AUTO requiere un estado reciente En espera, sin fallas ni bloqueo.");
     updateCommandButtons();
     return;
+  }
+  if (name === "AUTO_TURN" || name === "AUTO_EVADE") {
+    const consent = document.getElementById("auto3-supervised");
+    if (consent?.checked !== true) { setText("command-message", "Confirmá supervisión y espacio lateral despejado para cada ensayo experimental."); return; }
+    consent.checked = false;
   }
   if (activeCommand && !(name === "STOP" && activeCommand.name !== "STOP")) return;
   manualControl?.cancel("Solicitud operativa: se cerró la autorización manual.");
@@ -231,3 +238,37 @@ async function sendCommand(name) {
 for (const [name, button] of Object.entries(commandButtons)) button.addEventListener("click", () => sendCommand(name));
 updateCommandButtons();
 setText("command-message", "Sin solicitudes pendientes. Elegí una acción; el estado observado se muestra por separado.");
+
+
+function createNavigationPanel(doc, fetcher, schedule, clear, Controller) {
+  let started=false;
+  const text=(id,value)=>{const e=doc.getElementById(id);if(e&&e.textContent!==value)e.textContent=value;};
+  const profiles={AUTO_2:"AUTO-2F operativo sin giro",AUTO_1:"AUTO-1",B7_LEGACY:"B7 historico",
+    AUTO_3_TURN:"AUTO-3 experimental: giro aislado supervisado",AUTO_3_EVASION:"AUTO-3 experimental: secuencia supervisada"};
+  const number=n=>Number.isFinite(n)?n.toFixed(2):"sin muestra";
+  function render(s) {
+    if(!s||typeof s.received!=="boolean"||typeof s.available!=="boolean"||
+      (s.available&&(!Object.prototype.hasOwnProperty.call(profiles,s.profile)||!Number.isInteger(s.session_id))))throw new Error("schema");
+    text("navigation-status",!s.received?"Sin telemetria de navegacion":
+      !s.connected?"Telemetria desactualizada o enlace perdido: datos historicos":
+      s.paused?"Consultas pausadas":s.historical?"Resultado historico retenido":"Telemetria actualizada");
+    text("navigation-profile",s.available?`${profiles[s.profile]}: sesion ${s.session_id}, antiguedad ${s.age_ms} ms`:"Sin sesion registrada");
+    text("navigation-phase",s.available?`Fase: ${s.state}, ultima: ${s.last_phase}, ${s.elapsed_ms} ms`:"Sin fase disponible");
+    text("navigation-progress",s.available?`Avance ${number(s.advance_progress_mm)} mm, retroceso ${number(s.reverse?.progress_mm)} mm`:"Sin progreso disponible");
+    const t=s.turn;
+    text("navigation-turn",t?.available?`Giro ${t.direction==="left"?"izquierdo":"derecho"}: ${number(t.progress_deg)} / ${number(t.target_deg)} grados, ${t.elapsed_ms} ms, dato hace ${t.age_ms ?? "?"} ms${t.historical ? " (historico)" : ""}; solicitado ${t.requested}, publicado ${t.published}, aplicado ${t.applied}, completado ${t.completed}`:"Sin diagnostico de giro recibido");
+    const wait=(w)=>w?.available?`${w.state}, ${w.observations} muestras, ventana ${w.window_ms} ms, rango ${w.left_span_counts}/${w.right_span_counts} cuentas`:"sin informacion";
+    text("navigation-stabilization",`Antes de retroceso: ${wait(s.stabilization)}. Antes de giro: ${wait(s.turn_stabilization)}.`);
+    text("navigation-result",s.available?`Finalizacion: ${s.finish_reason}, odometria: ${s.odometry_error}`:"Sin resultado disponible");
+  }
+  async function poll() {
+    const c=new Controller(),timer=schedule(()=>c.abort(),1500);
+    try { const response=await fetcher("/api/navigation",{cache:"no-store",signal:c.signal});
+      if(!response.ok)throw new Error("HTTP");render(await response.json());
+    } catch {text("navigation-status","No se pudo actualizar navegacion: conservar resultados como historicos");}
+    finally {clear(timer);schedule(poll,1000);}
+  }
+  return {render,start(){if(!started){started=true;void poll();}}};
+}
+if(document.getElementById("navigation-status")?.dataset.navigationPanel==="true")
+  createNavigationPanel(document,fetch,setTimeout,clearTimeout,AbortController).start();

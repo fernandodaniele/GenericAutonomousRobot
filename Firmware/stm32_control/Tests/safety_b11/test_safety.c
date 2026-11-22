@@ -1146,6 +1146,7 @@ static void test_auto_b72(void) {
 #include "test_navigation_diagnostics.c"
 #include "test_navigation_settle.c"
 #include "test_navigation_auto2f.c"
+#include "test_navigation_auto3.c"
 
 /* W6: coexistencia real de FSM/navegacion, datalogger y telemetria W5. */
 static void test_w6_integration(void) {
@@ -1573,6 +1574,7 @@ int run_permanent_regressions(void) {
     test_navigation_diagnostics();
     test_navigation_settle();
     test_navigation_auto2f();
+    test_navigation_auto3();
     return 0;
 }
 

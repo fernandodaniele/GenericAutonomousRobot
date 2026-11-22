@@ -60,6 +60,8 @@ const char *WebCommands_Name(UartControlCommand command)
         case UART_CONTROL_RESET: return "RESET";
         case UART_CONTROL_MANUAL: return "MANUAL";
         case UART_CONTROL_AUTO: return "AUTO";
+        case UART_CONTROL_AUTO_TURN: return "AUTO_TURN";
+        case UART_CONTROL_AUTO_EVADE: return "AUTO_EVADE";
         default: return "";
     }
 }
@@ -92,7 +94,7 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
         taskEXIT_CRITICAL(&s_command_lock);
         return WEB_CMD_BUSY;
     }
-    if (command == UART_CONTROL_AUTO &&
+    if (Uart_ControlIsAuto(command) &&
         (!AutoSafeLocked(&status, manual_now) || s_manual_controls != 0U)) {
         taskEXIT_CRITICAL(&s_command_lock);
         return WEB_CMD_UNSAFE;
@@ -105,7 +107,7 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
     s_next_receipt = (slot + 1U) % WEB_COMMAND_HISTORY;
     WebCommandReceipt *entry = &s_receipts[slot];
     ManualRevokeLocked(command != UART_CONTROL_STOP, manual_now);
-    if (command != UART_CONTROL_AUTO) AutoInvalidateLocked(manual_now);
+    if (!Uart_ControlIsAuto(command)) AutoInvalidateLocked(manual_now);
     if (command == UART_CONTROL_STOP) s_manual.halt = false;
     memcpy(entry->id, id, WEB_COMMAND_ID_LENGTH + 1U);
     entry->command = command;
@@ -132,7 +134,7 @@ bool WebCommands_RequestConsoleAuto(void)
     return WebCommands_Submit(id, UART_CONTROL_AUTO, &receipt) == WEB_CMD_ACCEPTED;
 }
 
-bool WebCommands_ClaimAuto(void)
+bool WebCommands_ClaimAuto(UartControlCommand command)
 {
     Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
     const int64_t now = esp_timer_get_time();
@@ -140,7 +142,7 @@ bool WebCommands_ClaimAuto(void)
     bool allowed = false;
     if (s_sending >= 0) {
         WebCommandReceipt *entry = &s_receipts[s_sending];
-        allowed = entry->command == UART_CONTROL_AUTO && entry->auto_epoch == s_auto_epoch &&
+        allowed = entry->command == command && Uart_ControlIsAuto(command) && entry->auto_epoch == s_auto_epoch &&
             entry->phase == WEB_CMD_SENDING && now >= entry->requested_us &&
             now - entry->requested_us < (int64_t)WEB_AUTO_REQUEST_MS * 1000 &&
             AutoSafeLocked(&status, now) && s_manual_controls == 1U && !s_manual.active && !s_manual.pending;
@@ -328,7 +330,7 @@ void WebManual_ControlBegin(UartControlCommand command)
     const int64_t now = esp_timer_get_time();
     taskENTER_CRITICAL(&s_command_lock);
     ++s_manual_controls; ManualRevokeLocked(command != UART_CONTROL_STOP, now);
-    if (command != UART_CONTROL_AUTO) AutoInvalidateLocked(now);
+    if (!Uart_ControlIsAuto(command)) AutoInvalidateLocked(now);
     if (command == UART_CONTROL_STOP) s_manual.halt = false;
     taskEXIT_CRITICAL(&s_command_lock);
 }

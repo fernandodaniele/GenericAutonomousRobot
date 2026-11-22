@@ -24,7 +24,7 @@ async function runCommandTests(source) {
       return { ok: true, json: async () => snapshot };
     }
     assert(url === "/api/command" && options.method === "POST", "only command POST");
-    assert(["STOP", "RESET", "MANUAL", "AUTO"].includes(options.body), "closed body list");
+    assert(["STOP", "RESET", "MANUAL", "AUTO", "AUTO_TURN", "AUTO_EVADE"].includes(options.body), "closed body list");
     currentId = options.headers["X-Request-ID"]; currentName = options.body;
     assert(/^[a-f0-9]{32}$/.test(currentId) && options.headers["Content-Type"] === "text/plain", "ID/body headers");
     if (mode === "pending") return new Promise((resolve, reject) => {
@@ -36,7 +36,7 @@ async function runCommandTests(source) {
       { accepted: true, confirmed: false, id: currentId, command: currentName, phase: "queued" } };
   }
   const create = new Function("document", "fetch", "AbortController", "setTimeout", "clearTimeout", "performance", "crypto",
-    source + "\nreturn {sendCommand, observeCommand, renderStatus, pollStatus};");
+    source + "\nreturn {sendCommand, observeCommand, renderStatus, pollStatus, createNavigationPanel};");
   const api = create({ getElementById: node }, fetchMock, Controller,
     (fn, delay) => { const id = nextTimer++; timers.set(id, { fn, delay }); return id; },
     id => timers.delete(id), { now: () => now }, cryptoMock);
@@ -149,6 +149,29 @@ async function runCommandTests(source) {
   assert(currentId === newerStop && node("command-stop").disabled, "late AUTO cannot replace STOP observation");
   observe("transmitted", { ...safeIdle });
   results.push("W6 STOP preempts pending AUTO and ignores its late HTTP completion without restarting it");
+  now += 1001; mode="ok";statusFailure=false;api.renderStatus(safeIdle);
+  const beforeExperimental=commandCount();
+  await api.sendCommand("AUTO_TURN");assert(commandCount()===beforeExperimental,"experiment requires explicit acknowledgement");
+  node("auto3-supervised").checked=true;await api.sendCommand("AUTO_TURN");
+  assert(commandCount()===beforeExperimental+1&&currentName==="AUTO_TURN"&&!node("auto3-supervised").checked,"one explicit isolated request consumes acknowledgement");
+  observe("transmitted",{...safeIdle,state:1});
+  now+=1001;api.renderStatus(safeIdle);await api.sendCommand("AUTO_EVADE");
+  assert(commandCount()===beforeExperimental+1,"integrated request needs a new acknowledgement");
+  node("auto3-supervised").checked=true;await api.sendCommand("AUTO_EVADE");
+  assert(currentName==="AUTO_EVADE"&&commandCount()===beforeExperimental+2,"explicit integrated request");
+  observe("transmitted",{...safeIdle,state:1});
+  api.renderStatus({...safeIdle,state:2});assert(node("command-auto-turn").disabled&&node("command-auto-evade").disabled&&!node("command-stop").disabled,"MANUAL forbids experimental requests; STOP remains available");
+  results.push("AUTO-3 explicit supervised request per trial; no automatic selection, no confirmation from HTTP alone");
+  const panel=api.createNavigationPanel({getElementById:node},async()=>{throw new Error("offline");},()=>1,()=>{},Controller);
+  const diagnostic={received:true,available:true,connected:true,historical:true,profile:"AUTO_3_TURN",session_id:1,age_ms:10,state:"DETENIDO",last_phase:"GIRAR_ACOTADO",elapsed_ms:450,finish_reason:"TARGET",odometry_error:"none",advance_progress_mm:null,reverse:{progress_mm:null},
+    turn:{available:true,direction:"left",progress_deg:10.64,target_deg:10,elapsed_ms:340,requested:true,published:true,applied:true,completed:true},
+    stabilization:{available:false},turn_stabilization:{available:true,state:"confirmed",observations:4,window_ms:60,left_span_counts:1,right_span_counts:1}};
+  panel.render(diagnostic);assert(node("navigation-profile").textContent.includes("experimental")&&node("navigation-turn").textContent.includes("10.64"),"show real received profile and encoder angle");
+  assert(node("navigation-stabilization").textContent.includes("Antes de giro: confirmed")&&node("navigation-status").textContent.includes("historico"),"independent stabilization and historical result");
+  panel.render({...diagnostic,connected:false});assert(node("navigation-status").textContent.includes("perdido"),"stale data not presented as live");
+  panel.start();panel.start();await flush();assert(node("navigation-status").textContent.includes("historicos"),"network error marks retained diagnostic historical");
+  assert(commandCount()===beforeExperimental+2,"diagnostic panel never emits operations");
+  results.push("AUTO-3 diagnostic dashboard distinguishes historical data, independent stabilization, angle and network loss without commands");
   return results;
 }
 if (typeof module !== "undefined" && require.main === module) {

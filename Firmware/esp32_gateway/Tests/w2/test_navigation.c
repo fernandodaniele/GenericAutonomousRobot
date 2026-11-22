@@ -66,7 +66,7 @@ static void test_navigation(void) {
     pass("AUTO-2D all UART fragmentation boundaries including one-byte CRLF preserve one complete reply");
     const char *bad[]={
         "NAV,2,1,2,7,1000,2,3,7,319,150,30,50000,0,298,450,7,0,20,90,4,1,0,10,0\n",
-        "NAV,1,1,3,7,1000,2,3,7,319,150,30,50000,0,298,450,7,0,20,90,4,1,0,10,0\n",
+        "NAV,1,1,5,7,1000,2,3,7,319,150,30,50000,0,298,450,7,0,20,90,4,1,0,10,0\n",
         "NAV,1,1,2,7,1000,5,3,7,319,150,30,50000,0,298,450,7,0,20,90,4,1,0,10,0\n",
         "NAV,1,1,2,7,1000,2,3,13,319,150,30,50000,0,298,450,7,0,20,90,4,1,0,10,0\n",
         "NAV,1,1,2,7,1000,2,3,7,1024,150,30,50000,0,298,450,7,0,20,90,4,1,0,10,0\n",
@@ -106,7 +106,7 @@ static void test_navigation(void) {
     reset();feed("STATE=1 FAULTS=0 STOP=0\n");Stm32Navigation_BeginQuery();
     navigation_feed("NAV,1,1,2,4294967295,4294967295,2,3,7,1023,4294967295,4294967295,200000000,200000000,4000,4000,15,4294967295,4294967295,4294967295,5,-9223372036854775808,9223372036854775807,4294967295,4294967295\n");
     navigation_api();assert(strstr(reply,"-9223372036854775808") && strstr(reply,"9223372036854775807"));
-    assert(strstr(reply,"200000.000") && strlen(reply)<1792U);
+    assert(strstr(reply,"200000.000") && strlen(reply)<NAVIGATION_JSON_CAPACITY);
     printf("NAV_MAX_JSON %s\n",reply);
     pass("AUTO-2D maximum-size actual JSON retains signed int64 as strings and fits HTTP buffer");
     reset();Uart_Init();clock_us=1000000;Uart_PollNavigation();assert(tx_count==1 && !strcmp(frames[0],"NAV Q=1\n"));
@@ -178,7 +178,7 @@ static void test_navigation(void) {
     clock_us=INT64_MAX;navigation_api();
     assert(strstr(reply,"EVASION_NOT_AUTHORIZED") && strstr(reply,"wheel_disagreement"));
     assert(strstr(reply,"-9223372036854775808") && strstr(reply,"9223372036854775807"));
-    assert(reply_length==strlen(reply) && reply_length<1792U && reply[reply_length-1U]=='}');
+    assert(reply_length==strlen(reply) && reply_length<NAVIGATION_JSON_CAPACITY && reply[reply_length-1U]=='}');
     printf("NAV_HTTP_LIMIT_JSON %s\n",reply);
     pass("AUTO-2D.1 long terminal strings plus int64/timestamp limits still send one complete bounded HTTP JSON");
     reset();navigation_format_error=true;navigation_api();
@@ -262,14 +262,14 @@ static void test_navigation(void) {
     Stm32Navigation_BeginWaitQuery();
     navigation_feed("NAVW,1,1,4294967295,4294967295,3,4294967295,65535,65535,4294967295,1,1,-,-,-,-,4294967295\n");
     navigation_api();assert(strstr(reply,"\"state\":\"timeout\"") && strstr(reply,"\"last_phase\":\"DETENER_Y_ESPERAR\""));
-    assert(reply_length<1792U && reply_length==strlen(reply));
+    assert(reply_length<NAVIGATION_JSON_CAPACITY && reply_length==strlen(reply));
     pass("AUTO-2E wait timeout and retained numeric limits fit the existing static HTTP buffer");
     reset();Stm32Navigation_BeginQuery();
     navigation_feed("NAV,1,1,2,4294967295,4294967295,2,3,10,1023,4294967295,4294967295,200000000,200000000,4000,4000,15,4294967295,4294967295,4294967295,7,-9223372036854775808,9223372036854775807,4294967295,4294967295\n");
     Stm32Navigation_BeginWaitQuery();
     navigation_feed("NAVW,1,1,4294967295,4294967295,2,4294967295,65535,65535,4294967295,1,1,4294967295,-9223372036854775808,9223372036854775807,4294967295,4294967295\n");
     clock_us=INT64_MAX;navigation_api();
-    assert(strstr(reply,"\"reference_left_counts\":\"-9223372036854775808\"") && reply_length<1792U);
+    assert(strstr(reply,"\"reference_left_counts\":\"-9223372036854775808\"") && reply_length<NAVIGATION_JSON_CAPACITY);
     printf("NAV_SETTLE_LIMIT_JSON %s\n",reply);
     pass("AUTO-2E all fields and full int64 reference with maximum numeric ages fit without truncating the old JSON contract");
     reset();feed("STATE=1 FAULTS=0 STOP=0\n");Stm32Navigation_BeginQuery();navigation_feed(navigation_line);

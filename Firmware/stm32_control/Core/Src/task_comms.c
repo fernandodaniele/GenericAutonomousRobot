@@ -186,12 +186,13 @@ static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickT
         char numeric[32];
         const char *suffix=message+6;
         size_t length=strlen(suffix);
-        bool stabilization=length>4U && strcmp(suffix+length-4U," S=1")==0;
+        bool turn=length>4U && strcmp(suffix+length-4U," S=2")==0;
+        bool stabilization=turn || (length>4U && strcmp(suffix+length-4U," S=1")==0);
         int n=stabilization ? snprintf(numeric,sizeof numeric,"SENSORS Q=%.*s",(int)(length-4U),suffix) :
                              snprintf(numeric,sizeof numeric,"SENSORS Q=%s",suffix);
         if (n>0 && (size_t)n<sizeof numeric && TaskComms_SensorsQuery(numeric,&query)) {
             static char response[256];
-            n=stabilization ? Navigation_FormatStabilization(response,sizeof response,query) :
+            n=turn ? Navigation_FormatTurn(response,sizeof response,query) : stabilization ? Navigation_FormatStabilization(response,sizeof response,query) :
                             Navigation_FormatDiagnostics(response,sizeof response,query);
             if (n>0) { DrvUart_SendString(uart,response); }
             else { DrvUart_SendString(uart,"ERR_UNKNOWN\n"); }
@@ -264,6 +265,9 @@ static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickT
             DrvUart_SendString(uart, "MANUAL_QUEUE_ERROR\n");
         }
 
+    } else if (strcmp(message,"AUTO_TURN")==0 || strcmp(message,"AUTO_EVADE")==0) {
+        DrvUart_SendString(uart,TaskControlRobot_RequestAutoProfileAt(issued_tick,
+            strcmp(message,"AUTO_TURN")==0 ? NAV_PROFILE_TURN : NAV_PROFILE_EVASION) ? "AUTO_QUEUED\n" : "AUTO_REJECTED\n");
     } else if (strcmp(message, "AUTO") == 0) {
         DrvUart_SendString(uart, TaskControlRobot_RequestAutoAt(issued_tick) ?
             "AUTO_QUEUED\n" : "AUTO_REJECTED\n");

@@ -15,6 +15,8 @@
 static struct {
     NavigationState_t state;
     bool active;
+    uint8_t profile;
+    NavigationState_t settle_target;
     bool emission_ready;
     uint32_t session;
     TickType_t started_tick;
@@ -31,8 +33,22 @@ static struct {
     bool phase_complete;
     bool reverse_completed;
 #endif
-} navigation = { .state = NAV_DETENIDO };
+} navigation = { .state = NAV_DETENIDO, .profile=NAV_AUTO2_ENABLED ? 2U : NAV_AUTO1_ODOMETRY ? 1U : 0U };
 
+bool Navigation_TurnEnabled(void) {
+#if NAV_AUTO2_ENABLED
+    return navigation.profile == NAV_PROFILE_TURN || navigation.profile == NAV_PROFILE_EVASION || NAV_EXPERIMENTAL_TURN_ENABLED;
+#else
+    return NAV_EXPERIMENTAL_TURN_ENABLED;
+#endif
+}
+static uint32_t Navigation_SessionMaxMs(void) {
+    return navigation.profile == NAV_PROFILE_TURN ? NAV_AUTO3_ISOLATED_MAX_MS :
+        navigation.profile == NAV_PROFILE_EVASION ? NAV_AUTO3_SESSION_MAX_MS : NAV_SESSION_MAX_MS;
+}
+static uint32_t Navigation_TurnMaxMs(void) {
+    return navigation.profile >= NAV_PROFILE_TURN ? NAV_AUTO3_TURN_MAX_MS : NAV_TURN_MAX_MS;
+}
 static NavigationDiagnostics_t navigation_diagnostics;
 static TickType_t diagnostic_phase_tick;
 static bool diagnostic_terminal;
@@ -100,6 +116,11 @@ static struct {
 } navigation_settle;
 #endif
 
+static double Navigation_WheelToleranceMm(void) {
+    return navigation.profile>=NAV_PROFILE_TURN && navigation.state==NAV_GIRAR_ACOTADO ?
+        NAV_AUTO3_MAX_WHEEL_DIFFERENCE_MM : NAV_AUTO1_MAX_WHEEL_DIFFERENCE_MM;
+}
+
 static bool Navigation_SubtractCount(int64_t count, int64_t reference, int64_t *delta) {
     if ((reference > 0 && count < INT64_MIN + reference) ||
         (reference < 0 && count > INT64_MAX + reference)) {
@@ -158,7 +179,7 @@ static void Navigation_DiagnosticOdometry(const OdometrySnapshot *s, TickType_t 
         d->odometry_error = !isfinite(l) || !isfinite(r) ? NAV_ODOM_NONFINITE :
             l<0 || r<0 ? NAV_ODOM_DIRECTION :
             l>2.0*ODOM_POSITION_LIMIT_M*1000.0 || r>2.0*ODOM_POSITION_LIMIT_M*1000.0 ? NAV_ODOM_RANGE :
-            fabs(l-r)>NAV_AUTO1_MAX_WHEEL_DIFFERENCE_MM ? NAV_ODOM_DISAGREEMENT : NAV_ODOM_RANGE;
+            fabs(l-r)>Navigation_WheelToleranceMm() ? NAV_ODOM_DISAGREEMENT : NAV_ODOM_RANGE;
     }
 }
 
@@ -196,7 +217,7 @@ static NavigationFinishReason_t Navigation_OdometryOutcome(
         !(navigation_odometry.left_mm_per_count > 0) || !(navigation_odometry.right_mm_per_count > 0) ||
         left_mm > 2.0 * ODOM_POSITION_LIMIT_M * 1000.0 ||
         right_mm > 2.0 * ODOM_POSITION_LIMIT_M * 1000.0 ||
-        fabs(left_mm - right_mm) > NAV_AUTO1_MAX_WHEEL_DIFFERENCE_MM) {
+        fabs(left_mm - right_mm) > Navigation_WheelToleranceMm()) {
         Navigation_DiagnosticOdometry(s, now, left_sign, right_sign);
         return NAV_FINISH_ODOMETRY;
     }
@@ -206,6 +227,9 @@ static NavigationFinishReason_t Navigation_OdometryOutcome(
         if (navigation.state == NAV_RETROCEDER_ACOTADO) {
             navigation_diagnostics.reverse_um = (int32_t)(*progress * 1000.0);
             navigation_diagnostics.flags |= NAV_DIAG_REVERSE_PROGRESS;
+        } else if (navigation.state == NAV_GIRAR_ACOTADO) {
+            navigation_diagnostics.turn_mdeg = (uint32_t)(*progress * 2.0 / (ODOM_TRACK_M * 1000.0) * (180000.0 / 3.14159265358979323846) + 0.5);
+            navigation_diagnostics.turn_flags |= 16U;
         } else if (navigation.state == NAV_AVANZAR || navigation.state == NAV_ESPERAR_DATOS) {
             navigation_diagnostics.advance_um = (int32_t)(*progress * 1000.0);
             navigation_diagnostics.flags |= NAV_DIAG_ADVANCE_PROGRESS;
@@ -241,6 +265,11 @@ static void Navigation_RecordReference(const OdometrySnapshot *s) {
         1000.0 * 3.14159265358979323846 * ODOM_LEFT_DIAMETER_M / ODOM_LEFT_WHEEL_CPR;
     navigation_odometry.right_mm_per_count =
         1000.0 * 3.14159265358979323846 * ODOM_RIGHT_DIAMETER_M / ODOM_RIGHT_WHEEL_CPR;
+    if (navigation.state == NAV_GIRAR_ACOTADO) {
+        NavigationStabilization_t *w=&navigation_diagnostics.turn_wait;
+        w->reverse_reference_available=true;w->reverse_reference_tick=s->tick;
+        w->reverse_reference_left=s->left_count;w->reverse_reference_right=s->right_count;
+    }
     navigation_odometry.progress_mm = 0;
     navigation_odometry.ready = true;
 #if NAV_AUTO2_ENABLED
@@ -268,23 +297,29 @@ static void Navigation_StopFor(NavigationFinishReason_t reason) {
 static bool Navigation_DeadlineExpired(TickType_t now) {
     /* Una fase completada ya tiene permiso revocado y salidas cero en el
      * backend. Puede evaluarse en el siguiente ciclo sin prolongar actuacion. */
-    return (TickType_t)(now - navigation.started_tick) >= pdMS_TO_TICKS(NAV_SESSION_MAX_MS) ||
-        ((navigation.state == NAV_ESPERAR_DATOS || navigation.state == NAV_AVANZAR) &&
+    return (TickType_t)(now - navigation.started_tick) >= pdMS_TO_TICKS(Navigation_SessionMaxMs()) ||
+        (navigation.profile != NAV_PROFILE_TURN && (navigation.state == NAV_ESPERAR_DATOS || navigation.state == NAV_AVANZAR) &&
          (TickType_t)(now - navigation.started_tick) >= pdMS_TO_TICKS(NAV_AUTO2_ADVANCE_MAX_MS)) ||
         (navigation.state == NAV_DETENER_Y_ESPERAR &&
          (TickType_t)(now - navigation.phase_started_tick) >= pdMS_TO_TICKS(NAV_SETTLE_TIMEOUT_MS)) ||
         (navigation.state == NAV_RETROCEDER_ACOTADO && !navigation.phase_complete &&
          (TickType_t)(now - navigation.phase_started_tick) >= pdMS_TO_TICKS(NAV_REVERSE_MAX_MS)) ||
         (navigation.state == NAV_GIRAR_ACOTADO && !navigation.phase_complete &&
-         (TickType_t)(now - navigation.phase_started_tick) >= pdMS_TO_TICKS(NAV_TURN_MAX_MS));
+         (TickType_t)(now - navigation.phase_started_tick) >= pdMS_TO_TICKS(Navigation_TurnMaxMs()));
 }
 #endif
 
 void Navigation_Begin(TickType_t entered_tick) {
+    Navigation_BeginProfile(entered_tick, NAV_AUTO2_ENABLED ? 2U : NAV_AUTO1_ODOMETRY ? 1U : 0U);
+}
+void Navigation_BeginProfile(TickType_t entered_tick, uint8_t profile) {
     taskENTER_CRITICAL();
+    navigation.profile=profile;
+    navigation.settle_target=NAV_RETROCEDER_ACOTADO;
     uint32_t diagnostic_id = navigation_diagnostics.session_id + 1U;
     memset(&navigation_diagnostics, 0, sizeof navigation_diagnostics);
     navigation_diagnostics.session_id = diagnostic_id;
+    navigation_diagnostics.profile=profile;
     navigation_diagnostics.started_tick = entered_tick;
     navigation_diagnostics.flags = NAV_DIAG_SESSION;
     diagnostic_phase_tick = entered_tick;
@@ -317,7 +352,7 @@ void Navigation_Cancel(void) {
     taskENTER_CRITICAL();
     if (navigation.active && navigation.finish_reason == NAV_FINISH_NONE) {
         navigation.finish_reason = TaskSafety_IsStopActive() ? NAV_FINISH_SAFETY :
-            (TickType_t)(xTaskGetTickCount() - navigation.started_tick) >= pdMS_TO_TICKS(NAV_SESSION_MAX_MS) ?
+            (TickType_t)(xTaskGetTickCount() - navigation.started_tick) >= pdMS_TO_TICKS(Navigation_SessionMaxMs()) ?
             NAV_FINISH_TIMEOUT : NAV_FINISH_CANCELLED;
 #if NAV_AUTO2_ENABLED
         if (!TaskSafety_IsStopActive() && TaskControlRobot_IsStopPending()) {
@@ -329,12 +364,16 @@ void Navigation_Cancel(void) {
         TickType_t now = xTaskGetTickCount();
 #if NAV_AUTO2_ENABLED
         if (navigation.state == NAV_DETENER_Y_ESPERAR) {
-            navigation_diagnostics.settle_elapsed_ms = Navigation_DiagnosticMs((TickType_t)(now-navigation_settle.started_tick));
-            if (navigation_diagnostics.settle_state == 1U) {
-                navigation_diagnostics.settle_state = navigation.finish_reason == NAV_FINISH_TIMEOUT &&
+            NavigationStabilization_t *w=navigation.settle_target==NAV_GIRAR_ACOTADO ? &navigation_diagnostics.turn_wait : &navigation_diagnostics.reverse_wait;
+            w->settle_elapsed_ms = Navigation_DiagnosticMs((TickType_t)(now-navigation_settle.started_tick));
+            if (w->settle_state == 1U) {
+                w->settle_state = navigation.finish_reason == NAV_FINISH_TIMEOUT &&
                     (TickType_t)(now-navigation_settle.started_tick) >= pdMS_TO_TICKS(NAV_SETTLE_TIMEOUT_MS) ? 3U : 4U;
             }
         }
+#endif
+#if NAV_AUTO2_ENABLED || NAV_EXPERIMENTAL_TURN_ENABLED
+        if (navigation.state==NAV_GIRAR_ACOTADO) navigation_diagnostics.turn_elapsed_ms=Navigation_DiagnosticMs((TickType_t)(now-navigation.turn_started_tick));
 #endif
         navigation_diagnostics.state = NAV_DETENIDO;
         navigation_diagnostics.reason = navigation.finish_reason;
@@ -371,15 +410,17 @@ void Navigation_GetDiagnostics(NavigationDiagnostics_t *out) {
     if (out == NULL) { return; }
     taskENTER_CRITICAL();
     *out = navigation_diagnostics;
-    out->profile = NAV_AUTO2_ENABLED ? 2U : NAV_AUTO1_ODOMETRY ? 1U : 0U;
+    out->profile = navigation.profile;
     out->state = navigation.state;
     if (navigation.active) {
         TickType_t now = xTaskGetTickCount();
+        if (navigation.state==NAV_GIRAR_ACOTADO) out->turn_elapsed_ms=Navigation_DiagnosticMs((TickType_t)(now-diagnostic_phase_tick));
         out->elapsed_ms = Navigation_DiagnosticMs((TickType_t)(now - navigation.started_tick));
         out->phase_elapsed_ms = Navigation_DiagnosticMs((TickType_t)(now - diagnostic_phase_tick));
 #if NAV_AUTO2_ENABLED
         if (navigation.state == NAV_DETENER_Y_ESPERAR) {
-            out->settle_elapsed_ms = Navigation_DiagnosticMs((TickType_t)(now-navigation_settle.started_tick));
+            NavigationStabilization_t *w=navigation.settle_target==NAV_GIRAR_ACOTADO ? &out->turn_wait : &out->reverse_wait;
+            w->settle_elapsed_ms = Navigation_DiagnosticMs((TickType_t)(now-navigation_settle.started_tick));
         }
 #endif
     }
@@ -439,6 +480,27 @@ int Navigation_FormatStabilization(char *out, size_t capacity, uint32_t query) {
     return n>0 && (size_t)n<capacity && n<=255 ? n : -1;
 }
 
+/* Third bounded packet from the exact NAV snapshot, never a new acquisition. */
+int Navigation_FormatTurn(char *out,size_t capacity,uint32_t query) {
+    if (!out || !capacity || !query || query!=diagnostic_reply_query ||
+        (TickType_t)(xTaskGetTickCount()-diagnostic_reply_tick)>=pdMS_TO_TICKS(1000U)) return -1;
+    const NavigationDiagnostics_t *d=&diagnostic_reply;
+    const NavigationStabilization_t *w=&d->turn_wait;
+    char left[22],right[22],tick[12]="-",entry[12]="-";
+    if(w->reverse_reference_available) (void)snprintf(tick,sizeof tick,"%lu",(unsigned long)w->reverse_reference_tick);
+    if(w->reverse_entered) (void)snprintf(entry,sizeof entry,"%lu",(unsigned long)w->reverse_entry_tick);
+    int n=snprintf(out,capacity,"NAVT,1,%lu,%lu,%lu,%u,%lu,%lu,%u,%lu,%u,%u,%lu,%lu,%lu,%s,%s,%s,%s,%lu,%u,%u\n",
+        (unsigned long)query,(unsigned long)d->session_id,(unsigned long)d->started_tick,d->turn_flags,
+        (unsigned long)d->turn_mdeg,(unsigned long)d->turn_elapsed_ms,w->settle_state,
+        (unsigned long)w->settle_elapsed_ms,w->settle_observations,w->settle_window_observations,
+        (unsigned long)w->settle_window_ms,(unsigned long)w->settle_left_span,(unsigned long)w->settle_right_span,
+        tick,w->reverse_reference_available?Navigation_CountText(left,w->reverse_reference_left):"-",
+        w->reverse_reference_available?Navigation_CountText(right,w->reverse_reference_right):"-",entry,
+        (unsigned long)Navigation_DiagnosticMs((TickType_t)(xTaskGetTickCount()-diagnostic_reply_tick)),
+        (unsigned)(NAV_AUTO2_TURN_TARGET_DEG*1000U),(unsigned)NAV_TURN_LEFT);
+    return n>0 && (size_t)n<capacity && n<=255 ? n : -1;
+}
+
 void Navigation_CancelSession(uint32_t session) {
     taskENTER_CRITICAL();
     if (navigation.active && navigation.session == session) Navigation_Cancel();
@@ -456,17 +518,17 @@ bool Navigation_IsCommandCurrent(uint32_t session, TickType_t now) {
 #endif
     bool current = navigation.active &&
         (navigation.state == NAV_AVANZAR || navigation.state == NAV_RETROCEDER_ACOTADO
-#if NAV_EXPERIMENTAL_TURN_ENABLED
-         || navigation.state == NAV_GIRAR_ACOTADO
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
+         || (Navigation_TurnEnabled() && navigation.state == NAV_GIRAR_ACOTADO)
 #endif
         ) &&
         navigation.session == session &&
-        (TickType_t)(now - navigation.started_tick) < pdMS_TO_TICKS(NAV_SESSION_MAX_MS) &&
+        (TickType_t)(now - navigation.started_tick) < pdMS_TO_TICKS(Navigation_SessionMaxMs()) &&
         (navigation.state != NAV_RETROCEDER_ACOTADO ||
          (TickType_t)(now - navigation.reverse_started_tick) < pdMS_TO_TICKS(NAV_REVERSE_MAX_MS))
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
         && (navigation.state != NAV_GIRAR_ACOTADO ||
-            (TickType_t)(now - navigation.turn_started_tick) < pdMS_TO_TICKS(NAV_TURN_MAX_MS))
+            (TickType_t)(now - navigation.turn_started_tick) < pdMS_TO_TICKS(Navigation_TurnMaxMs()))
 #endif
         ;
 #if NAV_AUTO1_ODOMETRY
@@ -522,6 +584,7 @@ void Navigation_CommandApplied(uint32_t session, TickType_t now) {
         navigation.reverse_applied = true;
         navigation_diagnostics.flags |= NAV_DIAG_REVERSE_APPLIED;
     }
+    if (navigation.state==NAV_GIRAR_ACOTADO && Navigation_IsCommandCurrent(session,now)) navigation_diagnostics.turn_flags |= 4U;
     taskEXIT_CRITICAL();
 }
 
@@ -534,8 +597,8 @@ static bool Navigation_TurnReady(uint32_t session, TickType_t now) {
         navigation.state == NAV_RETROCEDER_ACOTADO && navigation.reverse_applied &&
         !navigation.turn_used &&
         (TickType_t)(now - navigation.reverse_started_tick) >= pdMS_TO_TICKS(NAV_REVERSE_MAX_MS) &&
-        age < pdMS_TO_TICKS(NAV_SESSION_MAX_MS) &&
-        pdMS_TO_TICKS(NAV_SESSION_MAX_MS) - age >= pdMS_TO_TICKS(NAV_TURN_MAX_MS);
+        age < pdMS_TO_TICKS(Navigation_SessionMaxMs()) &&
+        pdMS_TO_TICKS(Navigation_SessionMaxMs()) - age >= pdMS_TO_TICKS(Navigation_TurnMaxMs());
 }
 #endif
 
@@ -545,8 +608,8 @@ bool Navigation_CompleteCommand(uint32_t session, TickType_t now) {
     bool complete = navigation.active && navigation.session == session && navigation.phase_complete &&
         navigation.finish_reason == NAV_FINISH_NONE &&
         (navigation.state == NAV_RETROCEDER_ACOTADO ||
-         (NAV_EXPERIMENTAL_TURN_ENABLED && navigation.state == NAV_GIRAR_ACOTADO)) &&
-        (TickType_t)(now - navigation.started_tick) < pdMS_TO_TICKS(NAV_SESSION_MAX_MS);
+         (Navigation_TurnEnabled() && navigation.state == NAV_GIRAR_ACOTADO)) &&
+        (TickType_t)(now - navigation.started_tick) < pdMS_TO_TICKS(Navigation_SessionMaxMs());
 #else
     bool complete = Navigation_TurnReady(session, now);
 #endif
@@ -576,24 +639,27 @@ static void Navigation_StartPhase(NavigationState_t phase, TickType_t now) {
     } else if (phase == NAV_DETENER_Y_ESPERAR) {
         memset(&navigation_settle, 0, sizeof navigation_settle);
         navigation_settle.started_tick = now;
-        navigation_diagnostics.settle_state = 1U;
+        NavigationStabilization_t *w=navigation.settle_target==NAV_GIRAR_ACOTADO ? &navigation_diagnostics.turn_wait : &navigation_diagnostics.reverse_wait;
+        memset(w,0,sizeof *w);w->settle_state=1U;
     } else {
         navigation.turn_started_tick = now;
         navigation.turn_used = true;
+        navigation_diagnostics.turn_wait.reverse_entered=true;
+        navigation_diagnostics.turn_wait.reverse_entry_tick=now;
     }
 }
 
 /* Solo muestras nuevas posteriores al cero. No evalua signo: puede haber
  * inercia de una o ambas ruedas. Rango, no diferencia neta, para cada ventana. */
 static void Navigation_SettleStep(const OdometrySnapshot *s, TickType_t now) {
-    NavigationDiagnostics_t *d = &navigation_diagnostics;
+    NavigationStabilization_t *d = navigation.settle_target==NAV_GIRAR_ACOTADO ? &navigation_diagnostics.turn_wait : &navigation_diagnostics.reverse_wait;
     if (!navigation_settle.ready) {
         if ((TickType_t)(now-s->tick)>=(TickType_t)(now-navigation_settle.started_tick)) { return; }
     } else {
         if ((TickType_t)(now-s->tick)>(TickType_t)(now-navigation_settle.last_tick) ||
             (s->tick==navigation_settle.last_tick &&
              (s->left_count!=navigation_settle.last_left || s->right_count!=navigation_settle.last_right))) {
-            d->odometry_error = NAV_ODOM_TIMESTAMP;
+            navigation_diagnostics.odometry_error = NAV_ODOM_TIMESTAMP;
             Navigation_StopFor(NAV_FINISH_ODOMETRY); return;
         }
         if (s->tick==navigation_settle.last_tick) { return; }
@@ -608,7 +674,7 @@ static void Navigation_SettleStep(const OdometrySnapshot *s, TickType_t now) {
     int64_t lspan=0,rspan=0;
     if (navigation_settle.ready && (!Navigation_SubtractCount(lmax,lmin,&lspan) ||
         !Navigation_SubtractCount(rmax,rmin,&rspan))) {
-        d->odometry_error=NAV_ODOM_OVERFLOW;
+        navigation_diagnostics.odometry_error=NAV_ODOM_OVERFLOW;
         Navigation_StopFor(NAV_FINISH_ODOMETRY); return;
     }
     if (!navigation_settle.ready || lspan>NAV_SETTLE_MAX_SPAN_COUNTS || rspan>NAV_SETTLE_MAX_SPAN_COUNTS) {
@@ -632,7 +698,7 @@ static void Navigation_SettleStep(const OdometrySnapshot *s, TickType_t now) {
         /* Solo cambia de fase. La proxima iteracion exigira una muestra
          * posterior a esta confirmacion antes de tomar la nueva referencia. */
         d->settle_state=2U;
-        Navigation_StartPhase(NAV_RETROCEDER_ACOTADO,now);
+        Navigation_StartPhase(navigation.settle_target,now);
     }
 }
 
@@ -642,13 +708,16 @@ static void Navigation_Auto2PhaseFinished(const SensoresDatos_t *data, TickType_
     } else if (navigation.state == NAV_RETROCEDER_ACOTADO) {
         navigation.reverse_completed = true;
         navigation_diagnostics.flags |= NAV_DIAG_REVERSE_COMPLETED;
-#if NAV_EXPERIMENTAL_TURN_ENABLED
-        if (navigation.reverse_applied && !navigation.turn_used &&
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
+        if (Navigation_TurnEnabled() && navigation.reverse_applied && !navigation.turn_used &&
             data->distancia_m > (float)NAV_FRONT_STOP_MM / 1000.0f &&
             data->distancia_trasera_m > (float)NAV_REAR_REVERSE_MIN_MM / 1000.0f &&
-            pdMS_TO_TICKS(NAV_SESSION_MAX_MS) - (TickType_t)(now - navigation.started_tick) >=
-                pdMS_TO_TICKS(NAV_TURN_MAX_MS + 20U)) {
-            Navigation_StartPhase(NAV_GIRAR_ACOTADO, now);
+            pdMS_TO_TICKS(Navigation_SessionMaxMs()) - (TickType_t)(now - navigation.started_tick) >=
+                pdMS_TO_TICKS(Navigation_TurnMaxMs() + (navigation.profile>=NAV_PROFILE_TURN ? NAV_SETTLE_TIMEOUT_MS : 0U) + 20U)) {
+            if (navigation.profile>=NAV_PROFILE_TURN) {
+                navigation.settle_target=NAV_GIRAR_ACOTADO;
+                Navigation_StartPhase(NAV_DETENER_Y_ESPERAR,now);
+            } else Navigation_StartPhase(NAV_GIRAR_ACOTADO, now);
             return;
         }
 #else
@@ -658,7 +727,8 @@ static void Navigation_Auto2PhaseFinished(const SensoresDatos_t *data, TickType_
          * reverse_completed conserva que la separacion si se completo. */
         Navigation_StopFor(NAV_FINISH_EVASION_NOT_AUTHORIZED);
     } else {
-        Navigation_StopFor(NAV_FINISH_EVASION_COMPLETED);
+        navigation_diagnostics.turn_flags |= 8U;
+        Navigation_StopFor(navigation.profile==NAV_PROFILE_TURN ? NAV_FINISH_TARGET : NAV_FINISH_EVASION_COMPLETED);
     }
 }
 
@@ -705,8 +775,8 @@ static bool Navigation_Auto2StepLocked(const SensoresDatos_t *data, const Odomet
         data->distancia_trasera_m <= (float)NAV_REAR_REVERSE_MIN_MM / 1000.0f) {
         Navigation_StopFor(NAV_FINISH_EVASION_NOT_AUTHORIZED); return false;
     }
-    if (navigation.state == NAV_GIRAR_ACOTADO &&
-        (!NAV_EXPERIMENTAL_TURN_ENABLED || data->distancia_m <= (float)NAV_FRONT_STOP_MM / 1000.0f ||
+    if ((navigation.state == NAV_GIRAR_ACOTADO || (navigation.state==NAV_DETENER_Y_ESPERAR && navigation.settle_target==NAV_GIRAR_ACOTADO)) &&
+        (!Navigation_TurnEnabled() || data->distancia_m <= (float)NAV_FRONT_STOP_MM / 1000.0f ||
          data->distancia_trasera_m <= (float)NAV_REAR_REVERSE_MIN_MM / 1000.0f)) {
         Navigation_StopFor(NAV_FINISH_EVASION_NOT_AUTHORIZED); return false;
     }
@@ -715,6 +785,10 @@ static bool Navigation_Auto2StepLocked(const SensoresDatos_t *data, const Odomet
             navigation.state == NAV_RETROCEDER_ACOTADO || (navigation.state == NAV_GIRAR_ACOTADO && NAV_TURN_LEFT) ? -1 : 1,
             navigation.state == NAV_RETROCEDER_ACOTADO || (navigation.state == NAV_GIRAR_ACOTADO && !NAV_TURN_LEFT) ? -1 : 1);
         Navigation_StopFor(NAV_FINISH_ODOMETRY); return false;
+    }
+    if (navigation.profile==NAV_PROFILE_TURN && navigation.state==NAV_ESPERAR_DATOS) {
+        navigation.settle_target=NAV_GIRAR_ACOTADO;
+        Navigation_StartPhase(NAV_DETENER_Y_ESPERAR,now);return false;
     }
     if (navigation.state == NAV_DETENER_Y_ESPERAR) {
         Navigation_SettleStep(odometry,now);
@@ -739,7 +813,7 @@ static bool Navigation_Auto2StepLocked(const SensoresDatos_t *data, const Odomet
     if (navigation.state == NAV_AVANZAR && obstacle) {
         if (data->distancia_trasera_m <= (float)NAV_REAR_REVERSE_MIN_MM / 1000.0f) {
             Navigation_StopFor(NAV_FINISH_EVASION_NOT_AUTHORIZED);
-        } else if (pdMS_TO_TICKS(NAV_SESSION_MAX_MS) - (TickType_t)(now - navigation.started_tick) <
+        } else if (pdMS_TO_TICKS(Navigation_SessionMaxMs()) - (TickType_t)(now - navigation.started_tick) <
                    pdMS_TO_TICKS(NAV_REVERSE_MAX_MS + 20U)) {
             Navigation_StopFor(NAV_FINISH_TIMEOUT);
         } else {
@@ -781,23 +855,23 @@ void Navigation_Step(void) {
 #else
     if (TaskControlRobot_GetState() != ROBOT_STATE_AUTONOMOUS ||
         TaskControlRobot_IsStopPending() || TaskSafety_IsStopActive() ||
-        (TickType_t)(now - navigation.started_tick) >= pdMS_TO_TICKS(NAV_SESSION_MAX_MS) ||
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+        (TickType_t)(now - navigation.started_tick) >= pdMS_TO_TICKS(Navigation_SessionMaxMs()) ||
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
         (navigation.state == NAV_GIRAR_ACOTADO &&
-         (TickType_t)(now - navigation.turn_started_tick) >= pdMS_TO_TICKS(NAV_TURN_MAX_MS))) {
+         (TickType_t)(now - navigation.turn_started_tick) >= pdMS_TO_TICKS(Navigation_TurnMaxMs()))) {
 #else
         (navigation.state == NAV_RETROCEDER_ACOTADO &&
          (TickType_t)(now - navigation.reverse_started_tick) >= pdMS_TO_TICKS(NAV_REVERSE_MAX_MS))) {
 #endif
         Navigation_StopFor(TaskSafety_IsStopActive() ? NAV_FINISH_SAFETY :
-            (TickType_t)(now-navigation.started_tick)>=pdMS_TO_TICKS(NAV_SESSION_MAX_MS) ?
+            (TickType_t)(now-navigation.started_tick)>=pdMS_TO_TICKS(Navigation_SessionMaxMs()) ?
             NAV_FINISH_TIMEOUT : NAV_FINISH_CANCELLED);
         taskEXIT_CRITICAL();
         return;
     }
     uint32_t faults = available ? TaskSafety_EvaluateSnapshot(&data, now) : SAFETY_FAULT_SENSOR;
     bool finite = available && isfinite(data.distancia_m) && isfinite(data.distancia_trasera_m);
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
     if (navigation.state == NAV_RETROCEDER_ACOTADO &&
         (TickType_t)(now - navigation.reverse_started_tick) >= pdMS_TO_TICKS(NAV_REVERSE_MAX_MS)) {
         bool turn = Navigation_TurnReady(session, now) && faults == SAFETY_FAULT_NONE && finite &&
@@ -892,7 +966,7 @@ void Navigation_Step(void) {
     if ((TickType_t)(now - navigation.started_tick) == 0U ||
         (navigation.state == NAV_RETROCEDER_ACOTADO &&
          (TickType_t)(now - navigation.reverse_started_tick) == 0U)
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
         || (navigation.state == NAV_GIRAR_ACOTADO &&
             (TickType_t)(now - navigation.turn_started_tick) == 0U)
 #endif
@@ -901,22 +975,28 @@ void Navigation_Step(void) {
         return; /* Igual tick que AUTO o parada de avance: no inventar orden. */
     }
     bool reversing = navigation.state == NAV_RETROCEDER_ACOTADO;
-    bool turning = NAV_EXPERIMENTAL_TURN_ENABLED && navigation.state == NAV_GIRAR_ACOTADO;
+    bool turning = Navigation_TurnEnabled() && navigation.state == NAV_GIRAR_ACOTADO;
     if (!reversing && !turning) navigation.state = NAV_AVANZAR;
     Navigation_DiagnosticPhase(navigation.state, now);
     uint32_t diagnostic_run_id = navigation_diagnostics.session_id;
     if (reversing) { navigation_diagnostics.flags |= NAV_DIAG_REVERSE_REQUESTED; }
+    if (turning) navigation_diagnostics.turn_flags |= 1U;
     navigation.decision_tick = now;
     navigation.emission_ready = true;
     taskEXIT_CRITICAL();
 
     bool emitted;
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
     if (turning) emitted = Motion_NavigationTurn(now, session);
     else
 #endif
     emitted = reversing ? Motion_NavigationReverse(now, session) :
                           Motion_NavigationAdvance(now, session);
+    if (turning && emitted) {
+        taskENTER_CRITICAL();
+        if(navigation_diagnostics.session_id==diagnostic_run_id) navigation_diagnostics.turn_flags |= 2U;
+        taskEXIT_CRITICAL();
+    }
     if (reversing && emitted) {
         taskENTER_CRITICAL();
         if (navigation_diagnostics.session_id == diagnostic_run_id) {
@@ -927,7 +1007,7 @@ void Navigation_Step(void) {
     if (!emitted) {
         taskENTER_CRITICAL();
         if (navigation.active && navigation.session == session) {
-            Navigation_StopFor((TickType_t)(xTaskGetTickCount() - navigation.started_tick) >= pdMS_TO_TICKS(NAV_SESSION_MAX_MS) ?
+            Navigation_StopFor((TickType_t)(xTaskGetTickCount() - navigation.started_tick) >= pdMS_TO_TICKS(Navigation_SessionMaxMs()) ?
                 NAV_FINISH_TIMEOUT : NAV_FINISH_EMISSION);
         }
         taskEXIT_CRITICAL();

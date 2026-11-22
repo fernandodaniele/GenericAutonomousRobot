@@ -161,7 +161,7 @@ static void test_navigation_settle(void) {
     DrvUart_t uart;UART_HandleTypeDef peripheral={0};DrvUart_Init(&uart,&peripheral);
     CHECK(Navigation_FormatStabilization(after,sizeof after,91U)>0);
     b65_uart_command(&uart,"NAV Q=91 S=1\n",after);
-    b65_uart_command(&uart,"NAV Q=91 S=2\n","ERR_UNKNOWN\n");
+    b65_uart_command(&uart,"NAV Q=91 S=3\n","ERR_UNKNOWN\n");
     b65_uart_command(&uart,"NAV Q=0 S=1\n","ERR_UNKNOWN\n");
     clock_tick=diagnostic_reply_tick+1000U;
     b65_uart_command(&uart,"NAV Q=91 S=1\n","ERR_UNKNOWN\n");

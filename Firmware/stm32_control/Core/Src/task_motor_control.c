@@ -319,7 +319,7 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
     NavigationState_t phase = NAV_DETENIDO;
     if (left_speed_cps == MOTION_DRIVE_CPS && right_speed_cps == MOTION_DRIVE_CPS) phase = NAV_AVANZAR;
     if (left_speed_cps == -MOTION_DRIVE_CPS && right_speed_cps == -MOTION_DRIVE_CPS) phase = NAV_RETROCEDER_ACOTADO;
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
     if (left_speed_cps == NAV_TURN_LEFT_CPS && right_speed_cps == NAV_TURN_RIGHT_CPS) phase = NAV_GIRAR_ACOTADO;
 #endif
     bool authorized_source = from_navigation ?

@@ -1,5 +1,21 @@
 # Control de motores, seguridad y navegacion B7.7
 
+## Perfil operativo AUTO-1 (actual)
+
+La configuracion normal usa `NAV_AUTO1_ODOMETRY=1`: un unico avance de 100 mm
+estimados, +1600 cps por rueda, plazo global de 2000 ms y parada terminal sin
+retroceso/giro. Ver [AUTO1_AVANCE_ODOMETRIA.md](../../../../Docs/AUTO1_AVANCE_ODOMETRIA.md).
+El README que sigue conserva el contexto historico B7; los valores vigentes
+de PI/PWM son los del firmware consolidado (Kp=2,20; Ki=0,10; limite 40%).
+
+`run.bat` ejecuta el perfil operativo con `test_navigation_auto1.c`, luego el
+conjunto anterior completo con `NAV_AUTO1_ODOMETRY=0` y los dos conjuntos de
+giro experimental anteriores (55 por sentido). No se eliminan casos ni se
+relajan barreras para habilitar la nueva maniobra. Solo esas compilaciones
+host de regresion seleccionan el perfil anterior; el ELF normal usa AUTO-1.
+
+---
+
 Base B7.7: rama G1-add/NavegacionAutonoma, HEAD bc00bbd.
 Este README describe el comportamiento permanente y las pruebas actuales.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.

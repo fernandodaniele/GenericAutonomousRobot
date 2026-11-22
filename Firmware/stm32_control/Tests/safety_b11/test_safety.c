@@ -35,6 +35,9 @@ static TickType_t advance_tick_before_navigation_emit;
 static unsigned tests, unsafe_pwm_writes, transaction_writes, max_transaction_writes;
 static unsigned event_count;
 static jmp_buf finish;
+/* Host scheduler hook: runs other real task code between motor iterations.
+ * Never compiled into firmware, never bypasses motor/nav permission checks. */
+static void (*motor_cycle_hook)(void);
 
 #include "../../Core/Src/task_safety.c"
 #include "../../Core/Src/task_control_robot.c"
@@ -154,6 +157,7 @@ void vTaskDelayUntil(TickType_t *last, TickType_t period) {
     CHECK(critical_depth == 0 && scheduler_depth == 0);
     if (++delay_calls > cycles) longjmp(finish, 1);
     *last += period; clock_tick = *last;
+    if (current_task == MOTOR_TASK_ID && motor_cycle_hook) motor_cycle_hook();
     if (mode_at_second_delay && delay_calls == 2) {
         RobotControlEvent_t mode = mode_at_second_delay == 1
                                   ? ROBOT_EVENT_START_MANUAL : ROBOT_EVENT_START_AUTO;
@@ -294,6 +298,7 @@ int32_t Encoder_ReadDelta(EncoderHandle_t *encoder) {
 }
 
 static void setup(void) {
+    motor_cycle_hook = NULL;
     imu_snapshot_available = false;
     imu_cal_accepted=false;imu_cal_number=0U;
     CHECK(critical_depth == 0 && scheduler_depth == 0);
@@ -326,6 +331,10 @@ static void setup(void) {
     current_task = (TaskHandle_t)12; control_task_handle = CONTROL_TASK_ID;
     navigation.active = false; navigation.state = NAV_DETENIDO;
     navigation.emission_ready = false; navigation.session = 0U;
+    navigation.finish_reason = NAV_FINISH_NONE;
+#if NAV_AUTO1_ODOMETRY
+    memset(&navigation_odometry,0,sizeof navigation_odometry);
+#endif
 #if NAV_EXPERIMENTAL_TURN_ENABLED
     navigation.reverse_applied = false; navigation.turn_used = false;
     navigation.turn_started_tick = 0U;
@@ -339,6 +348,7 @@ static void setup(void) {
         /* main.c: port_a=BIN1/PD3, port_b=BIN2/PD2. */
         .port_a = &pins, .pin_a = 8U, .port_b = &pins, .pin_b = 4U };
     TaskMotorControl_Create(&left_encoder, &right_encoder, &left_motor, &right_motor);
+    Odometry_Init(clock_tick); /* Isolate producer state between host scenarios. */
 }
 static void run_safety(int count) {
     cycles = count; delay_calls = 0;
@@ -1126,6 +1136,7 @@ static void test_auto_b72(void) {
 #include "test_navigation.c"
 #include "test_navigation_reverse.c"
 #include "test_navigation_turn.c"
+#include "test_navigation_auto1.c"
 
 /* W6: coexistencia real de FSM/navegacion, datalogger y telemetria W5. */
 static void test_w6_integration(void) {
@@ -1137,7 +1148,11 @@ static void test_w6_integration(void) {
     check_event(110U, 0U, 1U, ROBOT_EVENT_START_AUTO);
     CHECK(count_code(110U) == 1U); expect_zero();
     PASS("W6 actual queued AUTO transition publishes logger event outside every critical section");
-    ++clock_tick; b73_fresh(); run_fsm(1); run_motor(1);
+    ++clock_tick; b73_fresh();
+#if NAV_AUTO1_ODOMETRY
+    Odometry_Init(clock_tick); /* Actual producer initialization, zero counts. */
+#endif
+    run_fsm(1); run_motor(1);
     CHECK(Navigation_GetState() == NAV_AVANZAR && pwm.compare[0] > 0U);
     b65_uart_command(&uart, "STATUS\n", "STATE=1 FAULTS=0 STOP=0\n");
     input.resultado_frontal_disponible = input.resultado_trasero_disponible = 1U;
@@ -1532,8 +1547,13 @@ int run_permanent_regressions(void) {
     test_log_producers();
     test_sensor_telemetry();
     test_auto_b72();
+#if NAV_AUTO1_ODOMETRY
+    (void)test_navigation_b73; (void)test_navigation_b75;
+    test_navigation_auto1();
+#else
     test_navigation_b73();
     test_navigation_b75();
+#endif
     test_w6_integration();
     test_w7_integration();
     return 0;
@@ -1544,7 +1564,11 @@ int main(void) {
     test_turn_enabled_b77();
 #else
     (void)run_permanent_regressions();
+#if NAV_AUTO1_ODOMETRY
+    (void)test_turn_disabled_b77; /* Executed unchanged in legacy regression. */
+#else
     test_turn_disabled_b77();
+#endif
 #endif
     printf("RESULT %u tests passed; TURN=%u LEFT=%u; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n",

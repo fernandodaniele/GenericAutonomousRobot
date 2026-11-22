@@ -6,6 +6,21 @@
 #include "FreeRTOS.h"
 #include "mid_motion.h"
 
+/* AUTO-1 operativo: un avance, sin retroceso/giro automaticos.
+ * 0 conserva el perfil B7 para regresiones explicitas y la futura AUTO-2.
+ * No seleccionable por UART; no deshabilita Safety ni permisos del backend. */
+#ifndef NAV_AUTO1_ODOMETRY
+#define NAV_AUTO1_ODOMETRY 1
+#endif
+#if NAV_AUTO1_ODOMETRY != 0 && NAV_AUTO1_ODOMETRY != 1
+#error "NAV_AUTO1_ODOMETRY must be 0 or 1"
+#endif
+#define NAV_AUTO1_TARGET_MM 100U
+/* Guarda provisional: 10% del objetivo. Detiene una discrepancia entre ruedas
+ * antes de aceptar solo el promedio. No corrige rumbo, no cambia umbrales de
+ * Safety y no detecta deslizamiento igual en ambas ruedas. */
+#define NAV_AUTO1_MAX_WHEEL_DIFFERENCE_MM 10U
+
 /* Solo compilacion. Requiere autorizacion fisica especifica; no hay mando UART. */
 #ifndef NAV_EXPERIMENTAL_TURN_ENABLED
 #define NAV_EXPERIMENTAL_TURN_ENABLED 0
@@ -40,6 +55,18 @@ typedef enum {
     NAV_GIRAR_ACOTADO
 } NavigationState_t;
 
+typedef enum {
+    NAV_FINISH_NONE=0,
+    NAV_FINISH_TARGET,
+    NAV_FINISH_CANCELLED,
+    NAV_FINISH_SAFETY,
+    NAV_FINISH_TIMEOUT,
+    NAV_FINISH_OBSTACLE,
+    NAV_FINISH_SENSORS,
+    NAV_FINISH_ODOMETRY,
+    NAV_FINISH_EMISSION
+} NavigationFinishReason_t;
+
 /* Begin solo al entrar efectivamente en AUTO; nunca al renovar consignas. */
 void Navigation_Begin(TickType_t entered_tick);
 /* Revoca sesion/permisos, sin escribir salidas; Stop del controlador lo invoca. */
@@ -48,6 +75,8 @@ void Navigation_Cancel(void);
 void Navigation_CancelSession(uint32_t session);
 void Navigation_Step(void);
 NavigationState_t Navigation_GetState(void);
+/* Resultado terminal de solo lectura; se limpia en Navigation_Begin(). */
+NavigationFinishReason_t Navigation_GetFinishReason(void);
 
 /* Barreras internas del backend: permiso de emision de un solo uso y sesion
  * vigente tambien durante el consumo/PI. No consultan colas ni esperan. */

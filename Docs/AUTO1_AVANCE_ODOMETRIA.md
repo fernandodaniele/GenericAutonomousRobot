@@ -1,5 +1,11 @@
 # AUTO-1: avance unico de 100 mm estimados
 
+Nota posterior AUTO-2: este documento conserva el perfil validado AUTO-1,
+ahora seleccionable al compilar con `NAV_AUTO2_ENABLED=0`. La configuracion
+operativa por defecto se describe en
+[AUTO2_REACCION_OBSTACULOS.md](AUTO2_REACCION_OBSTACULOS.md). Los parametros y
+resultados historicos siguientes corresponden exclusivamente a AUTO-1.
+
 Perfil operativo sobre `acd1618`, sin nuevas tareas, cambios de protocolo ni
 modificaciones de Safety, FSM, PI/PWM, odometria, IMU o mapa. Solo se actualiza
 el texto explicativo del boton AUTO de la web para describir este perfil.

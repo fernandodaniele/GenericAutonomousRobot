@@ -183,7 +183,7 @@ static void TaskMotorControl_Run(void *parameters) {
             (!Navigation_IsCommandCurrent(target.navigation_session, now) ||
              (TickType_t)(now - target.issued_tick) >= pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS))) {
             bool complete = false;
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
             complete = enabled && state == ROBOT_STATE_AUTONOMOUS &&
                 (TickType_t)(now - target.issued_tick) < pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS) &&
                 Navigation_CompleteCommand(target.navigation_session, now);
@@ -222,7 +222,7 @@ static void TaskMotorControl_Run(void *parameters) {
                  (TickType_t)(now - context->command_tick) >=
                  pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS))) {
                 bool complete = false;
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
                 complete = enabled && state == ROBOT_STATE_AUTONOMOUS &&
                     (TickType_t)(now - context->command_tick) < pdMS_TO_TICKS(MOTOR_CONTROL_COMMAND_TIMEOUT_MS) &&
                     Navigation_CompleteCommand(context->navigation_session, now);
@@ -253,7 +253,7 @@ static void TaskMotorControl_Run(void *parameters) {
                 Motor_GetPwmLimit(context->motor_right));
             Motor_SetSpeed(context->motor_right, context->right_pwm_command);
         }
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
         if (context->command_mode == ROBOT_STATE_AUTONOMOUS) {
             Navigation_CommandApplied(context->navigation_session, now);
         }

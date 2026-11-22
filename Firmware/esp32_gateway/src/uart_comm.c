@@ -3,6 +3,7 @@
 #include "stm32_sensors.h"
 #include "stm32_mapping.h"
 #include "stm32_imu.h"
+#include "stm32_navigation.h"
 #include "web_commands.h"
 
 #include <string.h>
@@ -146,6 +147,20 @@ void Uart_PollImuFusion(void)
     xSemaphoreGive(s_tx_gate);
 }
 
+void Uart_PollNavigation(void)
+{
+    if (!Stm32Navigation_PollDue()) { return; }
+    bool stabilization=Stm32Navigation_WaitQueryDue();
+    Stm32Navigation_DeferPoll();
+    if (!WebCommands_CanPollSensors() || !TxBegin()) { return; }
+    if (WebCommands_CanPollSensors()) {
+        char message[24];uint32_t query=stabilization ? Stm32Navigation_BeginWaitQuery() : Stm32Navigation_BeginQuery();
+        int n=snprintf(message,sizeof message,stabilization ? "NAV Q=%" PRIu32 " S=1\n" : "NAV Q=%" PRIu32 "\n",query);
+        if (n<=0 || (size_t)n>=sizeof message || !TxWrite(message)) { Stm32Navigation_QueryFailed(); }
+    }
+    xSemaphoreGive(s_tx_gate);
+}
+
 bool Uart_SendImuCalibration(void)
 {
     if (!TxBegin()) { Stm32Imu_CalibrationTxFailed(); return false; }
@@ -254,6 +269,7 @@ void Uart_ReadResponse(void) {
         Stm32Sensors_Feed(rx_buffer, (size_t)length);
         Stm32Mapping_Feed(rx_buffer, (size_t)length);
         Stm32Imu_Feed(rx_buffer, (size_t)length);
+        Stm32Navigation_Feed(rx_buffer, (size_t)length);
         rx_buffer[length] = '\0';
         printf("[STM32] %s", (char *)rx_buffer);
     }

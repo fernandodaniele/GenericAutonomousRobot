@@ -10,6 +10,7 @@
 #define assert(value) do { if (!(value)) { fprintf(stderr,"FAIL %s:%u: %s\n",__FILE__,(unsigned)__LINE__,#value); exit(1); } } while (0)
 #include "stm32_status.c"
 #include "stm32_sensors.c"
+#include "stm32_navigation.c"
 #include "stm32_imu.c"
 #include "mapping_grid.c"
 #include "stm32_mapping.c"
@@ -17,9 +18,16 @@
 #include "uart_comm.c"
 #undef TAG
 #include "web_commands.c"
+/* Fallo de serializacion solo en el arnes; API/implementacion reales intactas. */
+static bool navigation_format_error;
+static int navigation_json_response(char *out,size_t capacity,bool connected,bool paused) {
+    return navigation_format_error ? -1 : Stm32Navigation_Json(out,capacity,connected,paused);
+}
+#define Stm32Navigation_Json navigation_json_response
 #define TAG web_tag
 #include "web_server.c"
 #undef TAG
+#undef Stm32Navigation_Json
 static int console_getchar(void);
 #define getchar console_getchar
 #include "main.c"
@@ -29,6 +37,9 @@ static LONG64 clock_us;
 static __thread int lock_depth;
 static unsigned cases, tx_count, rx_count, init_count, task_count, iterations;
 static char frames[4096][32], reply[16384];
+static size_t reply_length;
+static unsigned response_count;
+static const char *reply_type, *reply_cache;
 static CRITICAL_SECTION tx_lock;
 static int tx_error;
 static int64_t wait_delay;
@@ -43,7 +54,7 @@ static int body_error;
 static int64_t body_delay;
 static const char *rx_data, *keys;
 static size_t rx_size;
-static httpd_uri_t routes[18];
+static httpd_uri_t routes[19];
 static unsigned route_count, server_count, server_stops, fail_route;
 static int http_error, network_error;
 static unsigned loop_limit = 15U;
@@ -94,14 +105,14 @@ int uart_read_bytes(int port,void *bytes,uint32_t size,unsigned timeout)
 }
 esp_err_t WifiAp_Start(void) { return network_error ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_start(httpd_handle_t *out,const httpd_config_t *cfg)
-{ assert(cfg->server_port==80 && cfg->lru_purge_enable && cfg->max_uri_handlers==18 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
+{ assert(cfg->server_port==80 && cfg->stack_size==4096U && cfg->lru_purge_enable && cfg->max_uri_handlers==19 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
 esp_err_t httpd_stop(httpd_handle_t handle) { assert(handle); ++server_stops; return ESP_OK; }
 esp_err_t httpd_register_uri_handler(httpd_handle_t handle,const httpd_uri_t *r)
-{ assert(handle && route_count<18); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12) || !strcmp(r->uri,"/api/imu/calibrate")) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
+{ assert(handle && route_count<19); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12) || !strcmp(r->uri,"/api/imu/calibrate")) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type)
-{ assert(r && type && !lock_depth); return http_error==1 ? ESP_FAIL : ESP_OK; }
+{ assert(r && type && !lock_depth); reply_type=type; return http_error==1 ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value)
-{ assert(r && !lock_depth); assert((!strcmp(key,"Cache-Control") && !strcmp(value,"no-store")) || (!strcmp(key,"Connection") && !strcmp(value,"close"))); return http_error==2 ? ESP_FAIL : ESP_OK; }
+{ assert(r && !lock_depth); assert((!strcmp(key,"Cache-Control") && !strcmp(value,"no-store")) || (!strcmp(key,"Connection") && !strcmp(value,"close"))); if(!strcmp(key,"Cache-Control"))reply_cache=value; return http_error==2 ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_status(httpd_req_t *r,const char *value) { assert(r && !lock_depth); response_status=value; return ESP_OK; }
 static const char *header(const char *name)
 {
@@ -119,7 +130,7 @@ esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *r,const char *name,char *out,
 int httpd_req_recv(httpd_req_t *r,char *out,size_t size)
 { assert(r && !lock_depth); clock_us+=body_delay; if(body_error) return -1; size_t count=size<body_chunk ? size : body_chunk; memcpy(out,request_body+body_offset,count); body_offset+=count; return (int)count; }
 esp_err_t httpd_resp_send(httpd_req_t *r,const char *data,ptrdiff_t size)
-{ assert(r && size>=0 && (size_t)size<sizeof reply && !lock_depth); memcpy(reply,data,size); reply[size]='\0'; return http_error==3 ? ESP_FAIL : ESP_OK; }
+{ assert(r && size>=0 && (size_t)size<sizeof reply && !lock_depth); reply_length=(size_t)size; ++response_count; memcpy(reply,data,size); reply[size]='\0'; return http_error==3 ? ESP_FAIL : ESP_OK; }
 BaseType_t xTaskCreate(void (*fn)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void *out)
 { assert(fn==ConsoleInputTask && !strcmp(name,"ConsoleInput") && stack==4096 && !arg && priority==5 && !out); ++task_count; return pdPASS; }
 void vTaskDelay(unsigned ticks)
@@ -131,6 +142,11 @@ void vTaskDelay(unsigned ticks)
 static int console_getchar(void) { return *keys ? *keys++ : EOF; }
 static void reset(void)
 {
+    navigation_format_error=false;reply_length=0U;response_count=0U;reply_type=reply_cache=NULL;
+    memset(&s_navigation,0,sizeof s_navigation);s_navigation_received=0;
+    s_navigation_length=0;s_navigation_discard=false;s_navigation_counter=s_navigation_pending=0;
+    s_navigation_sent=s_navigation_poll=0;
+    s_navigation_wait_ready=false;s_navigation_wait_query=s_navigation_wait_pending=0U;s_navigation_wait_sent=0;
     memset(&s_imu_cal_request,0,sizeof s_imu_cal_request);memset(s_imu_cal_ids,0,sizeof s_imu_cal_ids);
     s_imu_cal_next=s_imu_cal_counter=0;
     loop_limit=15U; rx_data_delay=0; rx_prepare_hook=NULL;
@@ -222,6 +238,7 @@ static esp_err_t manual_post(unsigned op,const char *body)
 
 static unsigned frame_count(const char *frame) { unsigned count=0; for(unsigned i=0;i<tx_count;++i) if(!strcmp(frame,frames[i])) ++count; return count; }
 #include "test_sensors.c"
+#include "test_navigation.c"
 #include "test_auto.c"
 #include "test_mapping.c"
 #include "test_imu.c"
@@ -230,6 +247,7 @@ int main(void)
 {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     InitializeCriticalSection(&s_lock.native); InitializeCriticalSection(&s_sensor_lock.native);
+    InitializeCriticalSection(&s_navigation_lock.native);
     InitializeCriticalSection(&s_command_lock.native);
     InitializeCriticalSection(&s_map_lock.native);
     InitializeCriticalSection(&s_imu_lock.native);
@@ -296,7 +314,7 @@ int main(void)
         assert(!strcmp(frames[0],"STATUS\n"));
     }
     pass("actual app_main polls at 1 Hz without new tasks, including AP failure");
-    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==18);
+    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==19);
     const char *paths[]={"/","/style.css","/app.js","/health","/api/status"};
     for(unsigned i=0;i<5;++i) {
         assert(!strcmp(routes[i].uri,paths[i])); httpd_req_t r={.user_ctx=routes[i].user_ctx}; assert(routes[i].handler(&r)==ESP_OK);
@@ -466,5 +484,6 @@ int main(void)
     test_imu_calibration();
     test_imu_orientation();
     test_imu_fusion();
+    test_navigation();
     printf("RESULT %u native W1-W7 test groups passed; no hardware validation\n",cases); return 0;
 }

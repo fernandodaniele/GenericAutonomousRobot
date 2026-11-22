@@ -38,7 +38,8 @@ void DrvUart_RxCallback(DrvUart_t *uart) {
                      strcmp(frame, "GIRAR_IZQUIERDA") == 0 || strcmp(frame, "GIRAR_DERECHA") == 0 ||
                      strcmp(frame, "RESET") == 0 || strcmp(frame, "MANUAL") == 0 ||
                      strcmp(frame, "AUTO") == 0) priority = 2U;
-            else if (strncmp(frame, "IMUF Q=", 7U) == 0 ||
+            else if (strncmp(frame, "NAV Q=", 6U) == 0 ||
+                     strncmp(frame, "IMUF Q=", 7U) == 0 ||
                      strcmp(frame, "IMU3") == 0 || strncmp(frame, "IMU3 Q=", 7U) == 0 ||
                      strcmp(frame, "IMU2") == 0 || strncmp(frame, "IMU2 Q=", 7U) == 0 ||
                      strcmp(frame, "IMU") == 0 || strncmp(frame, "IMU Q=", 6U) == 0 ||
@@ -47,8 +48,12 @@ void DrvUart_RxCallback(DrvUart_t *uart) {
             bool sensor_over_mapping = priority == 0U && strncmp(frame, "SENSORS", 7U) == 0 &&
                                        strncmp(uart->rx_buffer, "MAPPING Q=", 10U) == 0;
             bool over_imu = priority == 0U && strncmp(frame, "IMU", 3U) != 0 &&
+                            strncmp(frame, "NAV Q=", 6U) != 0 &&
                             strncmp(uart->rx_buffer, "IMU", 3U) == 0;
-            if (!uart->message_ready || priority > uart->message_priority || sensor_over_mapping || over_imu) {
+            /* NAV diagnostico nunca desplaza consultas existentes. */
+            bool over_navigation = priority == 0U && strncmp(frame, "NAV Q=", 6U) != 0 &&
+                                   strncmp(uart->rx_buffer, "NAV Q=", 6U) == 0;
+            if (!uart->message_ready || priority > uart->message_priority || sensor_over_mapping || over_imu || over_navigation) {
                 memcpy(uart->rx_buffer, uart->frame_buffer, uart->rx_index + 1U);
                 uart->message_tick = uart->frame_tick;
                 uart->message_priority = priority;

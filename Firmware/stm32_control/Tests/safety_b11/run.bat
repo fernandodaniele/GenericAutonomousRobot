@@ -7,6 +7,12 @@ if not exist "%B11_OUTPUT%" mkdir "%B11_OUTPUT%"
 if errorlevel 1 exit /b 1
 call :run_case test_safety ""
 if errorlevel 1 exit /b 1
+call :run_case test_auto1 "-DNAV_AUTO2_ENABLED=0"
+if errorlevel 1 exit /b 1
+call :run_case test_auto2_turn_left "-DNAV_EXPERIMENTAL_TURN_ENABLED=1 -DNAV_TURN_LEFT=1"
+if errorlevel 1 exit /b 1
+call :run_case test_auto2_turn_right "-DNAV_EXPERIMENTAL_TURN_ENABLED=1 -DNAV_TURN_LEFT=0"
+if errorlevel 1 exit /b 1
 call :run_case test_navigation_legacy "-DNAV_AUTO1_ODOMETRY=0"
 if errorlevel 1 exit /b 1
 call :run_case test_turn_left "-DNAV_AUTO1_ODOMETRY=0 -DNAV_EXPERIMENTAL_TURN_ENABLED=1 -DNAV_TURN_LEFT=1"

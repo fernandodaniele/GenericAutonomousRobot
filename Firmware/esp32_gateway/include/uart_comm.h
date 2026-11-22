@@ -32,6 +32,7 @@ void Uart_PollSensors(void);
 void Uart_PollMapping(void);
 void Uart_PollImu(void);
 void Uart_PollImuFusion(void);
+void Uart_PollNavigation(void);
 bool Uart_SendImuCalibration(void);
 
 void Uart_SendReset(void);

@@ -128,7 +128,7 @@
           <button id="command-auto" type="button" disabled>Solicitar modo autónomo</button>
         </div>
         <p id="command-message" class="description" role="status" aria-live="polite">Controles disponibles al cargar JavaScript.</p>
-        <p class="description">AUTO-1 intenta un único avance de 100 mm estimados por odometría, durante un máximo de 2 segundos y con sensores válidos. Después queda detenido en modo autónomo: usá STOP para volver a En espera. Sin retroceso ni giro automáticos. STOP cancela la sesión.</p>
+        <p class="description">AUTO-2 intenta avanzar 100 mm estimados, hasta 2 segundos. Ante un obstáculo puede detenerse y retroceder hasta 20 mm en 300 ms si la trasera está despejada. El giro experimental sigue deshabilitado por falta de cobertura lateral. La secuencia dura como máximo 3 segundos y termina detenida en modo autónomo: usá STOP para volver a En espera. STOP cancela cualquier fase.</p>
         <p class="safety-note">STOP depende de Wi-Fi, ESP32, UART y STM32. No sustituye una parada de emergencia física certificada.</p>
         <noscript><p>Los controles requieren JavaScript; no se envía ninguna solicitud automáticamente.</p></noscript>
       </section>

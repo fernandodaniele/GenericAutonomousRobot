@@ -3,15 +3,34 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "FreeRTOS.h"
 #include "mid_motion.h"
 
-/* AUTO-1 operativo: un avance, sin retroceso/giro automaticos.
- * 0 conserva el perfil B7 para regresiones explicitas y la futura AUTO-2.
+/* Base odometrica AUTO-1/AUTO-2.
+ * 0 conserva el perfil B7 para regresiones explicitas.
  * No seleccionable por UART; no deshabilita Safety ni permisos del backend. */
 #ifndef NAV_AUTO1_ODOMETRY
 #define NAV_AUTO1_ODOMETRY 1
 #endif
+#ifndef NAV_AUTO2_ENABLED
+#define NAV_AUTO2_ENABLED NAV_AUTO1_ODOMETRY
+#endif
+#if (NAV_AUTO2_ENABLED != 0 && NAV_AUTO2_ENABLED != 1) || (NAV_AUTO2_ENABLED && !NAV_AUTO1_ODOMETRY)
+#error "AUTO-2 requires the odometry profile"
+#endif
+/* AUTO-2 operativo por defecto. AUTO-1: compilar NAV_AUTO2_ENABLED=0.
+ * La seleccion es de compilacion; UART no cambia el perfil de una sesion. */
+#define NAV_AUTO2_REVERSE_TARGET_MM 20U
+#define NAV_AUTO2_TURN_TARGET_DEG 10U
+#define NAV_AUTO2_PROGRESS_WINDOW_MS 200U
+#define NAV_AUTO2_MIN_PROGRESS_MM 1U
+#define NAV_AUTO2_ADVANCE_MAX_MS 2000U
+/* AUTO-2E: observaciones de Navigation_Step (20 ms), sin espera bloqueante. */
+#define NAV_SETTLE_WINDOW_MS 60U
+#define NAV_SETTLE_MIN_OBSERVATIONS 4U
+#define NAV_SETTLE_MAX_SPAN_COUNTS 1U
+#define NAV_SETTLE_TIMEOUT_MS 200U
 #if NAV_AUTO1_ODOMETRY != 0 && NAV_AUTO1_ODOMETRY != 1
 #error "NAV_AUTO1_ODOMETRY must be 0 or 1"
 #endif
@@ -34,10 +53,19 @@
 #endif
 
 /* Provisionales: no representan distancia de frenado ni watchdog UART. */
+#if NAV_AUTO2_ENABLED
+/* AUTO-2F: margenes experimentales de navegacion, Safety conserva 200 mm.
+ * AUTO-1/B7 mantienen sus umbrales/plazos validados. */
+#define NAV_FRONT_STOP_MM 275U
+#define NAV_REAR_REVERSE_MIN_MM 250U
+#define NAV_REVERSE_MAX_MS 800U
+#define NAV_SESSION_MAX_MS 3000U
+#else
 #define NAV_FRONT_STOP_MM 300U
 #define NAV_REAR_REVERSE_MIN_MM 300U
 #define NAV_REVERSE_MAX_MS 300U
 #define NAV_SESSION_MAX_MS 2000U
+#endif
 #define NAV_TURN_MAX_MS 250U
 #if NAV_TURN_LEFT
 #define NAV_TURN_LEFT_CPS (-MOTION_TURN_CPS)
@@ -52,7 +80,8 @@ typedef enum {
     NAV_AVANZAR,
     NAV_DETENIDO,
     NAV_RETROCEDER_ACOTADO,
-    NAV_GIRAR_ACOTADO
+    NAV_GIRAR_ACOTADO,
+    NAV_DETENER_Y_ESPERAR
 } NavigationState_t;
 
 typedef enum {
@@ -64,7 +93,11 @@ typedef enum {
     NAV_FINISH_OBSTACLE,
     NAV_FINISH_SENSORS,
     NAV_FINISH_ODOMETRY,
-    NAV_FINISH_EMISSION
+    NAV_FINISH_EMISSION,
+    NAV_FINISH_EVASION_COMPLETED,
+    NAV_FINISH_EVASION_NOT_AUTHORIZED,
+    NAV_FINISH_OPERATOR_STOP,
+    NAV_FINISH_NO_PROGRESS
 } NavigationFinishReason_t;
 
 /* Begin solo al entrar efectivamente en AUTO; nunca al renovar consignas. */
@@ -78,16 +111,55 @@ NavigationState_t Navigation_GetState(void);
 /* Resultado terminal de solo lectura; se limpia en Navigation_Begin(). */
 NavigationFinishReason_t Navigation_GetFinishReason(void);
 
+/* AUTO-2D: observacion, nunca permisos de movimiento. Un solo registro RAM. */
+enum {
+    NAV_DIAG_SESSION=1U, NAV_DIAG_OBSTACLE=2U, NAV_DIAG_REVERSE_CONSIDERED=4U,
+    NAV_DIAG_REVERSE_AUTHORIZED=8U, NAV_DIAG_REVERSE_REQUESTED=16U,
+    NAV_DIAG_REVERSE_PUBLISHED=32U, NAV_DIAG_REVERSE_APPLIED=64U,
+    NAV_DIAG_REVERSE_COMPLETED=128U, NAV_DIAG_ADVANCE_PROGRESS=256U,
+    NAV_DIAG_REVERSE_PROGRESS=512U
+};
+typedef enum {
+    NAV_ODOM_OK=0, NAV_ODOM_UNAVAILABLE, NAV_ODOM_STALE, NAV_ODOM_TIMESTAMP,
+    NAV_ODOM_DIRECTION, NAV_ODOM_OVERFLOW, NAV_ODOM_NONFINITE,
+    NAV_ODOM_DISAGREEMENT, NAV_ODOM_RANGE
+} NavigationOdometryError_t;
+typedef struct {
+    uint32_t session_id, started_tick, elapsed_ms, phase_elapsed_ms;
+    TickType_t observed_tick, decision_tick;
+    NavigationState_t state, last_phase;
+    NavigationFinishReason_t reason;
+    uint16_t flags, front_mm, rear_mm;
+    uint8_t profile, sensor_flags; /* disponible=1, frontal valido=2, trasero=4, caida=8 */
+    uint32_t snapshot_age_ms, front_age_ms, rear_age_ms;
+    int32_t advance_um, reverse_um;
+    NavigationOdometryError_t odometry_error;
+    bool deltas_available;
+    int64_t left_delta, right_delta;
+    /* 0 no solicitada, 1 esperando, 2 confirmada, 3 timeout, 4 cancelada. */
+    uint8_t settle_state;
+    uint16_t settle_observations, settle_window_observations;
+    uint32_t settle_elapsed_ms, settle_window_ms, settle_left_span, settle_right_span;
+    bool reverse_reference_available, reverse_entered;
+    TickType_t reverse_reference_tick, reverse_entry_tick;
+    int64_t reverse_reference_left, reverse_reference_right;
+} NavigationDiagnostics_t;
+void Navigation_GetDiagnostics(NavigationDiagnostics_t *out);
+/* Solo TaskComms: copia bajo lock y formatea fuera. <=255 bytes con LF. */
+int Navigation_FormatDiagnostics(char *out, size_t capacity, uint32_t query);
+/* Parte complementaria de la MISMA copia/Q tomada al formatear NAV. */
+int Navigation_FormatStabilization(char *out, size_t capacity, uint32_t query);
+
 /* Barreras internas del backend: permiso de emision de un solo uso y sesion
  * vigente tambien durante el consumo/PI. No consultan colas ni esperan. */
 bool Navigation_ConsumeEmission(uint32_t session, TickType_t issued_tick, TickType_t now,
                                 NavigationState_t phase);
 bool Navigation_IsCommandCurrent(uint32_t session, TickType_t now);
 
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
 /* Acuse del backend despues de aplicar ambos objetivos. No acredita recorrido. */
 void Navigation_CommandApplied(uint32_t session, TickType_t now);
-/* Fin normal del retroceso: deja PWM a cero, pendiente de evaluar el giro.
+/* Fin normal de fase: deja PWM a cero, pendiente de evaluar su finalizacion.
  * No se usa para timeout de consigna, STOP, Safety o cambio de modo. */
 bool Navigation_CompleteCommand(uint32_t session, TickType_t now);
 #endif

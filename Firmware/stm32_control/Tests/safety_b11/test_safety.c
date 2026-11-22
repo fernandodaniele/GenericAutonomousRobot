@@ -298,6 +298,8 @@ int32_t Encoder_ReadDelta(EncoderHandle_t *encoder) {
 }
 
 static void setup(void) {
+    memset(&navigation_diagnostics,0,sizeof navigation_diagnostics);
+    diagnostic_phase_tick=0U;diagnostic_terminal=false;
     motor_cycle_hook = NULL;
     imu_snapshot_available = false;
     imu_cal_accepted=false;imu_cal_number=0U;
@@ -940,6 +942,9 @@ static void test_stop_b65(void) {
 
 static void b72_idle(DrvUart_t *uart, UART_HandleTypeDef *peripheral) {
     setup(); robot_state = ROBOT_STATE_IDLE; DrvUart_Init(uart, peripheral);
+    /* Auditoria de comandos/modos sin navegacion: obstaculo preventivo seguro
+     * segun el perfil, como ocurria con el fixture de 300 mm anterior. */
+    input.distancia_m=(float)NAV_FRONT_STOP_MM/1000.0f;
 }
 static void test_auto_b72(void) {
     DrvUart_t uart;
@@ -1137,6 +1142,10 @@ static void test_auto_b72(void) {
 #include "test_navigation_reverse.c"
 #include "test_navigation_turn.c"
 #include "test_navigation_auto1.c"
+#include "test_navigation_auto2.c"
+#include "test_navigation_diagnostics.c"
+#include "test_navigation_settle.c"
+#include "test_navigation_auto2f.c"
 
 /* W6: coexistencia real de FSM/navegacion, datalogger y telemetria W5. */
 static void test_w6_integration(void) {
@@ -1549,30 +1558,43 @@ int run_permanent_regressions(void) {
     test_auto_b72();
 #if NAV_AUTO1_ODOMETRY
     (void)test_navigation_b73; (void)test_navigation_b75;
+#if NAV_AUTO2_ENABLED
+    (void)test_navigation_auto1;
+    test_navigation_auto2();
+#else
     test_navigation_auto1();
+#endif
 #else
     test_navigation_b73();
     test_navigation_b75();
 #endif
     test_w6_integration();
     test_w7_integration();
+    test_navigation_diagnostics();
+    test_navigation_settle();
+    test_navigation_auto2f();
     return 0;
 }
 
 int main(void) {
-#if NAV_EXPERIMENTAL_TURN_ENABLED
+#if NAV_EXPERIMENTAL_TURN_ENABLED && !NAV_AUTO2_ENABLED
     test_turn_enabled_b77();
 #else
     (void)run_permanent_regressions();
 #if NAV_AUTO1_ODOMETRY
+#if NAV_EXPERIMENTAL_TURN_ENABLED
+    (void)test_turn_enabled_b77;
+#else
     (void)test_turn_disabled_b77; /* Executed unchanged in legacy regression. */
+#endif
 #else
     test_turn_disabled_b77();
 #endif
 #endif
-    printf("RESULT %u tests passed; TURN=%u LEFT=%u; queues/waits outside critical sections; "
+    printf("RESULT %u tests passed; AUTO2=%u ODOM=%u TURN=%u LEFT=%u; queues/waits outside critical sections; "
            "at most 6 GPIO/CCR writes per transaction. Hardware timing pending.\n",
-           tests, (unsigned)NAV_EXPERIMENTAL_TURN_ENABLED, (unsigned)NAV_TURN_LEFT);
+           tests, (unsigned)NAV_AUTO2_ENABLED, (unsigned)NAV_AUTO1_ODOMETRY,
+           (unsigned)NAV_EXPERIMENTAL_TURN_ENABLED, (unsigned)NAV_TURN_LEFT);
 
     return 0;
 }

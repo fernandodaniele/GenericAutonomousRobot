@@ -7,6 +7,7 @@
 #include "stm32_status.h"
 #include "stm32_sensors.h"
 #include "stm32_imu.h"
+#include "stm32_navigation.h"
 #include "web_commands.h"
 
 // Tarea encargada de leer comandos del monitor serial.
@@ -88,6 +89,7 @@ void app_main(void)
          * Service a due IMU poll first so mapping cannot starve diagnostics. */
         else if (Stm32Imu_PollDue()) Uart_PollImu();
         else if (Stm32Imu_FusionPollDue()) Uart_PollImuFusion();
+        else if (Stm32Navigation_PollDue()) Uart_PollNavigation();
         else Uart_PollMapping();
         Uart_ReadResponse();
         vTaskDelay(pdMS_TO_TICKS(10));

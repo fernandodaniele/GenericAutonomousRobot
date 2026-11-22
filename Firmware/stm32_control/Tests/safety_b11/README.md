@@ -1,14 +1,46 @@
 # Control de motores, seguridad y navegacion B7.7
 
-## Perfil operativo AUTO-1 (actual)
+AUTO-2F: test_navigation_auto2f.c agrega retroceso real simulado entre 300/800 ms,
+limite de 800, falta de progreso, STOP/Safety, presupuesto global y rearme con
+Safety 200 mm sin cambios. Fixtures AUTO-2 actualizados a 275 mm / >250 mm;
+AUTO-1/B7 conservan sus parametros. Ver
+[AUTO2F_REFINAMIENTO.md](../../../../Docs/AUTO2F_REFINAMIENTO.md).
 
-La configuracion normal usa `NAV_AUTO1_ODOMETRY=1`: un unico avance de 100 mm
+AUTO-2E: `test_navigation_settle.c` verifica la espera supervisada y la nueva
+referencia. Los helpers AUTO-2 recorren la espera real; no se deshabilitan
+regresiones de Safety, permisos, timeout, odometria, retroceso ni giro experimental.
+Ver [AUTO2E_TRANSICION_RETROCESO.md](../../../../Docs/AUTO2E_TRANSICION_RETROCESO.md).
+
+AUTO-2D: `test_navigation_diagnostics.c` observa las fuentes reales y reproduce
+una cuenta positiva residual antes/despues de procesar retroceso. Comprueba
+retencion tras STOP, nueva sesion, publicacion fallida/tardia, clasificacion
+odometrica, formato UART y prioridad inferior de NAV. No modifica expectativas
+anteriores ni agrega la pausa propuesta. Ver
+[contrato AUTO-2D](../../../../Docs/AUTO2D_DIAGNOSTICO_NAVEGACION.md).
+
+## Perfil operativo AUTO-2 (actual)
+
+Ver [AUTO2_REACCION_OBSTACULOS.md](../../../../Docs/AUTO2_REACCION_OBSTACULOS.md).
+`NAV_AUTO2_ENABLED=1` es el valor predeterminado: conserva avance 100 mm/2 s,
+agrega reaccion preventiva y retroceso 20 mm/300 ms, con ventana global 3 s.
+Sin cobertura lateral, el giro sigue deshabilitado por defecto. Las causas
+de finalizacion distinguen la separacion completada de un giro no autorizado.
+
+`run.bat` ejecuta AUTO-2 operativo, AUTO-1 explicita (`NAV_AUTO2_ENABLED=0`),
+AUTO-2 experimental izquierdo/derecho y los tres conjuntos B7 anteriores.
+Los casos AUTO-1 y B7 conservan sus expectativas; no se sustituyen por nuevos
+tests ni se relajan las barreras. Cada resultado identifica AUTO2/ODOM/TURN.
+El resto del README conserva el historial de las etapas anteriores.
+
+## Perfil conservado AUTO-1
+
+El perfil conservado usa `NAV_AUTO1_ODOMETRY=1` y `NAV_AUTO2_ENABLED=0`: un unico avance de 100 mm
 estimados, +1600 cps por rueda, plazo global de 2000 ms y parada terminal sin
 retroceso/giro. Ver [AUTO1_AVANCE_ODOMETRIA.md](../../../../Docs/AUTO1_AVANCE_ODOMETRIA.md).
 El README que sigue conserva el contexto historico B7; los valores vigentes
 de PI/PWM son los del firmware consolidado (Kp=2,20; Ki=0,10; limite 40%).
 
-`run.bat` ejecuta el perfil operativo con `test_navigation_auto1.c`, luego el
+La variante AUTO-1 de `run.bat` ejecuta `test_navigation_auto1.c`; se conserva el
 conjunto anterior completo con `NAV_AUTO1_ODOMETRY=0` y los dos conjuntos de
 giro experimental anteriores (55 por sentido). No se eliminan casos ni se
 relajan barreras para habilitar la nueva maniobra. Solo esas compilaciones

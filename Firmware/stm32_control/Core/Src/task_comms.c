@@ -9,6 +9,7 @@
 #include "task_sensores.h"
 #include "mid_mapping.h"
 #include "task_imu.h"
+#include "mid_navigation.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -181,6 +182,22 @@ static void TaskComms_SendFusion(DrvUart_t *uart, uint32_t query) {
 static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickType_t issued_tick) {
     uint32_t query;
     unsigned mapping_part;
+    if (strncmp(message, "NAV Q=", 6U) == 0) {
+        char numeric[32];
+        const char *suffix=message+6;
+        size_t length=strlen(suffix);
+        bool stabilization=length>4U && strcmp(suffix+length-4U," S=1")==0;
+        int n=stabilization ? snprintf(numeric,sizeof numeric,"SENSORS Q=%.*s",(int)(length-4U),suffix) :
+                             snprintf(numeric,sizeof numeric,"SENSORS Q=%s",suffix);
+        if (n>0 && (size_t)n<sizeof numeric && TaskComms_SensorsQuery(numeric,&query)) {
+            static char response[256];
+            n=stabilization ? Navigation_FormatStabilization(response,sizeof response,query) :
+                            Navigation_FormatDiagnostics(response,sizeof response,query);
+            if (n>0) { DrvUart_SendString(uart,response); }
+            else { DrvUart_SendString(uart,"ERR_UNKNOWN\n"); }
+            return;
+        }
+    }
     if(strncmp(message,"IMUF Q=",7U)==0) {
         char numeric[32];int n=snprintf(numeric,sizeof numeric,"SENSORS Q=%s",message+7);
         if(n>0 && (size_t)n<sizeof numeric && TaskComms_SensorsQuery(numeric,&query)) {

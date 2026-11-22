@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include "stm32_navigation.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -131,6 +132,28 @@ static esp_err_t WebServer_Sensors(httpd_req_t *request)
     err = httpd_resp_set_hdr(request, "Cache-Control", "no-store");
     if (err != ESP_OK) return err;
     return httpd_resp_send(request, response, length);
+}
+
+static esp_err_t WebServer_Navigation(httpd_req_t *request)
+{
+    Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
+    /* Unica tarea HTTP, envio sincrono: conservar el buffer fuera de su stack,
+     * igual que /api/imu y /api/map. No se comparte con el receptor UART. */
+    static char response[1792];
+    int n=Stm32Navigation_Json(response,sizeof response,status.connected,!WebCommands_CanPollSensors());
+    const char *body=response;
+    esp_err_t err;
+    if (n<0 || (size_t)n>=sizeof response) {
+        body="{\"error\":\"navigation_unavailable\"}";
+        n=(int)strlen(body);
+        err=httpd_resp_set_status(request,"500 Internal Server Error");
+        if (err!=ESP_OK) { return err; }
+    }
+    err=httpd_resp_set_type(request,"application/json; charset=utf-8");
+    if (err!=ESP_OK) { return err; }
+    err=httpd_resp_set_hdr(request,"Cache-Control","no-store");
+    if (err!=ESP_OK) { return err; }
+    return httpd_resp_send(request,body,n);
 }
 
 static esp_err_t WebServer_SensorsScript(httpd_req_t *request)
@@ -326,7 +349,7 @@ esp_err_t WebServer_Start(void)
     s_attempted = true;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.recv_wait_timeout = 1; /* Lecturas POST acotadas; sin esperar UART. */
-    config.max_uri_handlers = 18;
+    config.max_uri_handlers = 19;
     config.lru_purge_enable = true;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
@@ -351,7 +374,8 @@ esp_err_t WebServer_Start(void)
         { .uri = "/map.js", .method = HTTP_GET, .handler = WebServer_MapScript },
         { .uri = "/api/imu", .method = HTTP_GET, .handler = WebServer_Imu },
         { .uri = "/imu.js", .method = HTTP_GET, .handler = WebServer_ImuScript },
-        { .uri = "/api/imu/calibrate", .method = HTTP_POST, .handler = WebServer_ImuCalibrate }
+        { .uri = "/api/imu/calibrate", .method = HTTP_POST, .handler = WebServer_ImuCalibrate },
+        { .uri = "/api/navigation", .method = HTTP_GET, .handler = WebServer_Navigation }
     };
     for (size_t i = 0U; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);

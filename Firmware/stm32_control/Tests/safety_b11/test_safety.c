@@ -22,6 +22,7 @@ static bool advance_imu_reply_clock;
 static TaskHandle_t current_task;
 #define CONTROL_TASK_ID ((TaskHandle_t)10)
 #define MOTOR_TASK_ID ((TaskHandle_t)11)
+#define COMMS_TASK_ID ((TaskHandle_t)13)
 static SensoresDatos_t input;
 static int queue_available, refresh_snapshot;
 static int critical_depth, scheduler_depth, cycles, delay_calls;
@@ -38,6 +39,11 @@ static jmp_buf finish;
 /* Host scheduler hook: runs other real task code between motor iterations.
  * Never compiled into firmware, never bypasses motor/nav permission checks. */
 static void (*motor_cycle_hook)(void);
+static void (*comms_cycle_hook)(void);
+static void (*comms_entry)(void *);
+static void *comms_argument;
+static bool mock_scheduler_started = true;
+static unsigned uart_isr_ticks;
 
 #include "../../Core/Src/task_safety.c"
 #include "../../Core/Src/task_control_robot.c"
@@ -143,10 +149,10 @@ void test_exit(void) {
     }
 }
 TickType_t xTaskGetTickCount(void) { TickType_t now=clock_tick; if(advance_imu_reply_clock)++clock_tick;return now; }
-TickType_t xTaskGetTickCountFromISR(void) { return clock_tick; }
+TickType_t xTaskGetTickCountFromISR(void) { CHECK(mock_scheduler_started); ++uart_isr_ticks; return clock_tick; }
 TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current_task; }
 HAL_StatusTypeDef HAL_UART_Receive_IT(UART_HandleTypeDef *uart, uint8_t *byte, uint16_t size) {
-    (void)uart; CHECK(byte != NULL && size == 1U); ++uart_rearms; return HAL_OK;
+    (void)uart; CHECK(mock_scheduler_started); CHECK(byte != NULL && size == 1U); ++uart_rearms; return HAL_OK;
 }
 HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef *uart, uint8_t *bytes,
                                    uint16_t size, uint32_t timeout) {
@@ -159,6 +165,7 @@ void vTaskDelayUntil(TickType_t *last, TickType_t period) {
     if (++delay_calls > cycles) longjmp(finish, 1);
     *last += period; clock_tick = *last;
     if (current_task == MOTOR_TASK_ID && motor_cycle_hook) motor_cycle_hook();
+    if (current_task == COMMS_TASK_ID && comms_cycle_hook) comms_cycle_hook();
     if (mode_at_second_delay && delay_calls == 2) {
         RobotControlEvent_t mode = mode_at_second_delay == 1
                                   ? ROBOT_EVENT_START_MANUAL : ROBOT_EVENT_START_AUTO;
@@ -183,6 +190,7 @@ BaseType_t xTaskResumeAll(void) {
 BaseType_t xTaskCreate(void (*entry)(void *), const char *name, unsigned stack,
                       void *arg, UBaseType_t priority, TaskHandle_t *out) {
     (void)entry; (void)name; (void)stack; (void)arg; (void)priority;
+    if (strcmp(name, "Comms") == 0) { comms_entry = entry; comms_argument = arg; }
     if (out != NULL) *out = strcmp(name, "ControlRobot") == 0 ? CONTROL_TASK_ID : (void *)1;
     return pdPASS;
 }
@@ -302,6 +310,8 @@ static void setup(void) {
     memset(&navigation_diagnostics,0,sizeof navigation_diagnostics);
     diagnostic_phase_tick=0U;diagnostic_terminal=false;
     motor_cycle_hook = NULL;
+    comms_cycle_hook = NULL; comms_entry = NULL; comms_argument = NULL;
+    mock_scheduler_started = true; uart_isr_ticks = 0U;
     imu_snapshot_available = false;
     imu_cal_accepted=false;imu_cal_number=0U;
     CHECK(critical_depth == 0 && scheduler_depth == 0);
@@ -1225,6 +1235,8 @@ static void test_w7_integration(void) {
     PASS("W7 SENSORS outranks mapping in either burst order without changing operational priority classes");
 }
 
+#include "test_uart_startup.c"
+
 int run_permanent_regressions(void) {
 
     CHECK(TaskSafety_IsStopActive() && robot_state == ROBOT_STATE_IDLE);
@@ -1580,6 +1592,7 @@ int run_permanent_regressions(void) {
     test_navigation_auto3();
     test_navigation_auto4();
     test_local_exploration();
+    test_uart_startup();
     return 0;
 }
 

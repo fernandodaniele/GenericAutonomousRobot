@@ -5,6 +5,8 @@ if not defined B11_COMPILER set "B11_COMPILER=gcc"
 set "B11_OUTPUT=%~dp0..\..\build\safety_tests"
 if not exist "%B11_OUTPUT%" mkdir "%B11_OUTPUT%"
 if errorlevel 1 exit /b 1
+python "%~dp0check_uart_startup.py"
+if errorlevel 1 exit /b 1
 call :run_case test_safety ""
 if errorlevel 1 exit /b 1
 call :run_case test_auto1 "-DNAV_AUTO2_ENABLED=0"

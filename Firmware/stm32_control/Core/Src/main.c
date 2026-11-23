@@ -128,7 +128,6 @@ int main ()
     }
 
 	  DrvUart_Init(&esp_uart, &huart2);
-	  DrvUart_StartReceive(&esp_uart);
 	  DrvUart_SendString(&esp_uart, "STM32 UART ready\n");
 
 	  motor_l.htim = &htim4;

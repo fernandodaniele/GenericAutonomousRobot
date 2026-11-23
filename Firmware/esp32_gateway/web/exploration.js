@@ -61,6 +61,11 @@
     try {
       const s = await request("/api/exploration", {}, 1200); if (!valid(s)) throw new Error("Telemetria incompatible");
       const previous = sample; sample = s;
+      const summary = node("explore-summary");
+      if (summary) summary.textContent = !s.connected ? "Sin confirmación reciente · no implica detención" :
+        s.session_active ? `Sesión ${s.session_id} activa · ${s.segments} segmentos · ${actions[s.action_code]}` :
+        s.session_pending ? "Inicio pendiente de confirmación STM32" :
+        s.available ? `Sesión finalizada · ${s.terminal_reason}` : "Sin sesión confirmada";
       if (s.session_active && s.connected) {
         requestedAt = null;
         if (!previous?.session_active) text("Sesion confirmada por STM32, sin renovaciones de autorizacion. El enlace interno se vigila por consultas diagnosticas; puede cerrar la pagina. Supervisar presencialmente: STOP remoto requiere Wi-Fi y existe corte fisico de alimentacion.");
@@ -72,12 +77,14 @@
       const labels = ["desconocido", "evidencia insuficiente", "ocupado", "eco puntual despejado"];
       node("explore-sectors").textContent = !s.sectors_available ? "Sin instantanea angular compatible." :
         Array.from(s.sectors, (v,i) => `${i * 10} grados: ${labels[Number(v)]}${s.range_mm[i] === null ? "" : " (" + s.range_mm[i] + " mm)"}`).join("; ");
-    } catch (e) { sample = null; node("explore-diagnostics").textContent = "Telemetria de exploracion no disponible. La sesion puede continuar: recuperar Wi-Fi para STOP remoto o utilizar el corte fisico."; }
+    } catch (e) { sample = null; const summary = node("explore-summary");
+      if (summary) summary.textContent = "Sin confirmación reciente · la sesión puede continuar";
+      node("explore-diagnostics").textContent = "Telemetria de exploracion no disponible. La sesion puede continuar: recuperar Wi-Fi para STOP remoto o utilizar el corte fisico."; }
     setTimeout(poll, 500);
   }
   function render() {
     if (requestedAt !== null && performance.now() - requestedAt >= 2000) requestedAt = null;
-    start.disabled = busy || requestedAt !== null || !!sample?.session_pending || !!sample?.session_active || !safeIdle();
+    start.disabled = busy || requestedAt !== null || !!sample?.session_pending || !!sample?.session_active || !safeIdle() || !node("explore-supervised").checked;
     end.disabled = busy;
     setTimeout(render, 100);
   }

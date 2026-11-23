@@ -79,7 +79,7 @@ function createImuPanel(doc, fetcher, now, schedule, clear, Controller,
   let sample = null, receivedAt = 0, reachable = false, started = false;
   let posting=false,waitingUntil=0;
   const button=doc.getElementById("imu-calibrate");
-  const text = (id, value) => { const node = doc.getElementById(id); if (node.textContent !== value) node.textContent = value; };
+  const text = (id, value) => { const node = doc.getElementById(id); if (node && node.textContent !== value) node.textContent = value; };
   function render() {
     if (!sample) {
       if(button)button.disabled=true;

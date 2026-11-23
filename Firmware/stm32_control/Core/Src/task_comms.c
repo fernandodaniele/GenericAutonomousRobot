@@ -331,6 +331,8 @@ static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickT
 
 static void TaskComms_Run(void *parameters) {
     DrvUart_t *uart = (DrvUart_t *)parameters;
+    /* RxCallback timestamps frames with a FreeRTOS ISR API: scheduler must be running. */
+    DrvUart_StartReceive(uart);
     char message[UART_RX_BUFFER_SIZE];
     TickType_t last_wake_time = xTaskGetTickCount();
     for (;;) {

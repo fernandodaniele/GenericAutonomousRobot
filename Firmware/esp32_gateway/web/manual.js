@@ -8,6 +8,7 @@
     GIRAR_DERECHA: document.getElementById("manual-right")
   };
   const halt = document.getElementById("manual-halt");
+  const panel = document.getElementById("manual-panel");
   let gesture = null;
 
   function safe() {
@@ -135,6 +136,10 @@
   window.addEventListener("pagehide", () => cancel("Se cerró la página; se solicitó detener."));
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) cancel("Página oculta; se solicitó detener.");
+  });
+  // Closing the secondary panel must never leave a captured gesture renewing.
+  panel?.addEventListener?.("toggle", () => {
+    if (!panel.open) cancel("Control manual cerrado; se solicitó detener.");
   });
   let haltBusy = false;
   halt.addEventListener("click", async () => {

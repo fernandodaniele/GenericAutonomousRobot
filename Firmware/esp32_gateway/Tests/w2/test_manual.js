@@ -202,6 +202,14 @@ async function runManualTests(appSource, manualSource, report = () => {}, sensor
     assert(f.maxPending() <= 1, "single-flight after delayed opening");
   }
   results.push("same latency matrix on both opening and renewals; slow opening never emits a direction");
+  f = await fixture(); await f.press();
+  f.node("manual-panel").open = false;
+  f.node("manual-panel").events.toggle(); await f.flush(); await f.advance(1000);
+  assert(f.count("end") === 1 && f.count("renew") === 1, "collapse cancels the captured gesture and future renewals");
+  f.node("manual-panel").open = true;
+  f.node("manual-panel").events.toggle(); await f.advance(500);
+  assert(f.count("start") === 1 && f.count("renew") === 1, "reopening panel cannot resume movement");
+  results.push("closing the secondary manual panel stops renewal; reopening never restarts movement");
   return results;
 }
 if (typeof module !== "undefined" && require.main === module) {

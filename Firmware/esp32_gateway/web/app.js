@@ -83,6 +83,8 @@ function renderStatus(status) {
   lastStatusAt = performance.now();
   connectionBox.dataset.state = !status.valid ? "unknown" : status.connected ? "ok" : "error";
   readings.dataset.stale = String(!status.connected);
+  readings.dataset.safety = status.valid ? status.faults || status.stop ? "fault" : "clear" : "unknown";
+  if (document.body) document.body.dataset.connection = status.connected ? "ok" : "lost";
   setText("stm32-connection", !status.valid ? "Sin datos desde el arranque" :
     status.connected ? "Respuesta reciente del robot" : "Comunicación desactualizada");
   setText("stm32-detail", !status.valid ? "El robot todavía no envió una respuesta de estado válida." :
@@ -108,6 +110,7 @@ async function pollStatus() {
     observeCommand(status);
   } catch {
     connectionBox.dataset.state = "error";
+    if (document.body) document.body.dataset.connection = "lost";
     statusAvailable = false;
     updateCommandButtons();
     manualControl?.cancel("Monitoreo no disponible; se cerró la autorización manual.");
@@ -245,7 +248,7 @@ function createNavigationPanel(doc, fetcher, schedule, clear, Controller) {
   let started=false;
   const text=(id,value)=>{const e=doc.getElementById(id);if(e&&e.textContent!==value)e.textContent=value;};
   const profiles={AUTO_2:"AUTO-2F operativo sin giro",AUTO_1:"AUTO-1",B7_LEGACY:"B7 historico",
-    LOCAL_EXPLORE:"Exploracion local supervisada, permiso renovable",
+    LOCAL_EXPLORE:"Exploracion local supervisada, autorizacion por sesion",
     AUTO_4_CONTINUOUS:"AUTO-4 continuo acotado experimental supervisado",
     AUTO_3_TURN:"AUTO-3 experimental: giro aislado supervisado",AUTO_3_EVASION:"AUTO-3 experimental: secuencia supervisada"};
   const number=n=>Number.isFinite(n)?n.toFixed(2):"sin muestra";

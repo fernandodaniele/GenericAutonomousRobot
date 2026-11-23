@@ -3,209 +3,72 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>GenericAutonomousRobot · Interfaz local</title>
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#101923">
+  <title>GenericAutonomousRobot · Panel de control</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
   <script src="/manual.js" defer></script>
   <script src="/sensors.js" defer></script>
   <script src="/imu.js" defer></script>
-</head>
-<body>
-  <div class="page">
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="Inicio GenericAutonomousRobot">
-        <span class="monogram" aria-hidden="true">GR</span>
-        <span>INTERFAZ LOCAL</span>
-      </a>
-      <span class="version">W4 · Control manual</span>
-    </header>
-
-    <main>
-      <section class="intro" aria-labelledby="page-title">
-        <p class="eyebrow">PLATAFORMA ROBÓTICA</p>
-        <h1 id="page-title">GenericAutonomousRobot</h1>
-        <p class="lead">Monitoreo local del último estado informado por la STM32.</p>
-      </section>
-
-      <div class="cards">
-        <section class="card server-card" aria-labelledby="server-title">
-          <p class="eyebrow">CONECTIVIDAD WEB</p>
-          <h2 id="server-title">Servidor ESP32</h2>
-          <div id="server-status" class="status" data-state="unknown" role="status" aria-live="polite">
-            <span class="status-dot" aria-hidden="true"></span>
-            <span id="status-text">Sin comprobar</span>
-          </div>
-          <p id="status-detail" class="description">Consultá el servidor local para verificar su respuesta HTTP.</p>
-          <button id="check-health" type="button">Comprobar servidor <span aria-hidden="true">↗</span></button>
-          <p class="endpoint">Consulta local <code>GET /health</code></p>
-          <noscript><p>Activá JavaScript para consultar el estado, o abrí <a href="/health">/health</a> directamente.</p></noscript>
-        </section>
-
-        <section class="card" aria-labelledby="stm32-title">
-          <p class="eyebrow">ESTADO INFORMADO POR EL ROBOT</p>
-          <h2 id="stm32-title">Conexión con el robot</h2>
-          <div id="stm32-status" class="status" data-state="unknown" role="status" aria-live="polite">
-            <span class="status-dot" aria-hidden="true"></span>
-            <span id="stm32-connection">Sin comprobar</span>
-          </div>
-          <p id="stm32-detail" class="description">Esperando la primera consulta de monitoreo.</p>
-          <dl id="robot-values" class="readings" data-stale="true">
-            <div><dt>Estado del robot</dt><dd id="robot-state">Desconocido</dd></div>
-            <div><dt>Protecciones de seguridad activadas</dt><dd id="robot-faults">Desconocidas</dd></div>
-            <div><dt>Bloqueo de seguridad</dt><dd id="robot-stop">Desconocido</dd></div>
-            <div><dt>Tiempo desde la última respuesta</dt><dd id="robot-age">Sin datos</dd></div>
-          </dl>
-          <p class="endpoint">Consulta automática <code>GET /api/status</code></p>
-          <noscript><p>Activá JavaScript para el monitoreo automático.</p></noscript>
-        </section>
-      </div>
-
-      <section class="card sensor-card" aria-labelledby="sensors-title">
-        <p class="eyebrow">MEDICIONES REALES · SOLO LECTURA</p>
-        <h2 id="sensors-title">Sensores del robot</h2>
-        <div id="sensors-status" class="status" data-state="unknown" role="status" aria-live="polite">
-          <span class="status-dot" aria-hidden="true"></span><span id="sensors-connection">Esperando telemetría</span>
-        </div>
-        <p id="sensors-age" class="description">Sin respuesta SENSORS válida</p>
-        <div class="sensor-grid">
-          <dl class="readings">
-            <div><dt>Distancia frontal</dt><dd id="sensor-front-distance">—</dd></div>
-            <div><dt>Estado frontal</dt><dd id="sensor-front-detail">Sin muestra</dd></div>
-            <div><dt>Distancia trasera</dt><dd id="sensor-rear-distance">—</dd></div>
-            <div><dt>Estado trasero</dt><dd id="sensor-rear-detail">Sin muestra</dd></div>
-          </dl>
-          <dl class="readings">
-            <div><dt>IR delantero izquierdo</dt><dd id="sensor-ir-front-left">Sin muestra</dd></div>
-            <div><dt>IR delantero derecho</dt><dd id="sensor-ir-front-right">Sin muestra</dd></div>
-            <div><dt>IR trasero izquierdo</dt><dd id="sensor-ir-rear-left">Sin muestra</dd></div>
-            <div><dt>IR trasero derecho</dt><dd id="sensor-ir-rear-right">Sin muestra</dd></div>
-          </dl>
-        </div>
-        <p id="sensor-ir-detail" class="description">Sin lectura IR disponible</p>
-        <p class="safety-note">El monitoreo conserva la última información y puede mostrar datos históricos entre consultas. Una lectura IR no diagnostica el cableado. Safety conserva la autoridad de parada.</p>
-      </section>
-
-      <section class="card sensor-card" aria-labelledby="imu-title">
-        <p class="eyebrow">IMU · MEDICIONES REALES · SOLO LECTURA</p>
-        <h2 id="imu-title">MPU6050 · Acelerómetro y giroscopio</h2>
-        <p id="imu-state" class="description" role="status" aria-live="polite">Esperando telemetría IMU</p>
-        <dl class="readings">
-          <div><dt>Aceleración X / Y / Z (g)</dt><dd id="imu-accel">Sin muestra</dd></div>
-          <div><dt>Giro sin corregir X / Y / Z (°/s)</dt><dd id="imu-gyro">Sin muestra</dd></div>
-          <div><dt>Giroscopio RAW X / Y / Z (cuentas)</dt><dd id="imu-gyro-raw">Sin muestra</dd></div>
-          <div><dt>Calibración del giroscopio</dt><dd id="imu-calibration">Pendiente de información</dd></div>
-          <div><dt>Offsets X / Y / Z (°/s)</dt><dd id="imu-offset">Sin offsets vigentes</dd></div>
-          <div><dt>Giro corregido X / Y / Z (°/s)</dt><dd id="imu-gyro-corrected">Sin calibración vigente</dd></div>
-          <div><dt>Orientación relativa del giroscopio Z</dt><dd id="imu-yaw">Sin referencia angular</dd></div>
-          <div><dt>Origen y antigüedad de orientación</dt><dd id="imu-reference">Sin referencia angular</dd></div>
-          <div><dt>Cambios desde una referencia común (±180°)</dt><dd id="imu-common-angles">Sin comparación vigente</dd></div>
-          <div><dt>Diferencia giroscopio − encoders (±180°)</dt><dd id="imu-angle-difference">Sin comparación vigente</dd></div>
-          <div><dt>Estado de fusión experimental</dt><dd id="imu-fusion-state">Esperando información</dd></div>
-          <div><dt>Orientación fusionada experimental</dt><dd id="imu-fusion-angle">Sin estimación fusionada vigente</dd></div>
-          <div><dt>Fuentes desde la misma referencia e instante</dt><dd id="imu-fusion-sources">Sin fuentes comunes vigentes</dd></div>
-          <div><dt>Fusionada − fuente (±180°)</dt><dd id="imu-fusion-differences">Sin diferencias vigentes</dd></div>
-          <div><dt>Filtro complementario experimental</dt><dd id="imu-fusion-parameters">Sin parámetros recibidos de STM32</dd></div>
-          <div><dt>Referencia y antigüedad de fusión</dt><dd id="imu-fusion-age">Sin referencia común de fusión</dd></div>
-          <div><dt>Antigüedad de la última lectura</dt><dd id="imu-age">Sin muestra</dd></div>
-          <div><dt>Comunicación I²C</dt><dd id="imu-error">Sin información</dd></div>
-        </dl>
-        <button id="imu-calibrate" type="button" disabled>Calibrar giroscopio</button>
-        <p id="imu-calibration-message" class="description" role="status">Dejá el chasis inmóvil antes de iniciar. Se toman 250 muestras en aproximadamente 5 segundos, solo en En espera o Detenido por seguridad.</p>
-        <p class="description">Cada calibración válida establece una referencia nueva para giroscopio y fusión, sin reiniciar la odometría. Izquierda positiva, derecha negativa. La comparación IMU-3 y las diferencias son módulo 360°. La fusión experimental muestra además ángulos acumulados de sus tres estimaciones en el mismo instante. No representa exactitud física demostrada ni modifica el mapa o el movimiento. Ante pérdida de una fuente no se sustituye la fusión por encoders: requiere recalibración explícita.</p>
-        <p class="safety-note">Ejes físicos del sensor, sin fusión con odometría. El acelerómetro incluye gravedad. Los offsets se pierden al reiniciar la STM32. Las variaciones pueden invalidar la calibración; un giro lento constante no siempre puede distinguirse del offset. Las consultas se pausan durante control manual y los datos vencidos no se muestran como válidos.</p>
-        <p class="endpoint">Consulta automática <code>GET /api/imu</code></p>
-      </section>
-
-      <section class="card controls" aria-labelledby="controls-title">
-        <p class="eyebrow">SOLICITUDES AL ROBOT</p>
-        <h2 id="controls-title">Controles operativos</h2>
-        <p class="description">Estos botones solicitan acciones. El estado real se muestra arriba cuando el robot responde. Rearmar no inicia movimiento.</p>
-        <div class="command-buttons">
-          <button id="command-stop" class="stop-button" type="button" disabled>Detener (STOP)</button>
-          <button id="command-reset" type="button" disabled>Rearmar seguridad</button>
-          <button id="command-manual" type="button" disabled>Solicitar modo manual</button>
-          <button id="command-auto" type="button" disabled>Solicitar modo autónomo</button>
-        </div>
-        <details>
-          <summary>AUTO-3 experimental: ensayos supervisados</summary>
-          <p class="safety-note">Sin sensores laterales. Verifica visualmente el espacio barrido por el chasis. La confirmacion humana no mide el espacio ni reemplaza Safety.</p>
-          <label><input id="auto3-supervised" type="checkbox" autocomplete="off"> Robot supervisado y espacio lateral despejado para este unico ensayo.</label>
-          <div class="command-buttons">
-            <button id="command-auto-turn" type="button" disabled>Ensayo: giro aislado izquierdo 10 grados</button>
-            <button id="command-auto-evade" type="button" disabled>Ensayo: secuencia con giro izquierdo 10 grados</button>
-            <button id="command-auto-continuous" type="button" disabled>Ensayo AUTO-4 continuo acotado: hasta 12 s</button>
-          </div>
-          <p class="description">AUTO-4: hasta cuatro segmentos de 100 mm, dos evasiones, 500 mm de recorrido y 12 segundos. No recupera obstaculos a 200 mm o menos ni fallas de sensores. Requiere area controlada con laterales despejados; Wi-Fi perdido no equivale a STOP.</p>
-          <p class="description">Cada boton solicita una maniobra desde En espera. Giro: -1200/+1200 cps, hasta 800 ms. Secuencia: hasta 4,2 s. Sin reanudar avance; STOP vuelve a En espera. AUTO normal conserva AUTO-2F sin giro.</p>
-        </details>
-        <p id="command-message" class="description" role="status" aria-live="polite">Controles disponibles al cargar JavaScript.</p>
-        <p class="description">AUTO-2 intenta avanzar 100 mm estimados, hasta 2 segundos. Ante un obstáculo puede detenerse y retroceder hasta 20 mm en 800 ms si la trasera está despejada. El giro experimental sigue deshabilitado por falta de cobertura lateral. La secuencia dura como máximo 3 segundos y termina detenida en modo autónomo: usá STOP para volver a En espera. STOP cancela cualquier fase.</p>
-        <p class="safety-note">STOP depende de Wi-Fi, ESP32, UART y STM32. No sustituye una parada de emergencia física certificada.</p>
-        <noscript><p>Los controles requieren JavaScript; no se envía ninguna solicitud automáticamente.</p></noscript>
-      </section>
-
-      <section class="card" aria-labelledby="explore-title">
-        <h2 id="explore-title">Exploracion local supervisada experimental</h2>
-        <p class="safety-note">Sin sensores laterales: no usar en un ambiente desconocido. La autorizacion inicial comprende las maniobras automaticas de esta sesion en el escenario controlado. Inspeccionar previamente el espacio de ensayo y la envolvente completa del cuerpo; dos ecos no certifican el espacio lateral.</p>
-        <label><input id="explore-supervised" type="checkbox" autocomplete="off"> Autorizo esta sesion autonoma supervisada en un entorno academico conocido y preparado, con espacio para las maniobras y sus salientes.</label>
-        <div class="command-buttons"><button id="explore-start" type="button" disabled>Iniciar exploracion autonoma supervisada</button><button id="explore-end" type="button" disabled>Detener exploracion (STOP)</button></div>
-        <p id="explore-message" role="status">Sin inicio automatico. La sesion STM32 no requiere renovaciones y continua aunque cierre el navegador. STM32 cancela si pierde durante 3000 ms la comunicacion bidireccional comprobada. STOP remoto requiere conexion Wi-Fi; disponer del corte fisico.</p>
-        <p id="explore-diagnostics">Sin telemetria recibida.</p>
-        <details><summary>Detalle de sectores angulares</summary><p id="explore-sectors">Sin evidencia recibida.</p></details>
-        <p class="description">Avances de 50 mm reevaluables, giros odometricos de 10 grados, evidencia local de 36 sectores. Desconocido no es libre. Sin limite global de segmentos o tiempo: cada movimiento conserva su plazo y permiso. El explorador elige giros y retiradas sin confirmaciones intermedias. Al agotar alternativas espera informacion nueva con motores detenidos; una falla critica sigue exigiendo rearme.</p>
-      </section>
-
-      <section class="card" aria-labelledby="navigation-title">
-        <h2 id="navigation-title">Diagnostico de navegacion</h2>
-        <p id="navigation-status" data-navigation-panel="true" role="status">Esperando telemetria real.</p>
-        <p id="navigation-profile"></p><p id="navigation-phase"></p>
-        <p id="navigation-continuous"></p><p id="navigation-progress"></p><p id="navigation-turn"></p>
-        <p id="navigation-stabilization"></p><p id="navigation-result"></p>
-        <p class="description">Consigna aplicada no confirma desplazamiento. El progreso proviene de encoders. Los resultados se conservan tras STOP y pueden ser historicos.</p>
-      </section>
-
-      <section class="card controls" aria-labelledby="manual-title">
-        <p class="eyebrow">MOVIMIENTO MANUAL</p>
-        <h2 id="manual-title">Mantener presionado para mover</h2>
-        <p id="manual-instructions" class="description">Disponible solo en modo manual, sin fallas ni bloqueo y con información reciente. Soltá para solicitar la detención. Reconectar no reanuda el movimiento.</p>
-        <div class="manual-pad" aria-describedby="manual-instructions">
-          <button id="manual-forward" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">↑</span>Avanzar</button>
-          <button id="manual-left" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">←</span>Izquierda</button>
-          <button id="manual-reverse" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">↓</span>Retroceder</button>
-          <button id="manual-right" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">→</span>Derecha</button>
-          <button id="manual-halt" class="halt-button" type="button" disabled><span aria-hidden="true">■</span> Detener movimiento</button>
-        </div>
-        <p id="manual-session" class="neutral-label" role="status" aria-live="polite">Sesión manual inactiva</p>
-        <p id="manual-message" class="description">Esperando información del robot.</p>
-        <p class="safety-note">La autorización temporal no confirma desplazamiento físico ni garantiza frenado ante una falla total. STOP global permanece separado arriba.</p>
-      </section>
-
-      <section class="card" aria-labelledby="map-title">
-        <p class="eyebrow">LOCALIZACIÓN RELATIVA</p>
-        <h2 id="map-title">Mapa 2D</h2>
-        <p id="map-state" role="status" aria-live="polite">Sin datos de localización</p>
-        <p id="map-calibration" class="description">Sin información de calibración</p>
-        <p id="map-pose">Posición métrica no disponible</p>
-        <p id="map-age">Sin muestra</p>
-        <div class="map-frame"><canvas id="map-canvas" width="640" height="640" aria-label="Grilla de ocupación relativa del robot">El mapa requiere Canvas.</canvas></div>
-        <p class="map-legend">Gris: desconocido · Blanco: libre observado · Rojo: ocupación posible · Azul: pose y trayectoria</p>
-        <p id="map-scale" class="description">Esperando configuración del mapa.</p>
-        <p id="map-counts" class="description">Sin conteos</p>
-        <p id="map-rays" class="description">Sin ecos asociados</p>
-        <p class="safety-note">Estimación relativa, sujeta a deriva y calibración. Los ecos ultrasónicos tienen incertidumbre angular y no cubren los laterales. Este mapa no autoriza movimiento ni representa espacio libre garantizado.</p>
-      </section>
-
-      <aside class="local-note">
-        <span class="note-title">Todo queda en la red local</span>
-        <p>La página y sus recursos se alojan en la ESP32. Podés acceder desde tu computadora o celular sin conexión a Internet.</p>
-        <p>Una respuesta web no demuestra conexión con el robot ni autorización de movimiento. Los valores desactualizados son históricos.</p>
-      </aside>
-    </main>
-
-    <footer><span>GenericAutonomousRobot</span><span>ESP32 · Wi-Fi AP · HTTP</span></footer>
-  </div>
   <script src="/map.js" defer></script>
   <script src="/exploration.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#dashboard">Ir al panel</a>
+  <header class="topbar">
+    <a class="brand" href="#dashboard"><span class="monogram" aria-hidden="true">GR</span><span>ROBOTICS LAB<small>CONTROL LOCAL · OFFLINE</small></span></a>
+    <div class="topbar-actions"><a class="map-link" href="#map-title">Ver mapa</a><button id="command-stop" class="stop-button" type="button" disabled><span aria-hidden="true">■</span> STOP</button></div>
+  </header>
+  <main id="dashboard" class="page">
+    <div class="intro"><div><p class="eyebrow">EXPLORAR. OBSERVAR. COMPRENDER.</p><h1><span>Generic</span>AutonomousRobot</h1><p class="lead">Navegación autónoma, bajo tu supervisión.</p></div><span class="local-badge">RED LOCAL · ESP32</span></div>
+    <section class="overview" aria-label="Estado del robot">
+      <div id="stm32-status" class="connection-tile status" data-state="unknown" role="status"><span class="status-dot" aria-hidden="true"></span><div><span class="tile-label">ENLACE ESP32 ↔ STM32</span><strong id="stm32-connection">Esperando respuesta</strong><span id="robot-age">Sin datos</span></div></div>
+      <dl id="robot-values" class="summary-values" data-stale="true"><div><dt>Estado del robot</dt><dd id="robot-state">Desconocido</dd></div><div><dt>Safety</dt><dd id="robot-faults">Desconocidas</dd></div><div><dt>Bloqueo STOP</dt><dd id="robot-stop">Desconocido</dd></div></dl>
+    </section>
+    <p id="stm32-detail" class="connection-notice" role="status" aria-live="polite">Esperando información real del robot. No se inicia ningún movimiento al abrir esta página.</p>
+    <div class="workspace">
+      <section class="card map-card" aria-labelledby="map-title">
+        <div class="section-heading"><div><p class="eyebrow">EL ENTORNO, EN PERSPECTIVA</p><h2 id="map-title">Mapa 2D</h2></div><span class="tag">ODOMETRÍA RELATIVA</span></div>
+        <p id="map-state" class="map-state" role="status" aria-live="polite">Sin datos de localización</p>
+        <div class="map-frame"><canvas id="map-canvas" width="640" height="640" aria-label="Mapa relativo: desconocido, libre observado, ocupación posible, trayectoria y orientación del robot">El navegador necesita Canvas para dibujar el mapa.</canvas><span class="map-axis" aria-hidden="true">↑ +Y &nbsp; +X →</span></div>
+        <div class="map-toolbar" role="group" aria-label="Vista del mapa"><div class="zoom-controls"><button id="map-zoom-out" type="button" aria-label="Alejar mapa">−</button><output id="map-zoom" aria-live="polite">1×</output><button id="map-zoom-in" type="button" aria-label="Acercar mapa">+</button></div><button id="map-center" class="button-secondary" type="button" disabled>Centrar robot</button><button id="map-fit" class="button-secondary" type="button">Mapa completo</button></div>
+        <label class="map-layer-toggle"><input id="map-occupancy" type="checkbox" checked> Mostrar ocupación posible</label>
+        <div class="map-legend"><span><i class="cell-unknown"></i>Desconocido</span><span><i class="cell-free"></i>Libre observado</span><span><i class="cell-occupied"></i>Ocupación posible</span><span><i class="cell-path"></i>Trayectoria</span></div>
+        <p id="map-pose" class="pose-readout">Posición métrica no disponible</p><p id="map-scale" class="subtle">Esperando configuración del mapa.</p><p id="map-age" class="subtle">Sin muestra</p><p id="map-calibration" class="map-calibration">Sin información de calibración</p>
+        <p class="safety-note">Los ecos indican ocupación posible. El mapa no garantiza espacio libre ni cobertura lateral; no autoriza movimientos.</p>
+      </section>
+      <section class="card operation-card" aria-labelledby="explore-title">
+        <p class="eyebrow">CONTROL DE SESIÓN</p><h2 id="explore-title">Exploración autónoma</h2><p class="description">Avanza, observa y evalúa alternativas en un entorno académico conocido.</p>
+        <label class="consent"><input id="explore-supervised" type="checkbox" autocomplete="off"><span>Autorizo esta sesión supervisada. Verifiqué el entorno y el espacio para las maniobras del robot.</span></label>
+        <button id="explore-start" class="primary-button" type="button" disabled>Iniciar navegación <span aria-hidden="true">↗</span></button>
+        <p id="explore-summary" class="session-summary" role="status">Sin sesión confirmada</p><p id="explore-message" class="description" role="status" aria-live="polite">Inicio explícito. Cerrar el navegador no detiene la sesión.</p>
+        <div class="quick-actions"><button id="command-reset" class="button-secondary" type="button" disabled>Rearmar Safety</button><a class="button-secondary" href="#manual-panel">Control manual ↓</a></div>
+        <p id="command-message" class="description" role="status" aria-live="polite">Esperando información del robot.</p><p class="safety-note">Sin sensores laterales. Supervisá el ensayo y mantené accesible el corte físico. STOP remoto necesita conexión: no sustituye una parada de emergencia física.</p>
+      </section>
+      <section class="card sensor-card" aria-labelledby="sensors-title">
+        <p class="eyebrow">PERCEPCIÓN</p><h2 id="sensors-title">Sensores del robot</h2><div id="sensors-status" class="status" data-state="unknown"><span class="status-dot" aria-hidden="true"></span><span id="sensors-connection">Esperando telemetría</span></div>
+        <div class="distance-grid"><div><h3>Frontal</h3><p id="sensor-front-distance" class="distance">—</p><p id="sensor-front-detail" class="subtle">Sin muestra</p></div><div><h3>Trasera</h3><p id="sensor-rear-distance" class="distance">—</p><p id="sensor-rear-detail" class="subtle">Sin muestra</p></div></div>
+        <div class="ir-summary"><span class="tile-label">SENSORES DE PISO · 4 IR</span><p id="sensor-ir-detail">Sin lectura IR disponible</p></div><p id="sensors-age" class="subtle">Sin respuesta de telemetría válida</p>
+      </section>
+      <section class="card imu-card" aria-labelledby="imu-title">
+        <p class="eyebrow">PREPARACIÓN</p><h2 id="imu-title">Calibrar giroscopio</h2><p id="imu-state" class="subtle" role="status">Esperando telemetría IMU</p><p id="imu-calibration" class="calibration-result" role="status">Pendiente de información</p>
+        <button id="imu-calibrate" class="button-secondary" type="button" disabled>Calibrar MPU6050</button><p id="imu-calibration-message" class="description" role="status">Robot inmóvil unos 5 segundos, en En espera o Detenido por seguridad. No inicia movimiento.</p><p class="subtle">Calibración manual de 250 muestras. Los offsets se conservan en RAM hasta reiniciar.</p>
+      </section>
+    </div>
+    <details id="manual-panel" class="card secondary-panel"><summary><span>Control manual<small>Mantener presionado para mover</small></span><span class="expand-icon" aria-hidden="true">+</span></summary>
+      <div class="manual-content"><div><h2>Vos elegís el movimiento</h2><p id="manual-instructions" class="description">Solicitá MANUAL y verificá el estado. Soltar, perder foco u ocultar la página cancela el movimiento. Reconectar no lo reanuda.</p><button id="command-manual" class="button-secondary" type="button" disabled>Solicitar modo manual</button><p id="manual-session" class="neutral-label" role="status">Sesión manual inactiva</p><p id="manual-message" class="description" role="status">Esperando información del robot.</p></div>
+        <div class="manual-pad" aria-describedby="manual-instructions"><button id="manual-forward" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">↑</span>Avanzar</button><button id="manual-left" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">←</span>Izquierda</button><button id="manual-reverse" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">↓</span>Retroceder</button><button id="manual-right" class="manual-direction" type="button" disabled><span class="direction-icon" aria-hidden="true">→</span>Derecha</button><button id="manual-halt" class="halt-button" type="button" disabled>■ Detener movimiento</button></div>
+      </div>
+    </details>
+    <details class="card secondary-panel technical-panel"><summary><span>Información técnica y ensayos<small>Diagnósticos y perfiles históricos</small></span><span class="expand-icon" aria-hidden="true">+</span></summary>
+      <div class="technical-content"><section><h2>Servidor ESP32</h2><div id="server-status" class="status" data-state="unknown"><span class="status-dot" aria-hidden="true"></span><span id="status-text">Sin comprobar</span></div><p id="status-detail" class="description">El servidor web y el enlace STM32 se verifican por separado.</p><button id="check-health" class="button-secondary" type="button">Comprobar servidor</button></section>
+        <section aria-labelledby="navigation-title"><h2 id="navigation-title">Diagnóstico de navegación</h2><p id="navigation-status" data-navigation-panel="true" role="status">Esperando telemetría real.</p><p id="navigation-profile"></p><p id="navigation-phase"></p><p id="navigation-continuous"></p><p id="navigation-progress"></p><p id="navigation-turn"></p><p id="navigation-stabilization"></p><p id="navigation-result"></p><p id="explore-diagnostics">Sin telemetría de exploración recibida.</p><details><summary>Sectores angulares</summary><p id="explore-sectors">Sin evidencia recibida.</p></details><button id="explore-end" class="button-secondary" type="button" disabled>Finalizar exploración (STOP)</button><p class="subtle">Consigna aplicada no confirma movimiento. El diagnóstico se conserva tras STOP.</p></section>
+        <section><h2>Perfiles experimentales históricos</h2><p class="safety-note">No son el inicio habitual de navegación. Sin cobertura lateral: comprobar todo el espacio barrido antes de cada ensayo.</p><button id="command-auto" class="button-secondary" type="button" disabled>AUTO-2F · Sin giro</button><label class="consent"><input id="auto3-supervised" type="checkbox" autocomplete="off"><span>Confirmo supervisión y espacio lateral despejado para este único ensayo experimental.</span></label><div class="command-buttons"><button id="command-auto-turn" class="button-secondary" type="button" disabled>AUTO-3 · Giro aislado 10°</button><button id="command-auto-evade" class="button-secondary" type="button" disabled>AUTO-3 · Evasión con giro</button><button id="command-auto-continuous" class="button-secondary" type="button" disabled>AUTO-4 · Continuo acotado</button></div></section>
+      </div>
+    </details>
+    <noscript><p class="connection-notice">Activá JavaScript para consultar la telemetría y utilizar los controles. No se envían órdenes automáticamente.</p></noscript>
+    <footer><span>GenericAutonomousRobot · Proyecto académico</span><span>ESP32 + STM32 · Recursos 100 % locales</span></footer>
+  </main>
 </body>
 </html>

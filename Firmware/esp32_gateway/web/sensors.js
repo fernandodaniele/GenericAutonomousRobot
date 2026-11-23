@@ -5,7 +5,7 @@
   const TELEMETRY_LINK_MS = 1500; // Timeout de enlace existente, sin cambios.
   let sample = null, receivedAt = 0, reachable = false;
   const element = id => document.getElementById(id);
-  function text(id, value) { const node = element(id); if (node.textContent !== value) node.textContent = value; }
+  function text(id, value) { const node = element(id); if (node && node.textContent !== value) node.textContent = value; }
   const age = n => Number.isInteger(n) && n >= 0 && n <= 4294967295;
   function valid(s) {
     if (!s || ![s.valid, s.connected, s.stm32_connected, s.paused, s.snapshot_available].every(v => typeof v === "boolean")) return false;
@@ -60,7 +60,8 @@
     const ir = sample.ir, irOld = snapshotOld || ir.stale || (ir.available && ir.age_ms + elapsed > sample.limits_ms.ir);
     ["front-left", "front-right", "rear-left", "rear-right"].forEach((name, index) => {
       text(`sensor-ir-${name}`, ir.floor[index] === null ? "Sin muestra" : ir.floor[index] ? "Detecta piso (1)" : "No detecta piso (0)");
-      element(`sensor-ir-${name}`).dataset.stale = String(irOld);
+      const node = element(`sensor-ir-${name}`);
+      if (node) node.dataset.stale = String(irOld);
     });
     text("sensor-ir-detail", !ir.available ? "Sin lectura IR disponible" :
       `${ir.cliff ? "Posible caída detectada" : "Los cuatro sensores detectan piso"}${irOld ? " · Información desactualizada" : ""} · ${ir.age_ms + elapsed} ms desde lectura GPIO`);

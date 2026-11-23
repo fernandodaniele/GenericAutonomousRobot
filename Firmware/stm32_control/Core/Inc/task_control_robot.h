@@ -42,6 +42,7 @@ bool TaskControlRobot_SendEvent(RobotControlEvent_t event);
  * true confirma encolado, no transicion. B7.3 inicia una sesion acotada.
  */
 bool TaskControlRobot_RequestAutoAt(TickType_t issued_tick);
+bool TaskControlRobot_RequestExploreAt(TickType_t tick,uint32_t key);
 bool TaskControlRobot_RequestAutoProfileAt(TickType_t issued_tick, uint8_t profile);
 
 /**

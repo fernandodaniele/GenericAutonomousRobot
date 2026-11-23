@@ -28,7 +28,8 @@ bool Motion_NavigationReverse(TickType_t issued_tick, uint32_t session) {
 
 bool Motion_NavigationTurn(TickType_t issued_tick, uint32_t session) {
 #if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
-    return TaskMotorControl_TrySetNavigationSpeedsAt(NAV_TURN_LEFT_CPS, NAV_TURN_RIGHT_CPS,
+    int32_t left,right;Navigation_TurnTargets(&left,&right);
+    return TaskMotorControl_TrySetNavigationSpeedsAt(left, right,
                                                     issued_tick, session);
 #else
     (void)issued_tick; (void)session;

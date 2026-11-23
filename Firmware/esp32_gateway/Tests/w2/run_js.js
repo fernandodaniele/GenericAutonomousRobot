@@ -2,6 +2,7 @@
 async function runJavaScriptTests(sources) {
   const app = sources["web/app.js"], manual = sources["web/manual.js"], sensors = sources["web/sensors.js"];
   const specs = [
+    ["LOCAL exploration", "test_exploration", "runExplorationTests", [sources["web/exploration.js"]]],
     ["W2", "test_web", "runWebTests", [app]],
     ["W3", "test_commands", "runCommandTests", [app]],
     ["W4", "test_manual", "runManualTests", [app, manual]],
@@ -25,7 +26,7 @@ async function runJavaScriptTests(sources) {
 if (typeof module !== "undefined" && require.main === module) {
   const fs = require("node:fs"), path = require("node:path"), root = path.resolve(__dirname, "../..");
   const sources = {};
-  for (const file of ["web/app.js", "web/manual.js", "web/sensors.js", "web/map.js", "web/imu.js", "Tests/w2/test_web.js", "Tests/w2/test_commands.js", "Tests/w2/test_manual.js", "Tests/w2/test_sensors.js", "Tests/w2/test_map.js", "Tests/w2/test_imu.js"])
+  for (const file of ["web/app.js", "web/manual.js", "web/sensors.js", "web/map.js", "web/imu.js", "web/exploration.js", "Tests/w2/test_exploration.js", "Tests/w2/test_web.js", "Tests/w2/test_commands.js", "Tests/w2/test_manual.js", "Tests/w2/test_sensors.js", "Tests/w2/test_map.js", "Tests/w2/test_imu.js"])
     sources[file] = fs.readFileSync(path.join(root, file), "utf8");
   runJavaScriptTests(sources).then(results => {
     results.forEach(s => console.log(`PASS ${s.suite}: ${s.passed} groups`));

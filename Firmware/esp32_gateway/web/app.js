@@ -134,10 +134,11 @@ const commandButtons = {
   MANUAL: document.getElementById("command-manual"),
   AUTO: document.getElementById("command-auto"),
   AUTO_TURN: document.getElementById("command-auto-turn"),
-  AUTO_EVADE: document.getElementById("command-auto-evade")
+  AUTO_EVADE: document.getElementById("command-auto-evade"),
+  AUTO_CONTINUOUS: document.getElementById("command-auto-continuous")
 };
 let activeCommand = null;
-const lastCommandAt = { STOP: -Infinity, RESET: -Infinity, MANUAL: -Infinity, AUTO: -Infinity, AUTO_TURN: -Infinity, AUTO_EVADE: -Infinity };
+const lastCommandAt = { STOP: -Infinity, RESET: -Infinity, MANUAL: -Infinity, AUTO: -Infinity, AUTO_TURN: -Infinity, AUTO_EVADE: -Infinity, AUTO_CONTINUOUS: -Infinity };
 
 function canRequestAuto() {
   return statusAvailable && lastStatus?.valid && lastStatus.connected && lastStatus.state === 0 &&
@@ -186,7 +187,7 @@ async function sendCommand(name) {
     updateCommandButtons();
     return;
   }
-  if (name === "AUTO_TURN" || name === "AUTO_EVADE") {
+  if (name === "AUTO_TURN" || name === "AUTO_EVADE" || name === "AUTO_CONTINUOUS") {
     const consent = document.getElementById("auto3-supervised");
     if (consent?.checked !== true) { setText("command-message", "Confirmá supervisión y espacio lateral despejado para cada ensayo experimental."); return; }
     consent.checked = false;
@@ -244,6 +245,8 @@ function createNavigationPanel(doc, fetcher, schedule, clear, Controller) {
   let started=false;
   const text=(id,value)=>{const e=doc.getElementById(id);if(e&&e.textContent!==value)e.textContent=value;};
   const profiles={AUTO_2:"AUTO-2F operativo sin giro",AUTO_1:"AUTO-1",B7_LEGACY:"B7 historico",
+    LOCAL_EXPLORE:"Exploracion local supervisada, permiso renovable",
+    AUTO_4_CONTINUOUS:"AUTO-4 continuo acotado experimental supervisado",
     AUTO_3_TURN:"AUTO-3 experimental: giro aislado supervisado",AUTO_3_EVASION:"AUTO-3 experimental: secuencia supervisada"};
   const number=n=>Number.isFinite(n)?n.toFixed(2):"sin muestra";
   function render(s) {
@@ -255,6 +258,8 @@ function createNavigationPanel(doc, fetcher, schedule, clear, Controller) {
     text("navigation-profile",s.available?`${profiles[s.profile]}: sesion ${s.session_id}, antiguedad ${s.age_ms} ms`:"Sin sesion registrada");
     text("navigation-phase",s.available?`Fase: ${s.state}, ultima: ${s.last_phase}, ${s.elapsed_ms} ms`:"Sin fase disponible");
     text("navigation-progress",s.available?`Avance ${number(s.advance_progress_mm)} mm, retroceso ${number(s.reverse?.progress_mm)} mm`:"Sin progreso disponible");
+    const c=s.continuous;
+    text("navigation-continuous",c?.available?`AUTO-4: ${c.completed_segments}/${c.segments} segmentos, ${c.evasions} evasiones/${c.attempts} intentos. Recorrido ${number(c.path_mm)} mm, avance ${number(c.forward_mm)} mm, desplazamiento neto ${number(c.useful_mm)} mm. ${c.block_reason}; habilitacion sensorial adelante ${c.forward_eligible}, atras ${c.reverse_eligible}, giro supervisado ${c.supervised_turn_eligible}. Fallas criticas ${c.critical_faults}. Esperando eco nuevo: ${c.echo_refresh_pending}. Reanudacion: ${c.resume_stabilization.state}, ${c.resume_stabilization.observations} muestras; dato hace ${c.age_ms} ms${c.historical?" (historico)":""}.`:"Sin diagnostico continuo recibido");
     const t=s.turn;
     text("navigation-turn",t?.available?`Giro ${t.direction==="left"?"izquierdo":"derecho"}: ${number(t.progress_deg)} / ${number(t.target_deg)} grados, ${t.elapsed_ms} ms, dato hace ${t.age_ms ?? "?"} ms${t.historical ? " (historico)" : ""}; solicitado ${t.requested}, publicado ${t.published}, aplicado ${t.applied}, completado ${t.completed}`:"Sin diagnostico de giro recibido");
     const wait=(w)=>w?.available?`${w.state}, ${w.observations} muestras, ventana ${w.window_ms} ms, rango ${w.left_span_counts}/${w.right_span_counts} cuentas`:"sin informacion";

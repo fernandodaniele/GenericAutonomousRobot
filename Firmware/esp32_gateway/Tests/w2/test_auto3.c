@@ -48,7 +48,8 @@ static void test_auto3(void) {
         pass("AUTO-3 STOP and unsafe/mode changes revoke experimental requests at admission and under the TX gate");
     }
     auto_ready();post("AUTO_TURN\n",10);assert(!strncmp(response_status,"400",3));
-    auto_ready();post("AUTO_EVADE\nSTOP",15);assert(!strncmp(response_status,"413",3));
+    auto_ready();post("AUTO_EVADE\nSTOP",15);assert(!strncmp(response_status,"400",3));
+    auto_ready();post("AUTO_CONTINUOUS\nSTOP",20);assert(!strncmp(response_status,"413",3));
     pass("AUTO-3 accepts no arbitrary UART suffix, newline or command sequence");
     reset();feed("STATE=0 FAULTS=0 STOP=0\n");a3_native_feed();navigation_api();
     assert(s_navigation.turn_received && s_navigation.turn_flags==31U && s_navigation.turn_stabilization.reference_left==-3);

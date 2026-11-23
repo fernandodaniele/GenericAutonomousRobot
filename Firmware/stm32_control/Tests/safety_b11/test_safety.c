@@ -46,6 +46,7 @@ static void (*motor_cycle_hook)(void);
 #include "../../Core/Src/mid_motion.c"
 #include "../../Core/Src/drv_uart.c"
 #include "../../Core/Src/task_comms.c"
+#include "../../Core/Src/mid_local_exploration.c"
 #include "../../Core/Src/mid_navigation.c"
 #include "../../Core/Src/mid_odometry.c"
 #include "../../Core/Src/mid_mapping.c"
@@ -1147,6 +1148,8 @@ static void test_auto_b72(void) {
 #include "test_navigation_settle.c"
 #include "test_navigation_auto2f.c"
 #include "test_navigation_auto3.c"
+#include "test_navigation_auto4.c"
+#include "test_local_exploration.c"
 
 /* W6: coexistencia real de FSM/navegacion, datalogger y telemetria W5. */
 static void test_w6_integration(void) {
@@ -1575,6 +1578,8 @@ int run_permanent_regressions(void) {
     test_navigation_settle();
     test_navigation_auto2f();
     test_navigation_auto3();
+    test_navigation_auto4();
+    test_local_exploration();
     return 0;
 }
 

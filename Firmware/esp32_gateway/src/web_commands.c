@@ -3,6 +3,7 @@
 #include "esp_timer.h"
 #include "esp_random.h"
 #include "stm32_status.h"
+#include "stm32_exploration.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -62,6 +63,8 @@ const char *WebCommands_Name(UartControlCommand command)
         case UART_CONTROL_AUTO: return "AUTO";
         case UART_CONTROL_AUTO_TURN: return "AUTO_TURN";
         case UART_CONTROL_AUTO_EVADE: return "AUTO_EVADE";
+        case UART_CONTROL_AUTO_CONTINUOUS: return "AUTO_CONTINUOUS";
+        case UART_CONTROL_AUTO_EXPLORE: return "AUTO_EXPLORE";
         default: return "";
     }
 }
@@ -72,12 +75,16 @@ const char *WebCommands_Phase(WebCommandPhase phase)
     return (unsigned)phase < sizeof(names) / sizeof(names[0]) ? names[phase] : "failed";
 }
 
-WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, WebCommandReceipt *receipt)
+static WebCommandResult WebCommands_SubmitOwned(const char *id, UartControlCommand command, WebCommandReceipt *receipt,const char *owner)
 {
     if (!id || !receipt || !*WebCommands_Name(command) || strlen(id) != WEB_COMMAND_ID_LENGTH) return WEB_CMD_INVALID;
     for (unsigned i = 0; i < WEB_COMMAND_ID_LENGTH; ++i)
         if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) return WEB_CMD_INVALID;
 
+    if(command==UART_CONTROL_AUTO_EXPLORE){
+        if(!owner || strlen(owner)!=32U || !strcmp(owner,id))return WEB_CMD_INVALID;
+        for(unsigned i=0;i<32U;++i)if(!((owner[i]>='0'&&owner[i]<='9')||(owner[i]>='a'&&owner[i]<='f')))return WEB_CMD_INVALID;
+    }
     WebCommandResult result;
     Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);
     const int64_t manual_now = esp_timer_get_time();
@@ -85,7 +92,7 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
     for (unsigned i = 0; i < WEB_COMMAND_HISTORY; ++i) {
         if (strcmp(s_receipts[i].id, id) == 0) {
             *receipt = s_receipts[i];
-            result = s_receipts[i].command == command ? WEB_CMD_DUPLICATE : WEB_CMD_CONFLICT;
+            result = s_receipts[i].command == command && (command!=UART_CONTROL_AUTO_EXPLORE || !strcmp(s_receipts[i].explore_owner,owner)) ? WEB_CMD_DUPLICATE : WEB_CMD_CONFLICT;
             taskEXIT_CRITICAL(&s_command_lock);
             return result;
         }
@@ -110,6 +117,7 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
     if (!Uart_ControlIsAuto(command)) AutoInvalidateLocked(manual_now);
     if (command == UART_CONTROL_STOP) s_manual.halt = false;
     memcpy(entry->id, id, WEB_COMMAND_ID_LENGTH + 1U);
+    entry->explore_owner[0]=0;if(command==UART_CONTROL_AUTO_EXPLORE)memcpy(entry->explore_owner,owner,33);
     entry->command = command;
     entry->phase = WEB_CMD_QUEUED;
     entry->sent_us = 0;
@@ -118,9 +126,12 @@ WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, 
     s_latest = s_pending = (int)slot;
     *receipt = *entry;
     taskEXIT_CRITICAL(&s_command_lock);
+    if(!Uart_ControlIsAuto(command))Stm32Exploration_Revoke();
     return WEB_CMD_ACCEPTED;
 }
 
+WebCommandResult WebCommands_Submit(const char *id,UartControlCommand command,WebCommandReceipt *receipt){return WebCommands_SubmitOwned(id,command,receipt,NULL);}
+WebCommandResult WebCommands_SubmitExplore(const char *id,const char *owner,WebCommandReceipt *receipt){return WebCommands_SubmitOwned(id,UART_CONTROL_AUTO_EXPLORE,receipt,owner);}
 bool WebCommands_RequestConsoleAuto(void)
 {
     uint8_t random[16]; char id[33];
@@ -134,6 +145,12 @@ bool WebCommands_RequestConsoleAuto(void)
     return WebCommands_Submit(id, UART_CONTROL_AUTO, &receipt) == WEB_CMD_ACCEPTED;
 }
 
+bool WebCommands_ExploreOwner(char owner[33]){
+    taskENTER_CRITICAL(&s_command_lock);bool ok=s_sending>=0 && s_pending<0 && s_receipts[s_sending].command==UART_CONTROL_AUTO_EXPLORE &&
+        s_receipts[s_sending].phase==WEB_CMD_SENDING && s_receipts[s_sending].auto_epoch+1U==s_auto_epoch;
+    if(ok)memcpy(owner,s_receipts[s_sending].explore_owner,33);
+    taskEXIT_CRITICAL(&s_command_lock);return ok;
+}
 bool WebCommands_ClaimAuto(UartControlCommand command)
 {
     Stm32StatusSnapshot status; Stm32Status_GetSnapshot(&status);

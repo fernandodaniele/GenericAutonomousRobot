@@ -14,6 +14,7 @@ def main():
     parser.add_argument("elf", type=Path)
     parser.add_argument("objdump", type=Path)
     parser.add_argument("httpd_header", type=Path)
+    parser.add_argument("--exploration", action="store_true", help="Check the new local exploration GET chain too")
     args = parser.parse_args()
     header = args.httpd_header.read_text(encoding="utf-8")
     default = re.search(r"#define HTTPD_DEFAULT_CONFIG\(\).*?\.stack_size\s*=\s*(\d+)", header, re.S)
@@ -22,12 +23,14 @@ def main():
     budget = int(default[1])
     assembly = subprocess.check_output([str(args.objdump.resolve()), "-d", str(args.elf.resolve())], text=True)
     # Incluye los frames SDK que permanecen activos al invocar el handler.
+    handler = "WebServer_Exploration" if args.exploration else "WebServer_Navigation"
+    serializer = "Stm32Exploration_Json" if args.exploration else "Stm32Navigation_Json"
     chain = ["httpd_thread", "httpd_server", "httpd_process_session",
              "httpd_sess_process", "httpd_req_new", "httpd_parse_req", "httpd_uri",
-             "WebServer_Navigation", "Stm32Navigation_Json", "snprintf", "_svfprintf_r"]
+             handler, serializer, "snprintf", "_svfprintf_r"]
     # AUTO-2E agrega el objeto compatible de estabilizacion tras el JSON base.
     # Si no se inlineo, este frame tambien precede a snprintf/newlib.
-    if re.search(r"^[0-9a-f]+ <Navigation_WaitJson>:", assembly, re.M):
+    if not args.exploration and re.search(r"^[0-9a-f]+ <Navigation_WaitJson>:", assembly, re.M):
         chain.insert(-2, "Navigation_WaitJson")
     frames = {}
     for name in chain:
@@ -41,9 +44,9 @@ def main():
     print(f"Frames de la cadena: {total}; stack HTTP: {budget}; diferencia: {budget-total}")
     if total >= budget:
         raise SystemExit("FAIL: la cadena local excede el stack HTTP antes de llamadas auxiliares/contexto")
-    if frames["WebServer_Navigation"] > 128:
+    if frames[handler] > 128:
         raise SystemExit("FAIL: el handler vuelve a reservar un frame grande en stack")
-    print("PASS: buffer NAV fuera del stack HTTP; margen real pendiente de medir en hardware")
+    print("PASS: buffer JSON fuera del stack HTTP; margen real pendiente de medir en hardware")
 
 
 if __name__ == "__main__":

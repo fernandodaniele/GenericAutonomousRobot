@@ -179,20 +179,52 @@ static void TaskComms_SendFusion(DrvUart_t *uart, uint32_t query) {
 /**
  * @brief Procesa los mensajes recibidos desde el ESP32.
  */
+static bool TaskComms_ExploreUnsigned(const char **cursor,uint32_t *v){
+    const char *p=*cursor;*v=0;if(*p<'0'||*p>'9')return false;
+    do{unsigned d=(unsigned)(*p-'0');if(*v>(UINT32_MAX-d)/10U)return false;*v=*v*10U+d;++p;}while(*p>='0'&&*p<='9');
+    *cursor=p;return true;
+}
 static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickType_t issued_tick) {
     uint32_t query;
     unsigned mapping_part;
+    if(strncmp(message,"AUTO_EXPLORE K=",15U)==0){
+        const char *p=message+15;uint32_t key;
+        bool ok=TaskComms_ExploreUnsigned(&p,&key) && !*p && key && TaskControlRobot_RequestExploreAt(issued_tick,key);
+        DrvUart_SendString(uart,ok?"AUTO_QUEUED\n":"AUTO_REJECTED\n");return;
+    }
+    if(strncmp(message,"EXPLORE K=",10U)==0){
+        const char *p=message+10;uint32_t key,n,permit;
+        bool ok=TaskComms_ExploreUnsigned(&p,&key) && strncmp(p," N=",3U)==0;
+        if(ok){p+=3;ok=TaskComms_ExploreUnsigned(&p,&n) && strncmp(p," P=",3U)==0;}
+        if(ok){p+=3;ok=TaskComms_ExploreUnsigned(&p,&permit) && !*p && Navigation_ExploreRenew(key,n,permit,issued_tick);}
+        DrvUart_SendString(uart,ok?"EXPLORE_ACCEPTED\n":"EXPLORE_REJECTED\n");return;
+    }
+    if(strncmp(message,"EXPLORATION Q=",14U)==0){
+        const char *p=message+14;uint32_t q,part,key=0U,ack=0U;
+        bool ok=TaskComms_ExploreUnsigned(&p,&q) && strncmp(p," S=",3U)==0;
+        if(ok){p+=3;ok=TaskComms_ExploreUnsigned(&p,&part) && q && part<2U;}
+        if(ok && *p){
+            ok=part==0U && strncmp(p," K=",3U)==0;
+            if(ok){p+=3;ok=TaskComms_ExploreUnsigned(&p,&key) && strncmp(p," A=",3U)==0;}
+            if(ok){p+=3;ok=TaskComms_ExploreUnsigned(&p,&ack);}
+        }
+        ok=ok && !*p;
+        if(ok && !part && key)(void)Navigation_ExploreLinkQuery(key,q,ack,issued_tick);
+        static char response[256];int n=ok?Navigation_FormatExplore(response,sizeof response,q,part):-1;
+        DrvUart_SendString(uart,n>0?response:"ERR_UNKNOWN\n");return;
+    }
     if (strncmp(message, "NAV Q=", 6U) == 0) {
         char numeric[32];
         const char *suffix=message+6;
         size_t length=strlen(suffix);
+        bool continuous=length>4U && strcmp(suffix+length-4U," S=3")==0;
         bool turn=length>4U && strcmp(suffix+length-4U," S=2")==0;
-        bool stabilization=turn || (length>4U && strcmp(suffix+length-4U," S=1")==0);
+        bool stabilization=continuous || turn || (length>4U && strcmp(suffix+length-4U," S=1")==0);
         int n=stabilization ? snprintf(numeric,sizeof numeric,"SENSORS Q=%.*s",(int)(length-4U),suffix) :
                              snprintf(numeric,sizeof numeric,"SENSORS Q=%s",suffix);
         if (n>0 && (size_t)n<sizeof numeric && TaskComms_SensorsQuery(numeric,&query)) {
             static char response[256];
-            n=turn ? Navigation_FormatTurn(response,sizeof response,query) : stabilization ? Navigation_FormatStabilization(response,sizeof response,query) :
+            n=continuous ? Navigation_FormatContinuous(response,sizeof response,query) : turn ? Navigation_FormatTurn(response,sizeof response,query) : stabilization ? Navigation_FormatStabilization(response,sizeof response,query) :
                             Navigation_FormatDiagnostics(response,sizeof response,query);
             if (n>0) { DrvUart_SendString(uart,response); }
             else { DrvUart_SendString(uart,"ERR_UNKNOWN\n"); }
@@ -265,9 +297,9 @@ static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickT
             DrvUart_SendString(uart, "MANUAL_QUEUE_ERROR\n");
         }
 
-    } else if (strcmp(message,"AUTO_TURN")==0 || strcmp(message,"AUTO_EVADE")==0) {
+    } else if (strcmp(message,"AUTO_TURN")==0 || strcmp(message,"AUTO_EVADE")==0 || strcmp(message,"AUTO_CONTINUOUS")==0) {
         DrvUart_SendString(uart,TaskControlRobot_RequestAutoProfileAt(issued_tick,
-            strcmp(message,"AUTO_TURN")==0 ? NAV_PROFILE_TURN : NAV_PROFILE_EVASION) ? "AUTO_QUEUED\n" : "AUTO_REJECTED\n");
+            strcmp(message,"AUTO_CONTINUOUS")==0 ? NAV_PROFILE_CONTINUOUS : strcmp(message,"AUTO_TURN")==0 ? NAV_PROFILE_TURN : NAV_PROFILE_EVASION) ? "AUTO_QUEUED\n" : "AUTO_REJECTED\n");
     } else if (strcmp(message, "AUTO") == 0) {
         DrvUart_SendString(uart, TaskControlRobot_RequestAutoAt(issued_tick) ?
             "AUTO_QUEUED\n" : "AUTO_REJECTED\n");

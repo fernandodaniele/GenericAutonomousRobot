@@ -134,7 +134,9 @@
           <div class="command-buttons">
             <button id="command-auto-turn" type="button" disabled>Ensayo: giro aislado izquierdo 10 grados</button>
             <button id="command-auto-evade" type="button" disabled>Ensayo: secuencia con giro izquierdo 10 grados</button>
+            <button id="command-auto-continuous" type="button" disabled>Ensayo AUTO-4 continuo acotado: hasta 12 s</button>
           </div>
+          <p class="description">AUTO-4: hasta cuatro segmentos de 100 mm, dos evasiones, 500 mm de recorrido y 12 segundos. No recupera obstaculos a 200 mm o menos ni fallas de sensores. Requiere area controlada con laterales despejados; Wi-Fi perdido no equivale a STOP.</p>
           <p class="description">Cada boton solicita una maniobra desde En espera. Giro: -1200/+1200 cps, hasta 800 ms. Secuencia: hasta 4,2 s. Sin reanudar avance; STOP vuelve a En espera. AUTO normal conserva AUTO-2F sin giro.</p>
         </details>
         <p id="command-message" class="description" role="status" aria-live="polite">Controles disponibles al cargar JavaScript.</p>
@@ -143,11 +145,22 @@
         <noscript><p>Los controles requieren JavaScript; no se envía ninguna solicitud automáticamente.</p></noscript>
       </section>
 
+      <section class="card" aria-labelledby="explore-title">
+        <h2 id="explore-title">Exploracion local supervisada experimental</h2>
+        <p class="safety-note">Sin sensores laterales: no usar en un ambiente desconocido. La autorizacion inicial comprende las maniobras automaticas de esta sesion en el escenario controlado. Inspeccionar previamente el espacio de ensayo y la envolvente completa del cuerpo; dos ecos no certifican el espacio lateral.</p>
+        <label><input id="explore-supervised" type="checkbox" autocomplete="off"> Autorizo esta sesion autonoma supervisada en un entorno academico conocido y preparado, con espacio para las maniobras y sus salientes.</label>
+        <div class="command-buttons"><button id="explore-start" type="button" disabled>Iniciar exploracion autonoma supervisada</button><button id="explore-end" type="button" disabled>Detener exploracion (STOP)</button></div>
+        <p id="explore-message" role="status">Sin inicio automatico. La sesion STM32 no requiere renovaciones y continua aunque cierre el navegador. STM32 cancela si pierde durante 3000 ms la comunicacion bidireccional comprobada. STOP remoto requiere conexion Wi-Fi; disponer del corte fisico.</p>
+        <p id="explore-diagnostics">Sin telemetria recibida.</p>
+        <details><summary>Detalle de sectores angulares</summary><p id="explore-sectors">Sin evidencia recibida.</p></details>
+        <p class="description">Avances de 50 mm reevaluables, giros odometricos de 10 grados, evidencia local de 36 sectores. Desconocido no es libre. Sin limite global de segmentos o tiempo: cada movimiento conserva su plazo y permiso. El explorador elige giros y retiradas sin confirmaciones intermedias. Al agotar alternativas espera informacion nueva con motores detenidos; una falla critica sigue exigiendo rearme.</p>
+      </section>
+
       <section class="card" aria-labelledby="navigation-title">
         <h2 id="navigation-title">Diagnostico de navegacion</h2>
         <p id="navigation-status" data-navigation-panel="true" role="status">Esperando telemetria real.</p>
         <p id="navigation-profile"></p><p id="navigation-phase"></p>
-        <p id="navigation-progress"></p><p id="navigation-turn"></p>
+        <p id="navigation-continuous"></p><p id="navigation-progress"></p><p id="navigation-turn"></p>
         <p id="navigation-stabilization"></p><p id="navigation-result"></p>
         <p class="description">Consigna aplicada no confirma desplazamiento. El progreso proviene de encoders. Los resultados se conservan tras STOP y pueden ser historicos.</p>
       </section>
@@ -193,5 +206,6 @@
     <footer><span>GenericAutonomousRobot</span><span>ESP32 · Wi-Fi AP · HTTP</span></footer>
   </div>
   <script src="/map.js" defer></script>
+  <script src="/exploration.js" defer></script>
 </body>
 </html>

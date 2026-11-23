@@ -8,6 +8,7 @@
 typedef enum { WEB_CMD_QUEUED, WEB_CMD_SENDING, WEB_CMD_TRANSMITTED, WEB_CMD_FAILED, WEB_CMD_CANCELLED } WebCommandPhase;
 typedef struct {
     char id[WEB_COMMAND_ID_LENGTH + 1U];
+    char explore_owner[33]; /* Private capability; never serialized in receipts. */
     UartControlCommand command;
     WebCommandPhase phase;
     int64_t sent_us;
@@ -20,8 +21,10 @@ typedef enum { WEB_CMD_ACCEPTED, WEB_CMD_DUPLICATE, WEB_CMD_BUSY, WEB_CMD_CONFLI
 #define WEB_AUTO_REQUEST_MS 500U
 /* AUTO usa la misma cola desde web y consola; revalidar bajo el turno UART. */
 bool WebCommands_RequestConsoleAuto(void);
+bool WebCommands_ExploreOwner(char owner[33]);
 bool WebCommands_ClaimAuto(UartControlCommand command);
 
+WebCommandResult WebCommands_SubmitExplore(const char *id,const char *owner,WebCommandReceipt *receipt);
 WebCommandResult WebCommands_Submit(const char *id, UartControlCommand command, WebCommandReceipt *receipt);
 /* Solo app_main; ninguna E/S se realiza dentro del bloqueo. */
 void WebCommands_ProcessPending(void);

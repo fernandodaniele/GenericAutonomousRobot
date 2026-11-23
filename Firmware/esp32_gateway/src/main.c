@@ -9,6 +9,7 @@
 #include "stm32_imu.h"
 #include "stm32_navigation.h"
 #include "web_commands.h"
+#include "stm32_exploration.h"
 
 // Tarea encargada de leer comandos del monitor serial.
 static void ConsoleInputTask(void *parameters)
@@ -83,6 +84,7 @@ void app_main(void)
         WebCommands_ProcessPending();
         WebManual_Process();
         if (Stm32Status_PollDue()) Uart_SendStatus();
+        else if(Stm32Exploration_PollDue())Uart_PollExploration();
         else if (Stm32Sensors_PollDue()) Uart_PollSensors();
         else if (Stm32Imu_CalibrationPending()) (void)Uart_SendImuCalibration();
         /* A 100-ms UART read can keep 100-ms mapping continuously due.

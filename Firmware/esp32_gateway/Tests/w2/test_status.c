@@ -11,6 +11,7 @@
 #include "stm32_status.c"
 #include "stm32_sensors.c"
 #include "stm32_navigation.c"
+#include "stm32_exploration.c"
 #include "stm32_imu.c"
 #include "mapping_grid.c"
 #include "stm32_mapping.c"
@@ -36,7 +37,7 @@ static int console_getchar(void);
 static LONG64 clock_us;
 static __thread int lock_depth;
 static unsigned cases, tx_count, rx_count, init_count, task_count, iterations;
-static char frames[4096][32], reply[16384];
+static char frames[4096][96], reply[32768];
 static size_t reply_length;
 static unsigned response_count;
 static const char *reply_type, *reply_cache;
@@ -48,13 +49,13 @@ static void (*wait_hook)(void);
 static void (*tx_hook)(void);
 static const char *request_type="text/plain", *request_origin="http://192.168.4.1", *request_host="192.168.4.1", *request_id;
 static const char *request_body, *response_status;
-static const char *request_token, *request_sequence;
+static const char *request_token, *request_sequence, *request_explore_owner;
 static size_t body_offset, body_chunk=6;
 static int body_error;
 static int64_t body_delay;
 static const char *rx_data, *keys;
 static size_t rx_size;
-static httpd_uri_t routes[19];
+static httpd_uri_t routes[22];
 static unsigned route_count, server_count, server_stops, fail_route;
 static int http_error, network_error;
 static unsigned loop_limit = 15U;
@@ -97,18 +98,18 @@ int uart_write_bytes(int port,const void *bytes,size_t size)
 }
 int uart_read_bytes(int port,void *bytes,uint32_t size,unsigned timeout)
 {
-    assert(port==2 && size==255 && timeout==pdMS_TO_TICKS(100) && !lock_depth);
+    assert(port==2 && size==255 && timeout==pdMS_TO_TICKS((Stm32Navigation_FastReceive() || Stm32Exploration_Fast())?20U:100U) && !lock_depth);
     if (rx_prepare_hook) rx_prepare_hook();
-    ++rx_count; if (!rx_size) { clock_us+=100000; return 0; }
-    clock_us+=rx_data_delay;
+    ++rx_count; if (!rx_size) { clock_us+=(int64_t)timeout*10000; return 0; }
+    clock_us+=rx_data_delay>(int64_t)timeout*10000 ? (int64_t)timeout*10000 : rx_data_delay;
     assert(rx_size<=size); memcpy(bytes,rx_data,rx_size); int result=(int)rx_size; rx_size=0; return result;
 }
 esp_err_t WifiAp_Start(void) { return network_error ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_start(httpd_handle_t *out,const httpd_config_t *cfg)
-{ assert(cfg->server_port==80 && cfg->stack_size==4096U && cfg->lru_purge_enable && cfg->max_uri_handlers==19 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
+{ assert(cfg->server_port==80 && cfg->stack_size==4096U && cfg->lru_purge_enable && cfg->max_uri_handlers==22 && !lock_depth); ++server_count; *out=(void *)1; return ESP_OK; }
 esp_err_t httpd_stop(httpd_handle_t handle) { assert(handle); ++server_stops; return ESP_OK; }
 esp_err_t httpd_register_uri_handler(httpd_handle_t handle,const httpd_uri_t *r)
-{ assert(handle && route_count<19); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12) || !strcmp(r->uri,"/api/imu/calibrate")) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
+{ assert(handle && route_count<22); assert(r->method==HTTP_GET || ((!strcmp(r->uri,"/api/exploration") || !strcmp(r->uri,"/api/command") || !strncmp(r->uri,"/api/manual/",12) || !strcmp(r->uri,"/api/imu/calibrate")) && r->method==HTTP_POST)); routes[route_count++]=*r; return route_count==fail_route ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_type(httpd_req_t *r,const char *type)
 { assert(r && type && !lock_depth); reply_type=type; return http_error==1 ? ESP_FAIL : ESP_OK; }
 esp_err_t httpd_resp_set_hdr(httpd_req_t *r,const char *key,const char *value)
@@ -121,6 +122,7 @@ static const char *header(const char *name)
     if(!strcmp(name,"Host")) return request_host;
     if(!strcmp(name,"X-Request-ID")) return request_id;
     if(!strcmp(name,"X-Session-Token")) return request_token;
+    if(!strcmp(name,"X-Explore-Owner"))return request_explore_owner;
     if(!strcmp(name,"X-Sequence")) return request_sequence;
     assert(0); return NULL;
 }
@@ -143,7 +145,10 @@ static int console_getchar(void) { return *keys ? *keys++ : EOF; }
 static void reset(void)
 {
     s_navigation_turn_ready=false;s_navigation_turn_pending=0;s_navigation_turn_sent=0;
+    s_navigation_continuous_ready=false;s_navigation_continuous_pending=0;s_navigation_continuous_sent=0;
     navigation_format_error=false;reply_length=0U;response_count=0U;reply_type=reply_cache=NULL;
+    request_explore_owner=NULL;
+    memset(&exploration,0,sizeof exploration);memset(&exploration_staged,0,sizeof exploration_staged);memset(&exploration_owner,0,sizeof exploration_owner);exploration_wanted=exploration_second=false;exploration_query=exploration_counter=0;exploration_poll=exploration_sent=0;exploration_length=0;exploration_discard=false;
     memset(&s_navigation,0,sizeof s_navigation);s_navigation_received=0;
     s_navigation_length=0;s_navigation_discard=false;s_navigation_counter=s_navigation_pending=0;
     s_navigation_sent=s_navigation_poll=0;
@@ -242,6 +247,8 @@ static unsigned frame_count(const char *frame) { unsigned count=0; for(unsigned 
 #include "test_navigation.c"
 #include "test_auto.c"
 #include "test_auto3.c"
+#include "test_auto4.c"
+#include "test_exploration.c"
 #include "test_mapping.c"
 #include "test_imu.c"
 
@@ -249,7 +256,7 @@ int main(void)
 {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     InitializeCriticalSection(&s_lock.native); InitializeCriticalSection(&s_sensor_lock.native);
-    InitializeCriticalSection(&s_navigation_lock.native);
+    InitializeCriticalSection(&s_navigation_lock.native);InitializeCriticalSection(&exploration_lock.native);
     InitializeCriticalSection(&s_command_lock.native);
     InitializeCriticalSection(&s_map_lock.native);
     InitializeCriticalSection(&s_imu_lock.native);
@@ -316,7 +323,7 @@ int main(void)
         assert(!strcmp(frames[0],"STATUS\n"));
     }
     pass("actual app_main polls at 1 Hz without new tasks, including AP failure");
-    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==19);
+    reset(); assert(WebServer_Start()==ESP_OK && WebServer_Start()==ESP_OK && server_count==1 && route_count==22);
     const char *paths[]={"/","/style.css","/app.js","/health","/api/status"};
     for(unsigned i=0;i<5;++i) {
         assert(!strcmp(routes[i].uri,paths[i])); httpd_req_t r={.user_ctx=routes[i].user_ctx}; assert(routes[i].handler(&r)==ESP_OK);
@@ -488,5 +495,7 @@ int main(void)
     test_imu_fusion();
     test_navigation();
     test_auto3();
+    test_auto4();
+    test_exploration();
     printf("RESULT %u native W1-W7 test groups passed; no hardware validation\n",cases); return 0;
 }

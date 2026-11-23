@@ -1,5 +1,6 @@
 #include "web_server.h"
 #include "stm32_navigation.h"
+#include "stm32_exploration.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -222,7 +223,7 @@ static bool CommandBody(httpd_req_t *request, char *body, size_t capacity)
 
 static esp_err_t WebServer_Command(httpd_req_t *request)
 {
-    char id[33], body[11];
+    char id[33], body[16];
     if (!CommandHeaders(request, id) || !CommandBody(request, body, sizeof(body))) return ESP_FAIL;
     const size_t used = request->content_len;
     UartControlCommand command;
@@ -232,10 +233,15 @@ static esp_err_t WebServer_Command(httpd_req_t *request)
     else if (used == 4U && memcmp(body, "AUTO", 4U) == 0) command = UART_CONTROL_AUTO;
     else if (used==9U && memcmp(body,"AUTO_TURN",9U)==0) command=UART_CONTROL_AUTO_TURN;
     else if (used==10U && memcmp(body,"AUTO_EVADE",10U)==0) command=UART_CONTROL_AUTO_EVADE;
+    else if (used==15U && memcmp(body,"AUTO_CONTINUOUS",15U)==0) command=UART_CONTROL_AUTO_CONTINUOUS;
+    else if(used==12U && memcmp(body,"AUTO_EXPLORE",12U)==0)command=UART_CONTROL_AUTO_EXPLORE;
     else return CommandReply(request, "400 Bad Request", "{\"accepted\":false,\"error\":\"unsupported_command\"}", false);
 
     WebCommandReceipt receipt;
-    const WebCommandResult result = WebCommands_Submit(id, command, &receipt);
+    char owner[33]={0};
+    if(command==UART_CONTROL_AUTO_EXPLORE && !ReadHeader(request,"X-Explore-Owner",owner,sizeof owner))
+        return CommandReply(request,"400 Bad Request","{\"accepted\":false,\"error\":\"owner_required\"}",false);
+    const WebCommandResult result = command==UART_CONTROL_AUTO_EXPLORE ? WebCommands_SubmitExplore(id,owner,&receipt):WebCommands_Submit(id, command, &receipt);
     if (result == WEB_CMD_UNSAFE)
         return CommandReply(request, "412 Precondition Failed", "{\"accepted\":false,\"error\":\"auto_requires_safe_idle\"}", false);
     if (result == WEB_CMD_BUSY)
@@ -345,13 +351,36 @@ static esp_err_t WebServer_ImuScript(httpd_req_t *request)
     return WebServer_Resource(request);
 }
 
+static bool ExplorationDecimal(const char **p,uint32_t *v){
+    *v=0;if(**p<'0'||**p>'9')return false;
+    do{unsigned d=(unsigned)(**p-'0');if(*v>(UINT32_MAX-d)/10U)return false;*v=*v*10U+d;++*p;}while(**p>='0'&&**p<='9');return true;
+}
+static esp_err_t WebServer_ExplorationWatch(httpd_req_t *r){
+    char id[33],owner[33],body[40];uint32_t seq,permit;
+    if(!CommandHeaders(r,id) || !CommandBody(r,body,sizeof body))return ESP_FAIL;
+    const char *p=body+6;
+    if(r->content_len<9U || strncmp(body,"WATCH ",6U) || !ReadHeader(r,"X-Explore-Owner",owner,sizeof owner) ||
+       !ExplorationDecimal(&p,&seq) || *p++!=' ' || !ExplorationDecimal(&p,&permit) || *p)
+        return CommandReply(r,"400 Bad Request","{\"accepted\":false,\"error\":\"watch_format\"}",false);
+    bool accepted=false; /* Legacy WATCH is rejected; navigation has no periodic permits. */
+    return CommandReply(r,accepted?"202 Accepted":"412 Precondition Failed",accepted?"{\"accepted\":true,\"confirmed\":false}":"{\"accepted\":false,\"error\":\"expired_busy_or_not_owner\"}",false);
+}
+static esp_err_t WebServer_Exploration(httpd_req_t *r){
+    static char out[2048];int n=Stm32Exploration_Json(out,sizeof out);if(n<0)return ESP_FAIL;
+    esp_err_t err=httpd_resp_set_type(r,"application/json; charset=utf-8");if(err!=ESP_OK)return err;
+    err=httpd_resp_set_hdr(r,"Cache-Control","no-store");return err==ESP_OK?httpd_resp_send(r,out,n):err;
+}
+static esp_err_t WebServer_ExplorationScript(httpd_req_t *r){
+    extern const uint8_t explore_start[] asm("_binary_exploration_js_start");extern const uint8_t explore_end[] asm("_binary_exploration_js_end");
+    const WebResource resource={explore_start,explore_end,"application/javascript; charset=utf-8"};r->user_ctx=(void *)&resource;return WebServer_Resource(r);
+}
 esp_err_t WebServer_Start(void)
 {
     if (s_attempted) return s_result;
     s_attempted = true;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.recv_wait_timeout = 1; /* Lecturas POST acotadas; sin esperar UART. */
-    config.max_uri_handlers = 19;
+    config.max_uri_handlers = 22;
     config.lru_purge_enable = true;
     esp_err_t err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
@@ -377,7 +406,10 @@ esp_err_t WebServer_Start(void)
         { .uri = "/api/imu", .method = HTTP_GET, .handler = WebServer_Imu },
         { .uri = "/imu.js", .method = HTTP_GET, .handler = WebServer_ImuScript },
         { .uri = "/api/imu/calibrate", .method = HTTP_POST, .handler = WebServer_ImuCalibrate },
-        { .uri = "/api/navigation", .method = HTTP_GET, .handler = WebServer_Navigation }
+        { .uri = "/api/navigation", .method = HTTP_GET, .handler = WebServer_Navigation },
+        { .uri="/api/exploration",.method=HTTP_GET,.handler=WebServer_Exploration },
+        { .uri="/api/exploration",.method=HTTP_POST,.handler=WebServer_ExplorationWatch },
+        { .uri="/exploration.js",.method=HTTP_GET,.handler=WebServer_ExplorationScript }
     };
     for (size_t i = 0U; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(s_server, &routes[i]);

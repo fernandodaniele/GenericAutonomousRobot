@@ -3,9 +3,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-typedef enum { UART_CONTROL_STOP, UART_CONTROL_RESET, UART_CONTROL_MANUAL, UART_CONTROL_AUTO, UART_CONTROL_AUTO_TURN, UART_CONTROL_AUTO_EVADE } UartControlCommand;
+typedef enum { UART_CONTROL_STOP, UART_CONTROL_RESET, UART_CONTROL_MANUAL, UART_CONTROL_AUTO, UART_CONTROL_AUTO_TURN, UART_CONTROL_AUTO_EVADE, UART_CONTROL_AUTO_CONTINUOUS, UART_CONTROL_AUTO_EXPLORE } UartControlCommand;
 static inline bool Uart_ControlIsAuto(UartControlCommand c) {
-    return c==UART_CONTROL_AUTO || c==UART_CONTROL_AUTO_TURN || c==UART_CONTROL_AUTO_EVADE;
+    return c==UART_CONTROL_AUTO || c==UART_CONTROL_AUTO_TURN || c==UART_CONTROL_AUTO_EVADE || c==UART_CONTROL_AUTO_CONTINUOUS || c==UART_CONTROL_AUTO_EXPLORE;
 }
 /* Resultado de entrega al driver, no confirmacion de la STM32. Solo tareas. */
 bool Uart_SendControl(UartControlCommand command);
@@ -36,6 +36,7 @@ void Uart_PollMapping(void);
 void Uart_PollImu(void);
 void Uart_PollImuFusion(void);
 void Uart_PollNavigation(void);
+void Uart_PollExploration(void);
 bool Uart_SendImuCalibration(void);
 
 void Uart_SendReset(void);

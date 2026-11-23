@@ -24,7 +24,7 @@ async function runCommandTests(source) {
       return { ok: true, json: async () => snapshot };
     }
     assert(url === "/api/command" && options.method === "POST", "only command POST");
-    assert(["STOP", "RESET", "MANUAL", "AUTO", "AUTO_TURN", "AUTO_EVADE"].includes(options.body), "closed body list");
+    assert(["STOP", "RESET", "MANUAL", "AUTO", "AUTO_TURN", "AUTO_EVADE", "AUTO_CONTINUOUS"].includes(options.body), "closed body list");
     currentId = options.headers["X-Request-ID"]; currentName = options.body;
     assert(/^[a-f0-9]{32}$/.test(currentId) && options.headers["Content-Type"] === "text/plain", "ID/body headers");
     if (mode === "pending") return new Promise((resolve, reject) => {
@@ -172,6 +172,26 @@ async function runCommandTests(source) {
   panel.start();panel.start();await flush();assert(node("navigation-status").textContent.includes("historicos"),"network error marks retained diagnostic historical");
   assert(commandCount()===beforeExperimental+2,"diagnostic panel never emits operations");
   results.push("AUTO-3 diagnostic dashboard distinguishes historical data, independent stabilization, angle and network loss without commands");
+  now+=1001;api.renderStatus(safeIdle);
+  const beforeContinuous=commandCount();await api.sendCommand("AUTO_CONTINUOUS");
+  assert(commandCount()===beforeContinuous,"continuous request also requires supervision for this trial");
+  node("auto3-supervised").checked=true;await api.sendCommand("AUTO_CONTINUOUS");
+  assert(currentName==="AUTO_CONTINUOUS"&&commandCount()===beforeContinuous+1&&!node("auto3-supervised").checked,"explicit bounded continuous request consumes supervision");
+  observe("transmitted",{...safeIdle,state:1});
+  api.renderStatus({...safeIdle,connected:false});await api.sendCommand("AUTO_CONTINUOUS");
+  api.renderStatus(safeIdle);assert(commandCount()===beforeContinuous+1,"reconnection cannot restart continuous navigation");
+  results.push("AUTO-4 one explicit supervised request; no restart on network recovery and no operational result inferred from HTTP");
+  const continuous={available:true,segments:2,completed_segments:1,attempts:1,evasions:1,path_mm:150,useful_mm:110,forward_mm:120,block_reason:"front_preventive",forward_eligible:true,reverse_eligible:true,supervised_turn_eligible:true,critical_faults:0,resume_stabilization:{state:"confirmed",observations:4},age_ms:300,historical:false};
+  panel.render({...diagnostic,profile:"AUTO_4_CONTINUOUS",continuous});
+  assert(node("navigation-profile").textContent.includes("AUTO-4")&&node("navigation-continuous").textContent.includes("150.00")&&node("navigation-continuous").textContent.includes("front_preventive"),"real continuous metrics shown with units and causal block reason");
+  panel.render({...diagnostic,profile:"AUTO_4_CONTINUOUS",connected:false,continuous:{...continuous,historical:true,block_reason:"no_net_progress"}});
+  assert(node("navigation-continuous").textContent.includes("historico")&&node("navigation-continuous").textContent.includes("no_net_progress"),"terminal and old continuous metrics stay labelled historical");
+  assert(commandCount()===beforeContinuous+1,"continuous monitoring emits no movement or start requests");
+  results.push("AUTO-4 dashboard shows bounded repeated maneuvers, progress and historical blocked causes without acting on the map");
+  panel.render({...diagnostic,profile:"LOCAL_EXPLORE",state:"EXPLORAR",continuous:{available:false}});
+  assert(node("navigation-profile").textContent.includes("Exploracion local") && node("navigation-phase").textContent.includes("EXPLORAR"),"new profile keeps existing navigation panel compatible");
+  assert(commandCount()===beforeContinuous+1,"new profile telemetry does not start exploration");
+  results.push("LOCAL existing navigation panel displays the explicit new profile and safe wait without issuing operational commands");
   return results;
 }
 if (typeof module !== "undefined" && require.main === module) {

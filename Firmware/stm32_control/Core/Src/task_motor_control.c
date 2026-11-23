@@ -157,6 +157,7 @@ static void TaskMotorControl_Run(void *parameters) {
     for (;;) {
         vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(MOTOR_CONTROL_PERIOD_MS));
 
+        Navigation_ObserveMotionSensors(); /* AUTO-4 only; outside the PI/PWM lock. */
         TaskMotorControlTarget_t target;
         BaseType_t received = xQueueReceive(target_speed_queue, &target, 0U);
         int32_t left_delta = Encoder_ReadDelta(context->encoder_left);
@@ -320,7 +321,8 @@ static bool TaskMotorControl_Publish(int32_t left_speed_cps, int32_t right_speed
     if (left_speed_cps == MOTION_DRIVE_CPS && right_speed_cps == MOTION_DRIVE_CPS) phase = NAV_AVANZAR;
     if (left_speed_cps == -MOTION_DRIVE_CPS && right_speed_cps == -MOTION_DRIVE_CPS) phase = NAV_RETROCEDER_ACOTADO;
 #if NAV_EXPERIMENTAL_TURN_ENABLED || NAV_AUTO2_ENABLED
-    if (left_speed_cps == NAV_TURN_LEFT_CPS && right_speed_cps == NAV_TURN_RIGHT_CPS) phase = NAV_GIRAR_ACOTADO;
+    int32_t turn_left,turn_right;Navigation_TurnTargets(&turn_left,&turn_right);
+    if (left_speed_cps == turn_left && right_speed_cps == turn_right) phase = NAV_GIRAR_ACOTADO;
 #endif
     bool authorized_source = from_navigation ?
         (dated && required_mode == ROBOT_STATE_AUTONOMOUS &&

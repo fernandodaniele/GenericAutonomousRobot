@@ -79,7 +79,7 @@ static void test_navigation_auto3(void) {
     for(unsigned profile=3U;profile<=4U;++profile){
         for(unsigned mode=1U;mode<=3U;++mode){setup();robot_state=(RobotControlState_t)mode;
             CHECK(!TaskControlRobot_RequestAutoProfileAt(clock_tick,(uint8_t)profile));expect_zero();}
-        setup();robot_state=ROBOT_STATE_IDLE;CHECK(!TaskControlRobot_RequestAutoProfileAt(clock_tick,5U));
+        setup();robot_state=ROBOT_STATE_IDLE;CHECK(!TaskControlRobot_RequestAutoProfileAt(clock_tick,6U));
         CHECK(TaskControlRobot_RequestAutoProfileAt(clock_tick,(uint8_t)profile));
         CHECK(TaskControlRobot_SendEvent(ROBOT_EVENT_STOP));run_fsm(1);CHECK(robot_state==ROBOT_STATE_IDLE);expect_zero();
         PASS("AUTO-3 explicit profile uses original FSM safety/epoch barriers; queued request cannot survive STOP");

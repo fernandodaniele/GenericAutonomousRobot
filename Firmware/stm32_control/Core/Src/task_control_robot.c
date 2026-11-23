@@ -28,6 +28,7 @@ typedef struct {
     TickType_t issued_tick;
     uint32_t auto_epoch;
     uint8_t profile;
+    uint32_t explore_key;
 } TaskControlRobotEventMessage_t;
 
 // Cola de eventos para la maquina de estados.
@@ -106,7 +107,8 @@ static void TaskControlRobot_ProcessEventAt(RobotControlEvent_t event,
                 TaskMotorControl_Stop();
                 robot_state = ROBOT_STATE_AUTONOMOUS;
                 mode_entry_tick = xTaskGetTickCount();
-                if (auto_message && auto_message->profile>=NAV_PROFILE_TURN) Navigation_BeginProfile(mode_entry_tick,auto_message->profile);
+                if(auto_message && auto_message->profile==NAV_PROFILE_EXPLORE) Navigation_BeginExplore(mode_entry_tick,auto_message->explore_key);
+                else if (auto_message && auto_message->profile>=NAV_PROFILE_TURN) Navigation_BeginProfile(mode_entry_tick,auto_message->profile);
                 else Navigation_Begin(mode_entry_tick);
             }
             break;
@@ -276,8 +278,15 @@ bool TaskControlRobot_SendEvent(RobotControlEvent_t event) {
 bool TaskControlRobot_RequestAutoAt(TickType_t issued_tick) {
     return TaskControlRobot_RequestAutoProfileAt(issued_tick,2U);
 }
+bool TaskControlRobot_RequestExploreAt(TickType_t issued_tick,uint32_t key) {
+    if(!NAV_AUTO2_ENABLED || !key)return false;
+    TaskControlRobotEventMessage_t m={.event=ROBOT_EVENT_START_AUTO,.issued_tick=issued_tick,.profile=NAV_PROFILE_EXPLORE,.explore_key=key};
+    taskENTER_CRITICAL();m.auto_epoch=auto_request_epoch;
+    bool ok=event_queue && robot_state==ROBOT_STATE_IDLE && !stop_pending && !TaskSafety_IsStopActive() && TaskControlRobot_AutoRequestCurrent(&m);
+    taskEXIT_CRITICAL();return ok && xQueueSend(event_queue,&m,0U)==pdTRUE;
+}
 bool TaskControlRobot_RequestAutoProfileAt(TickType_t issued_tick,uint8_t profile) {
-    if (profile!=2U && (!(NAV_AUTO2_ENABLED) || (profile!=NAV_PROFILE_TURN && profile!=NAV_PROFILE_EVASION))) return false;
+    if (profile!=2U && (!(NAV_AUTO2_ENABLED) || (profile!=NAV_PROFILE_TURN && profile!=NAV_PROFILE_EVASION && profile!=NAV_PROFILE_CONTINUOUS))) return false;
     TaskControlRobotEventMessage_t message = {
         .event = ROBOT_EVENT_START_AUTO, .issued_tick = issued_tick, .profile=profile
     };

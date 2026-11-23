@@ -73,7 +73,16 @@
 #define NAV_AUTO3_ISOLATED_MAX_MS 1400U /* data 200 + settle 200 + turn 800 + transitions 200 */
 #define NAV_AUTO3_MAX_WHEEL_DIFFERENCE_MM 3U /* center translation <=1.5 mm in the ideal model */
 /* Explicit one-shot requests only; ordinary AUTO always keeps AUTO-2F. */
-typedef enum { NAV_PROFILE_TURN = 3, NAV_PROFILE_EVASION = 4 } NavigationExperimentalProfile_t;
+typedef enum { NAV_PROFILE_TURN = 3, NAV_PROFILE_EVASION = 4, NAV_PROFILE_CONTINUOUS = 5, NAV_PROFILE_EXPLORE = 6 } NavigationExperimentalProfile_t;
+#define NAV_AUTO4_SESSION_MAX_MS 12000U
+#define NAV_AUTO4_ADVANCE_MAX_MS 3000U /* Per segment; never renews the global session. */
+#define NAV_AUTO4_MAX_SEGMENTS 4U
+#define NAV_AUTO4_MAX_EVASIONS 2U
+#define NAV_AUTO4_MAX_PATH_MM 500U
+/* More than one 20-mm retreat is required as useful net improvement. */
+#define NAV_AUTO4_MIN_USEFUL_MM (NAV_AUTO2_REVERSE_TARGET_MM + 5U)
+#define NAV_AUTO4_REVISIT_MM 30U
+#define NAV_AUTO4_REVISIT_DEG 15U
 #if NAV_TURN_LEFT
 #define NAV_TURN_LEFT_CPS (-MOTION_TURN_CPS)
 #define NAV_TURN_RIGHT_CPS MOTION_TURN_CPS
@@ -88,7 +97,8 @@ typedef enum {
     NAV_DETENIDO,
     NAV_RETROCEDER_ACOTADO,
     NAV_GIRAR_ACOTADO,
-    NAV_DETENER_Y_ESPERAR
+    NAV_DETENER_Y_ESPERAR,
+    NAV_EXPLORAR
 } NavigationState_t;
 
 typedef enum {
@@ -104,13 +114,25 @@ typedef enum {
     NAV_FINISH_EVASION_COMPLETED,
     NAV_FINISH_EVASION_NOT_AUTHORIZED,
     NAV_FINISH_OPERATOR_STOP,
-    NAV_FINISH_NO_PROGRESS
+    NAV_FINISH_NO_PROGRESS,
+    NAV_FINISH_BLOCKED_NO_SAFE_PATH,
+    NAV_FINISH_LIMIT_REACHED,
+    NAV_FINISH_SUPERVISION_LOST, /* Historical reason, never emitted by current LOCAL_EXPLORE. */
+    NAV_FINISH_INTERNAL_LINK_LOST
 } NavigationFinishReason_t;
 
 /* Begin solo al entrar efectivamente en AUTO; nunca al renovar consignas. */
 void Navigation_Begin(TickType_t entered_tick);
+/* Explicit nonce bound to the queued start; no bare profile-6 start API. */
+void Navigation_BeginExplore(TickType_t tick,uint32_t key);
+bool Navigation_ExploreRenew(uint32_t key,uint32_t sequence,uint32_t permit,TickType_t issued);
+bool Navigation_ExploreLinkQuery(uint32_t key,uint32_t query,uint32_t acknowledged,TickType_t issued);
+void Navigation_TurnTargets(int32_t *left,int32_t *right);
+int Navigation_FormatExplore(char *out,size_t capacity,uint32_t query,unsigned part);
 void Navigation_BeginProfile(TickType_t entered_tick, uint8_t profile);
 bool Navigation_TurnEnabled(void);
+/* Motor task only, outside its PI/PWM critical section. No acquisition or wait. */
+void Navigation_ObserveMotionSensors(void);
 /* Revoca sesion/permisos, sin escribir salidas; Stop del controlador lo invoca. */
 void Navigation_Cancel(void);
 /* Cancela solo la sesion indicada; una consigna vieja no cancela otra nueva. */
@@ -143,6 +165,14 @@ typedef struct {
     int64_t reverse_reference_left, reverse_reference_right;
 } NavigationStabilization_t;
 typedef struct {
+    uint8_t segments, completed_segments, attempts, evasions, block, permissions, refresh_pending;
+    uint32_t path_um, useful_um, forward_um, critical_faults;
+    NavigationStabilization_t resume_wait;
+} NavigationContinuousDiagnostics_t;
+/* block: 0 none, 1 front preventive, 2 rear space, 3 turn clearance,
+ * 4 no net improvement, 5 revisited pose, 6 attempts, 7 initial obstacle.
+ * permissions: forward=1, reverse=2, supervised turn=4; NOT lateral sensing. */
+typedef struct {
     uint32_t session_id, started_tick, elapsed_ms, phase_elapsed_ms;
     TickType_t observed_tick, decision_tick;
     NavigationState_t state, last_phase;
@@ -168,8 +198,10 @@ typedef struct {
         };
     };
     NavigationStabilization_t turn_wait;
+    uint8_t turn_left; /* Direction frozen with the session diagnostic reply. */
     uint8_t turn_flags; /* requested=1, published=2, applied=4, completed=8, measured=16 */
-    uint32_t turn_mdeg, turn_elapsed_ms;
+    uint32_t turn_mdeg, turn_elapsed_ms,turn_target_mdeg;
+    NavigationContinuousDiagnostics_t continuous;
 } NavigationDiagnostics_t;
 void Navigation_GetDiagnostics(NavigationDiagnostics_t *out);
 /* Solo TaskComms: copia bajo lock y formatea fuera. <=255 bytes con LF. */
@@ -177,6 +209,7 @@ int Navigation_FormatDiagnostics(char *out, size_t capacity, uint32_t query);
 /* Parte complementaria de la MISMA copia/Q tomada al formatear NAV. */
 int Navigation_FormatStabilization(char *out, size_t capacity, uint32_t query);
 int Navigation_FormatTurn(char *out, size_t capacity, uint32_t query);
+int Navigation_FormatContinuous(char *out,size_t capacity,uint32_t query);
 
 /* Barreras internas del backend: permiso de emision de un solo uso y sesion
  * vigente tambien durante el consumo/PI. No consultan colas ni esperan. */

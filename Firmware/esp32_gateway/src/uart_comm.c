@@ -4,6 +4,8 @@
 #include "stm32_mapping.h"
 #include "stm32_imu.h"
 #include "stm32_navigation.h"
+#include "stm32_exploration.h"
+#include "esp_random.h"
 #include "web_commands.h"
 
 #include <string.h>
@@ -150,12 +152,12 @@ void Uart_PollImuFusion(void)
 void Uart_PollNavigation(void)
 {
     if (!Stm32Navigation_PollDue()) { return; }
-    unsigned part=Stm32Navigation_TurnQueryDue() ? 2U : Stm32Navigation_WaitQueryDue() ? 1U : 0U;
+    unsigned part=Stm32Navigation_ContinuousQueryDue() ? 3U : Stm32Navigation_TurnQueryDue() ? 2U : Stm32Navigation_WaitQueryDue() ? 1U : 0U;
     Stm32Navigation_DeferPoll();
     if (!WebCommands_CanPollSensors() || !TxBegin()) { return; }
     if (WebCommands_CanPollSensors()) {
-        char message[24];uint32_t query=part==2U ? Stm32Navigation_BeginTurnQuery() : part==1U ? Stm32Navigation_BeginWaitQuery() : Stm32Navigation_BeginQuery();
-        int n=snprintf(message,sizeof message,part==2U ? "NAV Q=%" PRIu32 " S=2\n" : part==1U ? "NAV Q=%" PRIu32 " S=1\n" : "NAV Q=%" PRIu32 "\n",query);
+        char message[24];uint32_t query=part==3U ? Stm32Navigation_BeginContinuousQuery() : part==2U ? Stm32Navigation_BeginTurnQuery() : part==1U ? Stm32Navigation_BeginWaitQuery() : Stm32Navigation_BeginQuery();
+        int n=snprintf(message,sizeof message,part==3U ? "NAV Q=%" PRIu32 " S=3\n" : part==2U ? "NAV Q=%" PRIu32 " S=2\n" : part==1U ? "NAV Q=%" PRIu32 " S=1\n" : "NAV Q=%" PRIu32 "\n",query);
         if (n<=0 || (size_t)n>=sizeof message || !TxWrite(message)) { Stm32Navigation_QueryFailed(); }
     }
     xSemaphoreGive(s_tx_gate);
@@ -186,14 +188,25 @@ bool Uart_SendControl(UartControlCommand command)
         case UART_CONTROL_AUTO: message = "AUTO\n"; break;
         case UART_CONTROL_AUTO_TURN: message = "AUTO_TURN\n"; break;
         case UART_CONTROL_AUTO_EVADE: message = "AUTO_EVADE\n"; break;
+        case UART_CONTROL_AUTO_CONTINUOUS: message = "AUTO_CONTINUOUS\n"; break;
+        case UART_CONTROL_AUTO_EXPLORE: message="AUTO_EXPLORE"; break;
         default: return false;
     }
+    if(command!=UART_CONTROL_AUTO_EXPLORE)Stm32Exploration_Revoke();
     WebManual_ControlBegin(command);
     bool sent = false;
     if (TxBegin()) {
         const bool halted = !WebManual_TakeHalt() || TxWrite("DETENER\n");
         if ((halted || command == UART_CONTROL_STOP) &&
-            (!Uart_ControlIsAuto(command) || WebCommands_ClaimAuto(command))) sent = TxWrite(message);
+            (!Uart_ControlIsAuto(command) || WebCommands_ClaimAuto(command))) {
+            if(command==UART_CONTROL_AUTO_EXPLORE){
+                char owner[33],frame[40];uint32_t key;esp_fill_random(&key,sizeof key);if(!key)key=1;
+                int n=snprintf(frame,sizeof frame,"AUTO_EXPLORE K=%" PRIu32 "\n",key);
+                if(n>0 && (size_t)n<sizeof frame && WebCommands_ExploreOwner(owner)){
+                    sent=TxWrite(frame);if(sent)Stm32Exploration_Start(key,owner);
+                }
+            }else sent = TxWrite(message);
+        }
         xSemaphoreGive(s_tx_gate);
     }
     WebManual_ControlEnd();
@@ -202,6 +215,17 @@ bool Uart_SendControl(UartControlCommand command)
     return sent;
 }
 
+void Uart_PollExploration(void){
+    if(!Stm32Exploration_PollDue() || !WebCommands_CanPollSensors() || !TxBegin())return;
+    if(WebCommands_CanPollSensors()){
+        unsigned part;uint32_t key,ack,q=Stm32Exploration_Query(&part);char frame[96];
+        Stm32Exploration_LinkRequest(&key,&ack);
+        int n=part?snprintf(frame,sizeof frame,"EXPLORATION Q=%" PRIu32 " S=1\n",q):
+            snprintf(frame,sizeof frame,"EXPLORATION Q=%" PRIu32 " S=0 K=%" PRIu32 " A=%" PRIu32 "\n",q,key,ack);
+        if(n<=0 || (size_t)n>=sizeof frame || !TxWrite(frame))Stm32Exploration_Revoke();
+    }
+    xSemaphoreGive(s_tx_gate);
+}
 void Uart_SendReset(void) { (void)Uart_SendControl(UART_CONTROL_RESET); }
 void Uart_SendStop(void) { (void)Uart_SendControl(UART_CONTROL_STOP); }
 void Uart_SendManual(void) { (void)Uart_SendControl(UART_CONTROL_MANUAL); }
@@ -265,13 +289,14 @@ void Uart_ReadResponse(void) {
 
     int length = uart_read_bytes(UART_PORT, rx_buffer,
                                  UART_RX_BUFFER_SIZE - 1,
-                                 pdMS_TO_TICKS(100));
+                                 pdMS_TO_TICKS((Stm32Navigation_FastReceive() || Stm32Exploration_Fast()) ? 20U : 100U));
     if (length > 0) {
         Stm32Status_Feed(rx_buffer, (size_t)length);
         Stm32Sensors_Feed(rx_buffer, (size_t)length);
         Stm32Mapping_Feed(rx_buffer, (size_t)length);
         Stm32Imu_Feed(rx_buffer, (size_t)length);
         Stm32Navigation_Feed(rx_buffer, (size_t)length);
+        Stm32Exploration_Feed(rx_buffer,(size_t)length);
         rx_buffer[length] = '\0';
         printf("[STM32] %s", (char *)rx_buffer);
     }

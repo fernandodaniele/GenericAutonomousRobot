@@ -38,8 +38,8 @@ typedef struct {
     uint8_t state, reason;
 } TaskIMUCalibration_t;
 
-/* Relative, unwrapped degrees: left/CCW positive. No fusion or pose update.
- * The same 40 ms continuity criterion used by calibration applies to yaw. */
+/* Ángulo relativo acumulado en grados, positivo hacia la izquierda. El
+ * giro integrado conserva el límite de continuidad de 40 ms de calibración. */
 #define IMU_YAW_MAX_GAP_MS IMU_CAL_MAX_GAP_MS
 enum { IMU_YAW_PENDING=0, IMU_YAW_VALID=1, IMU_YAW_INVALID=2 };
 enum { IMU_YAW_NONE=0, IMU_YAW_CALIBRATION=1, IMU_YAW_I2C=2,
@@ -72,9 +72,9 @@ typedef struct {
     uint8_t state, reason, encoder_calibration;
 } TaskIMUFusion_t;
 
-/* One coherent queue copy. Only IMU_VALID authorizes current measurements.
- * sample_tick dates the last successful acquisition start; zero is legitimate.
- * Raw axes are sensor axes, not calibrated robot/chassis coordinates. */
+/* Copia coherente de la cola. IMU_VALID identifica una adquisición válida.
+ * sample_tick marca el inicio de la última adquisición exitosa y admite cero.
+ * Los ejes crudos corresponden al sensor. */
 typedef struct {
     MPU6050_t data;
     TickType_t sample_tick;

@@ -362,7 +362,7 @@ static esp_err_t WebServer_ExplorationWatch(httpd_req_t *r){
     if(r->content_len<9U || strncmp(body,"WATCH ",6U) || !ReadHeader(r,"X-Explore-Owner",owner,sizeof owner) ||
        !ExplorationDecimal(&p,&seq) || *p++!=' ' || !ExplorationDecimal(&p,&permit) || *p)
         return CommandReply(r,"400 Bad Request","{\"accepted\":false,\"error\":\"watch_format\"}",false);
-    bool accepted=false; /* Legacy WATCH is rejected; navigation has no periodic permits. */
+    bool accepted=false; /* WATCH se conserva para rechazar clientes del protocolo anterior. */
     return CommandReply(r,accepted?"202 Accepted":"412 Precondition Failed",accepted?"{\"accepted\":true,\"confirmed\":false}":"{\"accepted\":false,\"error\":\"expired_busy_or_not_owner\"}",false);
 }
 static esp_err_t WebServer_Exploration(httpd_req_t *r){

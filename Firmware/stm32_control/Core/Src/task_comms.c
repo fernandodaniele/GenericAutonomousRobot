@@ -176,9 +176,7 @@ static void TaskComms_SendFusion(DrvUart_t *uart, uint32_t query) {
     if(n>0 && (size_t)n<sizeof response)DrvUart_SendString(uart,response);
 }
 
-/**
- * @brief Procesa los mensajes recibidos desde el ESP32.
- */
+/* Lee un entero decimal sin desbordar el campo del protocolo. */
 static bool TaskComms_ExploreUnsigned(const char **cursor,uint32_t *v){
     const char *p=*cursor;*v=0;if(*p<'0'||*p>'9')return false;
     do{unsigned d=(unsigned)(*p-'0');if(*v>(UINT32_MAX-d)/10U)return false;*v=*v*10U+d;++p;}while(*p>='0'&&*p<='9');
@@ -331,7 +329,8 @@ static void TaskComms_ProcessMessage(DrvUart_t *uart, const char *message, TickT
 
 static void TaskComms_Run(void *parameters) {
     DrvUart_t *uart = (DrvUart_t *)parameters;
-    /* RxCallback timestamps frames with a FreeRTOS ISR API: scheduler must be running. */
+    /* Armar RX con el scheduler en marcha: la ISR fecha el primer byte
+     * de cada trama mediante una API de FreeRTOS. */
     DrvUart_StartReceive(uart);
     char message[UART_RX_BUFFER_SIZE];
     TickType_t last_wake_time = xTaskGetTickCount();

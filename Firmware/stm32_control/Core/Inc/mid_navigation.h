@@ -40,8 +40,8 @@
  * Safety y no detecta deslizamiento igual en ambas ruedas. */
 #define NAV_AUTO1_MAX_WHEEL_DIFFERENCE_MM 10U
 
-/* Legacy experiment for regression builds only. Operational AUTO-3 instead
- * requires an explicit one-shot AUTO_TURN/AUTO_EVADE request. */
+/* Opción para regresiones de perfiles históricos. AUTO-3 se inicia con
+ * una solicitud explícita AUTO_TURN o AUTO_EVADE. */
 #ifndef NAV_EXPERIMENTAL_TURN_ENABLED
 #define NAV_EXPERIMENTAL_TURN_ENABLED 0
 #endif
@@ -72,7 +72,8 @@
 #define NAV_AUTO3_SESSION_MAX_MS 4200U
 #define NAV_AUTO3_ISOLATED_MAX_MS 1400U /* data 200 + settle 200 + turn 800 + transitions 200 */
 #define NAV_AUTO3_MAX_WHEEL_DIFFERENCE_MM 3U /* center translation <=1.5 mm in the ideal model */
-/* Explicit one-shot requests only; ordinary AUTO always keeps AUTO-2F. */
+/* Perfiles de sesión solicitados explícitamente. AUTO selecciona AUTO-2F
+ * en la configuración de producción. */
 typedef enum { NAV_PROFILE_TURN = 3, NAV_PROFILE_EVASION = 4, NAV_PROFILE_CONTINUOUS = 5, NAV_PROFILE_EXPLORE = 6 } NavigationExperimentalProfile_t;
 #define NAV_AUTO4_SESSION_MAX_MS 12000U
 #define NAV_AUTO4_ADVANCE_MAX_MS 3000U /* Per segment; never renews the global session. */

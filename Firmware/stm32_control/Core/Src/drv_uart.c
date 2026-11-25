@@ -21,10 +21,10 @@ void DrvUart_StartReceive(DrvUart_t *uart) {
     (void)HAL_UART_Receive_IT(uart->huart, &uart->rx_byte, 1U);
 }
 
-/* Mailbox: STOP > DETENER > movimiento/modo > STATUS/PING > SENSORS > MAPPING > IMU.
- * No acumula movimientos; una consulta nunca desplaza una orden operativa.
- * ISR solo ensambla/fecha mensajes: no actua sobre FSM ni motores.
- */
+/* Buzón de una trama. STOP y DETENER superan a las órdenes de dirección,
+ * RESET, MANUAL y AUTO. Las demás tramas usan el nivel por defecto o el
+ * nivel inferior reservado a las consultas identificadas; hay desempates
+ * explícitos entre consultas. La ISR ensambla y fecha la trama. */
 void DrvUart_RxCallback(DrvUart_t *uart) {
     uint8_t byte = uart->rx_byte;
     if (byte == '\n') {

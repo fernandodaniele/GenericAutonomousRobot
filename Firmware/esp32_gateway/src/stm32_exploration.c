@@ -13,7 +13,7 @@ typedef struct {uint32_t v[30];char sectors[37];uint16_t cm[36];bool received,se
 static ExplorationSnapshot exploration,exploration_staged;
 static uint32_t exploration_revoked;
 #define EXPLORE_LINK_MS 3000U /* Diagnostic projection only; STM32 owns the sole link watchdog. */
-/* Volatile correlation only, not an expiring authorization or lease manager. */
+/* Datos volátiles para correlacionar la sesión y confirmar el enlace. */
 static struct {char owner[33];uint32_t key,ack,session,start;bool active;} exploration_owner;
 static char exploration_line[256];static size_t exploration_length;static bool exploration_discard;
 static uint32_t exploration_counter,exploration_query;static unsigned exploration_part;

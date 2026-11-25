@@ -5,9 +5,9 @@
 #include <stdint.h>
 #include "task_sensores.h"
 
-/* Criterios temporales existentes, compartidos sin duplicar valores. */
+/* Antigüedad máxima de la instantánea de sensores. */
 #define TASK_SAFETY_SENSOR_TIMEOUT_MS 100U
-/* PROVISIONAL: solo desarrollo/validacion sin potencia de motores. */
+/* Antigüedad máxima de cada captura ultrasónica en supervisión y rearme. */
 #define TASK_SAFETY_ULTRASOUND_MAX_AGE_MS 200U
 
 /**

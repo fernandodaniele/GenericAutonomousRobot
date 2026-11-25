@@ -13,9 +13,8 @@
 #include "gpio.h"
 #include <stdint.h>
 
-/* B4: techo PROVISIONAL comun. Ajustar solo tras identificar/validar motores.
- * No compensa VM ni representa una especificacion electrica del motor.
- */
+/* Tope común de ciclo útil. No compensa la tensión de alimentación ni
+ * representa por sí solo un límite eléctrico del motor. */
 #ifndef MOTOR_PWM_MAX_PERCENT
 #define MOTOR_PWM_MAX_PERCENT 40U
 #endif

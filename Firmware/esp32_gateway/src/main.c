@@ -87,8 +87,8 @@ void app_main(void)
         else if(Stm32Exploration_PollDue())Uart_PollExploration();
         else if (Stm32Sensors_PollDue()) Uart_PollSensors();
         else if (Stm32Imu_CalibrationPending()) (void)Uart_SendImuCalibration();
-        /* A 100-ms UART read can keep 100-ms mapping continuously due.
-         * Service a due IMU poll first so mapping cannot starve diagnostics. */
+        /* Atender IMU y navegación primero: la consulta frecuente de mapa
+         * puede quedar lista en cada vuelta si la lectura UART agota su plazo. */
         else if (Stm32Imu_PollDue()) Uart_PollImu();
         else if (Stm32Imu_FusionPollDue()) Uart_PollImuFusion();
         else if (Stm32Navigation_PollDue()) Uart_PollNavigation();

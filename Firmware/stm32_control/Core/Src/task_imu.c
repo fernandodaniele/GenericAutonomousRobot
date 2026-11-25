@@ -14,19 +14,19 @@
 #define TASK_IMU_STACK_SIZE 512U
 #define TASK_IMU_PRIORITY (tskIDLE_PRIORITY + 4U)
 
-// Conserva la última medición válida de la IMU.
+/* Último estado de la IMU, incluidos fallos de adquisición. */
 static QueueHandle_t imu_data_queue = NULL;
 static uint32_t calibration_request, last_calibration_request;
 static TickType_t calibration_issued;
-/* Owned exclusively by TaskIMU; fixed storage, no sample history or new task. */
+/* Acumuladores de calibración de uso exclusivo de TaskIMU. */
 static struct {
     int64_t squares[3];
     int16_t gyro_min[3], gyro_max[3], accel_min[3], accel_max[3];
     TickType_t requested, first, last;
 } calibration_work;
 
-/* TaskIMU owns these values. One-sample delay allows the odometry history to
- * bracket the IMU acquisition tick without extrapolating a current pose. */
+/* Estado temporal exclusivo de TaskIMU. El desfase de una muestra permite
+ * interpolar la pose en el tick de adquisición de la IMU. */
 static struct {
     double previous_rate, pending_degrees, comparison_degrees;
     TickType_t pending_tick;

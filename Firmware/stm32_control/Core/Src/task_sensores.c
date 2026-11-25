@@ -128,7 +128,8 @@ static void vTaskSensores(void *pvParameters)
             HAL_StatusTypeDef started = (active_sensor == ULTRASOUND_FRONT)
                                         ? HCSR04_Trigger() : HCSR04_Rear_Trigger();
 
-            /* Referencia posterior al TRIG: nunca recuperar slots atrasados. */
+            /* Medir la separación desde el fin del intento de disparo, sin
+             * compensar retrasos con disparos acumulados. */
             last_attempt_end = xTaskGetTickCount();
             has_attempt = 1U;
             next_sensor = (active_sensor == ULTRASOUND_FRONT)

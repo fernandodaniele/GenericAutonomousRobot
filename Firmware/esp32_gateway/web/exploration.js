@@ -44,8 +44,8 @@
     } catch (e) { text(`${e.message}. STOP remoto no confirmado; utilizar el corte fisico de alimentacion si es necesario.`); }
     finally { busy = false; }
   });
-  /* No WATCH or visibility handlers. ESP32 owns continuity after confirmation;
-   * closing this page or losing Wi-Fi neither renews nor cancels the session. */
+  /* El navegador observa la sesión. STM32 vigila el enlace interno con ESP32
+   * incluso si se cierra la página o se pierde el Wi-Fi del teléfono. */
   function valid(s) {
     return s && [s.session_pending,s.session_active,s.session_started,s.session_cancelled,s.stop_received,s.link_connected,s.link_confirmed,s.link_monitoring,s.renewals_required,s.control_ready,s.received, s.connected, s.available, s.historical, s.sectors_available].every(v => typeof v === "boolean") &&
       [s.age_ms,s.session_id,s.started_tick,s.state_code,s.action_code,s.challenge,s.segments,s.turns,s.retreats,s.selected_sector,s.candidates,s.repeated,s.lease_ms,s.sequence,s.critical_faults,s.stabilization_state,s.stabilization_observations,s.stabilization_ms].every(v => Number.isSafeInteger(v) && v >= 0) &&

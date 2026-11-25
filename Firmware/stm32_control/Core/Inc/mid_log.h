@@ -1,18 +1,11 @@
 /**
  * @file    mid_log.h
- * @brief   Logger de desarrollo por USB CDC (Virtual COM Port) con timestamp del RTC.
+ * @brief Registro síncrono de mensajes y persistencia diferida de eventos.
  *
- * Formato:  [AAAA-MM-DD HH:MM:SS][INF] mensaje\r\n
- * Si el RTC no responde:  [boot+1234ms][INF] mensaje\r\n
- *
- * - Las líneas se descartan si el host no tiene el puerto abierto (DTR).
- * - `Log_Write` serializa el acceso al RTC y al CDC con un mutex de FreeRTOS,
- *   así que puede llamarse desde varias tareas.
- *
- * Uso:
- *   LOG_INFO("SD init OK: %s", tipo);
- *   LOG_WARN("distancia fuera de rango: %u mm", d);
- *   LOG_ERROR("SD no responde, error %d", err);
+ * Log_Write escribe en GAR.LOG si está disponible y en USB CDC si hay DTR.
+ * Sin hora válida del RTC, el mensaje se fecha con el tiempo desde el arranque.
+ * Log_EventPublish encola eventos que LogEvents procesa para EVENTOS.CSV.
+ * Ambos caminos comparten el mutex que protege RTC y FatFs.
  */
 
 #ifndef MID_LOG_H
@@ -30,13 +23,13 @@
 
 /**
  * @brief  Inicializa el logger. Llamar una vez desde main() antes del scheduler.
- * @param  rtc  DS1302 ya inicializado (para el timestamp). NULL = sin timestamp
- *              (se usa el tick de arranque en ms).
+ * @param rtc DS1302 inicializado. NULL implica tiempo desde el arranque
+ *        para mensajes y fecha vacía para eventos.
  */
 void Log_Init(Ds1302_t *rtc);
 
 /**
- * @brief  Función interna — usar las macros LOG_* en lugar de llamarla directo.
+ * @brief Escribe desde contexto de tarea. Puede bloquear por mutex o E/S.
  */
 void Log_Write(const char *level, const char *fmt, ...);
 
@@ -49,7 +42,7 @@ void Log_Write(const char *level, const char *fmt, ...);
  *
  * @return pdPASS si el evento fue encolado; pdFAIL si la cola no esta
  *         disponible o esta llena. Nunca espera por espacio en la cola.
- * @note No llamar desde ISR; no se incluye variante FromISR en D2.1.
+ * @note No llamar desde ISR.
  */
 BaseType_t Log_EventPublish(uint16_t code, uint32_t data1,
                             uint32_t data2, uint32_t data3);

@@ -1,10 +1,9 @@
 /**
  * @file    mid_log.c
- * @brief   Logger con timestamp del RTC DS1302.
+ * @brief Mensajes síncronos por microSD y USB CDC, y eventos por cola.
  *
- * Cada línea va a dos destinos, serializados por un mutex:
- *   1) archivo "0:/GAR.LOG" en la SD (black box) — siempre, aunque no haya PC.
- *   2) USB CDC — solo si el host tiene el puerto abierto (DTR).
+ * LogEvents consume la cola y mantiene EVENTOS.CSV separado de GAR.LOG.
+ * El mutex compartido serializa los accesos al RTC y al volumen FatFs.
  */
 
 #include "mid_log.h"
@@ -44,7 +43,6 @@ typedef struct
     uint32_t data3;
 } LogEvent_t;
 
-/* Cola estatica: no reserva heap ni crea una tarea consumidora en D2.1. */
 static StaticQueue_t s_event_queue_cb;
 static uint8_t s_event_queue_storage[LOG_EVENT_QUEUE_LENGTH * sizeof(LogEvent_t)];
 static QueueHandle_t s_event_queue = NULL;

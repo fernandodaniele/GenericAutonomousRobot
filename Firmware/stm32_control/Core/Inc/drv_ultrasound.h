@@ -4,14 +4,10 @@
 #include "stm32f4xx_hal.h"
 
 /*
- * Driver para sensor de distancia ultrasónico HC-SR04 — STM32F407VG @ 168 MHz.
- *
- * Hardware:
- *   TRIG: PC9  — salida GPIO push-pull
- *   ECHO: PC6  — TIM3 CH1 (captura de entrada, ambos flancos, DMA, AF2)
- *
- * TIM3 (APB1, 84 MHz) configurado a 1 MHz con PSC=83.
- * DMA1 Stream4 Channel5 captura dos timestamps de 16 bits (flanco ascendente y descendente).
+ * Driver de los dos HC-SR04 en STM32F407VG.
+ * Frontal: TRIG PC9, ECHO PC6 (TIM3 CH1, DMA1 Stream 4, canal 5).
+ * Trasero: TRIG PC5, ECHO PC8 (TIM3 CH3, DMA1 Stream 7, canal 5).
+ * TIM3 a 1 MHz (PSC=83). Cada canal DMA guarda dos tiempos de 16 bits.
  * El pulso de TRIG (10 µs) se genera con el contador DWT — sin timer adicional.
  *
  * NOTA: HAL_TIM_IC_MspInit y HAL_TIM_IC_CaptureCallback están definidos en

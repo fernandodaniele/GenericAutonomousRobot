@@ -31,7 +31,7 @@ function mapToCanvas(grid,x,y,width,height) {
   return [(x-grid.origin_x_mm)/(grid.width*grid.resolution_mm)*width,
     height-(y-grid.origin_y_mm)/(grid.height*grid.resolution_mm)*height];
 }
-// Viewport only: never changes the grid, pose or trajectory received from STM32.
+// El encuadre transforma solo la vista, sin alterar la grilla, la pose ni la trayectoria.
 function mapView(grid, zoom, center) {
   return {...grid, width:grid.width/zoom, height:grid.height/zoom,
     origin_x_mm:center[0]-grid.width*grid.resolution_mm/(2*zoom),
@@ -96,7 +96,7 @@ function createMapPanel(doc,request,clock,delay,cancelDelay,Controller) {
       const [x,y]=point(g.origin_x_mm+col*g.resolution_mm,g.origin_y_mm+(row+1)*g.resolution_mm);
       if(x+cell<0||y+cell<0||x>w||y>h)continue;
       const state=Number(g.cells[row*g.width+col]);
-      // Hidden possible occupancy returns to unknown visually, never to free.
+      // La ocupación posible oculta se dibuja como desconocida.
       ctx.fillStyle=colors[state===1?1:0];ctx.fillRect(x,y,cell+.2,cell+.2);
       if(state===2 && showOccupancy) {ctx.fillStyle=colors[2];ctx.fillRect(x,y,cell+.2,cell+.2);}
     }
@@ -121,7 +121,7 @@ function createMapPanel(doc,request,clock,delay,cancelDelay,Controller) {
       ctx.save();ctx.translate(x,y);ctx.rotate(-p.theta_mrad/1000);
       const markerScale=Math.max(1,w/(canvas.clientWidth||w));
       ctx.scale(markerScale,markerScale); // Keep the symbol legible on a narrow phone canvas.
-      // Recognizable body + wheels + heading; marker is symbolic, not a footprint.
+      // El marcador indica pose y orientación sin representar la huella a escala.
       ctx.fillStyle="#8edaff26";ctx.beginPath();ctx.arc(0,0,24,0,Math.PI*2);ctx.fill();
       ctx.fillStyle="#b8ddf3";ctx.fillRect(-12,-16,19,5);ctx.fillRect(-12,11,19,5);
       ctx.fillStyle="#80c5ff";ctx.fillRect(-13,-10,25,20);

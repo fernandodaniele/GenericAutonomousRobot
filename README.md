@@ -28,7 +28,6 @@ La [arquitectura del sistema](Docs/ARCHITECTURE.md) describe tareas, interfaces,
 | [Firmware/esp32_gateway](Firmware/esp32_gateway) | Firmware de comunicaciones, recursos web embebidos y pruebas |
 | [Docs](Docs) | Arquitectura, convenciones y documentos de etapas |
 | [Hardware](Hardware) | Lista básica de componentes |
-| [Mechanical](Mechanical) y [Analysis](Analysis) | Directorios con README de reserva |
 
 ## Compilación y pruebas
 
@@ -39,7 +38,7 @@ make -C Firmware/stm32_control -j4
 pio run -d Firmware/esp32_gateway -e esp32
 ```
 
-En Windows se puede usar `mingw32-make` como ejecutable de GNU Make. El entorno ESP32 fija la plataforma `espressif32 @ 6.12.0` y usa la configuración ESP-IDF 5.5.0 del proyecto.
+En Windows se puede usar `mingw32-make`. El entorno ESP32 fija la plataforma `espressif32 @ 6.12.0` y usa ESP-IDF 5.5.0. PlatformIO genera `firmware.elf` y `firmware.bin` en `Firmware/esp32_gateway/.pio/build/esp32/`. La aplicación debe caber en la partición factory de 1 MiB.
 
 Las siguientes pruebas locales usan GCC nativo y Python 3 para Safety y arranque UART, y Node.js para JavaScript:
 

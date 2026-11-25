@@ -432,8 +432,8 @@ STM32:
 - `Core/Inc/mid_local_exploration.h` y `Core/Src/mid_local_exploration.c`:
   constantes, evidencia sectorial, inflación, candidatos y visitas.
 - `Core/Inc/mid_navigation.h` y `Core/Src/mid_navigation.c`: perfil, estado,
-  autorización con vencimiento, selección y ejecución por las fases existentes,
-  objetivos angulares, diagnóstico y paquetes EXPL/EXPS.
+  autorización única por sesión, vigilancia independiente del enlace, selección
+  y ejecución por fases, objetivos angulares, diagnóstico y paquetes EXPL/EXPS.
 - `Core/Inc/task_control_robot.h` y `Core/Src/task_control_robot.c`: solicitud
   explícita con nonce transportado por la cola FSM existente.
 - `Core/Src/task_comms.c`: gramática cerrada de inicio y consultas diagnósticas con confirmación; rechazo de renovaciones antiguas.

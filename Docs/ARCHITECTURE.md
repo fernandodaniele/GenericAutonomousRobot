@@ -4,6 +4,8 @@ Referencia del firmware consolidado en `Grupo-1`, commit `132dcbb`. Los document
 
 ## Responsabilidades
 
+El [archivo Draw.io](DiagramaRobot.drawio) es un boceto de diseño. El esquema y la tabla siguientes describen la arquitectura implementada.
+
 La **STM32F407** adquiere los sensores, estima la pose, arbitra los modos, ejecuta Safety y aplica consignas a los motores. La **ESP32 clásica** gestiona el enlace UART, el punto de acceso, la API HTTP y el mapa. El navegador solicita operaciones y muestra telemetría.
 
 ```mermaid
@@ -83,9 +85,17 @@ El MPU6050 usa **I²C1, PB6/SCL y PB9/SDA**. La calibración manual del girósco
 
 ## Interfaz y mapa
 
-La ESP32 ofrece SoftAP WPA2 y un servidor HTTP local con recursos embebidos y purga LRU de sesiones. El panel permite iniciar exploración, enviar STOP, solicitar rearme y operar el control manual con pulsación sostenida. También muestra sensores y permite calibrar manualmente el giroscopio.
+La ESP32 ofrece SoftAP WPA2-PSK y un servidor HTTP local con purga LRU de sesiones. El AP usa el SSID `GenericRobot`, canal 1, DHCP y hasta dos clientes. La clave de laboratorio está en [wifi_ap.c](../Firmware/esp32_gateway/src/wifi_ap.c) y la consola informa la IP del AP, normalmente `192.168.4.1`. El AP y el servidor se intentan iniciar una vez por arranque. El panel reúne exploración, STOP, rearme, control manual de pulsación sostenida, sensores y calibración manual del giroscopio.
 
-`/health` indica disponibilidad del servidor. `/api/status` informa el estado de STM32. `/api/sensors`, `/api/imu`, `/api/map`, `/api/navigation` y `/api/exploration` exponen sus diagnósticos. Las órdenes ingresan mediante POST con operaciones admitidas. La aceptación HTTP, la aplicación de una consigna y el movimiento medido son estados distintos.
+Los recursos web se embeben mediante [PlatformIO](../Firmware/esp32_gateway/platformio.ini) y [CMake](../Firmware/esp32_gateway/src/CMakeLists.txt). El servidor usa las longitudes de los recursos embebidos y prescinde de una partición de sistema de archivos.
+
+`/health` comprueba el servidor ESP32. `/api/sensors`, `/api/imu`, `/api/map`, `/api/navigation` y `/api/exploration` exponen sus diagnósticos. `GET /api/status` informa el último STATUS válido de STM32:
+
+- `valid` indica que se recibió al menos un STATUS válido. `connected` exige que tenga menos de 3000 ms. La consulta UART se programa cada 1000 ms nominales.
+- `state`, `faults`, `stop` y `age_ms` son `null` antes de la primera respuesta válida. Al vencer la vigencia se conserva el último estado como dato histórico. La máscara usa 1 para caída, 2 para obstáculo, 4 para sensor y 8 para emergencia.
+- `stop` refleja el bloqueo consultado en Safety. `age_ms` mide desde la recepción en ESP32. STATUS carece de identificador de consulta y STM32 lee sus campos por separado.
+
+`POST /api/command` admite nombres exactos de comandos, exige `Content-Type: text/plain`, `Origin` igual a `http://<Host>` y un `X-Request-ID` de 32 caracteres hexadecimales minúsculos. Ese identificador permite deduplicar dentro de un historial volátil y acotado. STOP puede reemplazar una orden pendiente de despacho. HTTP 202 confirma aceptación por ESP32. El comprobante distingue transmisión UART y observación posterior por STATUS, que por sí sola no prueba causalidad ni movimiento. El diseño del panel y su verificación están en la [guía del dashboard](../Firmware/esp32_gateway/Tests/w2/README_dashboard.md).
 
 El mapa en ESP32 combina poses y ecos válidos en una grilla de **80×80 celdas de 50 mm**, con zonas desconocidas, libres observadas y de ocupación posible. Usa una trayectoria acotada y representa la incertidumbre de los ecos. Zoom, centrado y visibilidad de la capa de ocupación afectan solo la vista. El panel señala pose inválida, datos históricos y geometría provisional. Es un mapa relativo de diagnóstico, sin SLAM, corrección de deriva ni cobertura garantizada.
 

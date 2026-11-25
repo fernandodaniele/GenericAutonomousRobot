@@ -103,8 +103,8 @@ Los 2 s no garantizan parada con CPU/scheduler detenido. STOP web depende del
 enlace y no constituye una parada de emergencia física certificada.
 
 Los ultrasonidos no cubren los laterales ni garantizan frenado a 300 mm.
-No se deducen desplazamientos a partir de cps o duración. W7, el mapa 2D,
-permanece pendiente: ver `W7_REQUISITOS_MAPEO.md`.
+En W6 todavía faltaba el mapa 2D. La [documentación de W7](W7_LOCALIZACION_MAPEO.md)
+recoge la implementación posterior, la asociación temporal de los ecos y sus límites.
 
 ## Verificación reproducible
 

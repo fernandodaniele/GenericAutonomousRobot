@@ -123,10 +123,10 @@ los relojes de placas distintas. Una respuesta IMU normal no rejuvenece una
 respuesta de fusión antigua. Una pérdida de red no recalibra ni reinicia el
 filtro; solo invalida su presentación hasta recibir datos recientes.
 
-El dashboard distingue orientación IMU-3 más reciente y el grupo de tres
-ángulos de fusión del mismo instante. No deben restarse tarjetas con ticks
-diferentes. La geometría medida (25,4 mm, 149,2 mm, CPR 1435,2/1421,6) queda
-intacta y mantiene su identificación provisional en el firmware.
+El panel vigente muestra la calibración manual y su resultado. Para comparar
+ángulos, consultar el grupo temporal común de `fusion` en `/api/imu`. La
+orientación de IMU-3 más reciente puede corresponder a otro tick. La geometría
+de los encoders conserva su identificación provisional.
 
 ## Validación física posterior sin instrumentos angulares externos
 

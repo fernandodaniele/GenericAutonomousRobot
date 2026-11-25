@@ -18,11 +18,11 @@ odometrica, formato UART y prioridad inferior de NAV. No modifica expectativas
 anteriores ni agrega la pausa propuesta. Ver
 [contrato AUTO-2D](../../../../Docs/AUTO2D_DIAGNOSTICO_NAVEGACION.md).
 
-## Perfil operativo AUTO-2 (actual)
+## Perfil operativo AUTO-2F
 
 Ver [AUTO2_REACCION_OBSTACULOS.md](../../../../Docs/AUTO2_REACCION_OBSTACULOS.md).
 `NAV_AUTO2_ENABLED=1` es el valor predeterminado: conserva avance 100 mm/2 s,
-agrega reaccion preventiva y retroceso 20 mm/300 ms, con ventana global 3 s.
+agrega reacción preventiva y retroceso de hasta 20 mm u 800 ms, con ventana global de 3 s.
 Sin cobertura lateral, el giro sigue deshabilitado por defecto. Las causas
 de finalizacion distinguen la separacion completada de un giro no autorizado.
 
@@ -44,12 +44,13 @@ La variante AUTO-1 de `run.bat` ejecuta `test_navigation_auto1.c`; se conserva e
 conjunto anterior completo con `NAV_AUTO1_ODOMETRY=0` y los dos conjuntos de
 giro experimental anteriores (55 por sentido). No se eliminan casos ni se
 relajan barreras para habilitar la nueva maniobra. Solo esas compilaciones
-host de regresion seleccionan el perfil anterior; el ELF normal usa AUTO-1.
+host de regresión seleccionan esos perfiles anteriores. La configuración de producción usa AUTO-2F.
 
 ---
 
 Base B7.7: rama G1-add/NavegacionAutonoma, HEAD bc00bbd.
-Este README describe el comportamiento permanente y las pruebas actuales.
+Las siguientes secciones describen el comportamiento y las pruebas de esa etapa.
+Para ejecutar la suite actual, usar la sección de comandos y el runner vigente.
 Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia.
 
 ## Comportamiento permanente
@@ -224,7 +225,8 @@ permanente de falla de encoder ni se cambia Safety.
 
 ## Pruebas permanentes reproducibles
 
-Desde la raiz, con GCC nativo/MinGW disponible:
+Desde la raíz, con GCC nativo/MinGW y Python 3 disponible como `python` en el
+PATH. El runner de Safety usa Python para comprobar la secuencia de arranque UART:
 
 ~~~powershell
 & .\Firmware\stm32_control\Tests\safety_b11\run.bat 'C:\MinGW\bin\gcc.exe'

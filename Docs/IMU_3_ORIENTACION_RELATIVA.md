@@ -142,11 +142,9 @@ informado por STM32; `valid` exige además comunicación STATUS e IMU vigente.
 `requires_calibration` se refiere al integrador de STM32, no a un fallo de Wi-Fi.
 Las edades incluyen RTT conservador y tiempo transcurrido en ESP32, sin
 restar relojes de placas diferentes. No se muestran valores antiguos como
-orientaciones actuales y el navegador sigue incrementando las edades.
-
-El dashboard presenta orientación acumulada, referencia, deltas comunes y su
-diferencia por separado. No agrega botones de movimiento, ni modifica cruceta,
-calibración web, AUTO o mapa.
+orientaciones actuales. El panel vigente muestra el estado de la IMU y la
+calibración manual. Consultar orientación acumulada, referencia, deltas comunes
+y su diferencia en `/api/imu`.
 
 ## Validación física posterior, supervisada
 

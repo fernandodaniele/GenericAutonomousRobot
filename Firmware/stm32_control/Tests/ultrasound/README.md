@@ -35,6 +35,6 @@ TaskSensores. Esta suite verifica el driver; no simula esa tarea ni certifica
 tiempos de ECHO, IRQ, DMA o frenado fisicos. El doble avanza DWT al leerlo para
 que el pulso existente pueda ejecutarse en host; no mide su duracion real.
 
-Las pruebas de seguridad se conservan por separado en Tests/safety_b11/.
-Ejecutarlas con su propio run.bat: deben seguir pasando los 99 casos.
+Las pruebas de seguridad se ejecutan por separado con el runner de
+[Safety y navegación](../safety_b11/README.md).
 No se autoriza movimiento fisico por el resultado de estas pruebas.

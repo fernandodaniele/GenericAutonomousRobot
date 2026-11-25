@@ -1,9 +1,9 @@
 # W7 — Localización relativa y mapa de ocupación 2D
 
-Actualización W7.4: este documento conserva el punto de control W7 original.
-La geometría nominal, las tres clases de calibración y el protocolo POSE v2
-actuales se describen en [W7_4_GEOMETRIA_CALIBRACION.md](W7_4_GEOMETRIA_CALIBRACION.md).
-Los CPR continúan pendientes; no se habilitan métricas con CPR desconocido.
+Este documento conserva el diseño y la evidencia de la entrega W7 original.
+La configuración consolidada permite pose métrica y mapa aproximados con
+geometría **provisional**. Los parámetros vigentes están en [Arquitectura](ARCHITECTURE.md#sensores-y-estimación).
+[La guía de calibración](W7_4_GEOMETRIA_CALIBRACION.md) describe cómo medirlos y el protocolo POSE v2.
 
 ## Estado y alcance
 
@@ -12,13 +12,13 @@ No se grabaron placas ni se realizaron movimientos o validaciones físicas.
 El mapa es informativo y no interviene en Safety, control manual, AUTO ni
 planificación de rutas. No hay SLAM, cierre de bucle ni referencia absoluta.
 
-**La configuración de producción está NO CALIBRADA.** Se publican conteos
-reales, pero posición métrica, proyección y ocupación permanecen no disponibles
+**En la entrega W7 original la configuración estaba incompleta.** Se publicaban conteos
+reales, pero posición métrica, proyección y ocupación permanecían no disponibles
 hasta incorporar medidas físicas. La grilla inicial desconocida no es un mapa
 simulado; no se dibuja un robot en un origen ficticio. La calibración sintética
 de las pruebas no se utiliza en el firmware.
 
-## Datos físicos encontrados y pendientes
+## Datos físicos al inicio de W7
 
 | Parámetro | Evidencia y decisión |
 | --- | --- |
@@ -31,15 +31,11 @@ de las pruebas no se utiliza en el firmware.
 | Haz | Configurar una semiamplitud conservadora de incertidumbre angular a partir de información verificable y ensayo posterior. No se inventa una apertura calibrada. |
 | MPU6050 | Existe `TaskIMU` con cola y lecturas cada 20 ms, pero sin timestamp de pose ni rumbo absoluto validado. No se incorpora a la odometría W7 ni se afirma que esté calibrado. |
 
-Completar exclusivamente los valores medidos de `Core/Inc/odometry_config.h`:
-`ODOM_LEFT_RADIUS_M`, `ODOM_RIGHT_RADIUS_M`, `ODOM_LEFT_WHEEL_CPR`,
-`ODOM_RIGHT_WHEEL_CPR`, `ODOM_TRACK_M`. Están en cero y
-`ODOM_CALIBRATION_CONFIRMED=0`. Habilitar la confirmación solo tras revisar las
-medidas. Para proyección completar offsets/yaws, `ODOM_BEAM_HALF_ANGLE_RAD` y
-`ODOM_SENSOR_GEOMETRY_CONFIRMED`; esta confirmación es independiente de la
-calibración de ruedas. No hay configuración remota ni un botón web que eluda
-estas condiciones. Aplicar valores requiere reconstruir y, con autorización
-posterior, programar firmware.
+La configuración y el procedimiento de medición se centralizan en la
+[guía de geometría](W7_4_GEOMETRIA_CALIBRACION.md). La validación del montaje debe
+considerar altura y orientación de los sensores, huella, volumen barrido en
+giros y zonas ciegas. Las consignas en cuentas/s no constituyen una medición
+de velocidad lineal.
 
 ## Modelo de odometría STM32
 

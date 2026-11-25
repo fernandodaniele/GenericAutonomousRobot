@@ -2,21 +2,20 @@
 
 ## Configuración única
 
-Archivo: `Firmware/stm32_control/Core/Inc/odometry_config.h`.
-Los cambios son de estimación/monitoreo, no de Safety, actuación ni navegación.
-La grilla W7 sigue en 80×80 celdas de 50 mm, con el mismo modelo conservador
-de ocupación, historial temporal, límites numéricos y trayectoria acotada.
+La fuente de los parámetros operativos es [odometry_config.h](../Firmware/stm32_control/Core/Inc/odometry_config.h).
+[Arquitectura](ARCHITECTURE.md#sensores-y-estimación) resume la geometría vigente.
+La tabla siguiente describe los parámetros y cómo comprobarlos en el prototipo.
 
-| Parámetro | Configuración | Unidad / significado | Cómo corregir posteriormente |
+| Parámetro | Configuración consolidada | Unidad / significado | Cómo comprobar o ajustar |
 | --- | --- | --- | --- |
 | `ODOM_CHASSIS_LENGTH_M` / `WIDTH_M` | 0,170 / 0,170 | m, cuerpo nominal 170×170 mm; informativo | Medir chasis; no es una envolvente de colisión validada. |
-| `ODOM_LEFT_DIAMETER_M` / `RIGHT_DIAMETER_M` | 0,0265 / 0,0265 | m, diámetros nominales de cada rueda | Medir cada diámetro efectivo o distancia de rodadura bajo carga. |
-| `ODOM_LEFT_RADIUS_M` / `RIGHT_RADIUS_M` | 0,01325 / 0,01325, derivados | m, radio = diámetro / 2 | Editar el diámetro, no duplicar el ajuste en el radio. |
-| `ODOM_TRACK_M` | 0,150 | m, separación estimada entre centros de ruedas | Medir separación y, en un ensayo autorizado, base efectiva. |
+| `ODOM_LEFT_DIAMETER_M` / `RIGHT_DIAMETER_M` | 0,0254 / 0,0254 | m, diámetros efectivos provisionales de cada rueda | Medir cada diámetro efectivo o distancia de rodadura bajo carga. |
+| `ODOM_LEFT_RADIUS_M` / `RIGHT_RADIUS_M` | 0,0127 / 0,0127, derivados | m, radio = diámetro / 2 | Editar el diámetro, no duplicar el ajuste en el radio. |
+| `ODOM_TRACK_M` | 0,1492 | m, separación efectiva provisional entre centros de ruedas | Medir separación y, en un ensayo autorizado, base efectiva. |
 | `ODOM_FRONT_X_M` / `Y_M` | +0,085 / 0 | m, centro acústico frontal respecto al punto medio de ruedas | Medir montaje real. |
 | `ODOM_REAR_X_M` / `Y_M` | −0,085 / 0 | m, centro acústico trasero | Medir montaje real. |
 | `ODOM_FRONT_YAW_RAD` / `REAR_YAW_RAD` | 0 / π | rad, 0° / 180° nominales | Medir alineación física. |
-| `ODOM_LEFT_WHEEL_CPR` / `RIGHT_WHEEL_CPR` | **0 / 0** | cuentas efectivas por vuelta de rueda; desconocidas | Medir por separado con el procedimiento de abajo. |
+| `ODOM_LEFT_WHEEL_CPR` / `RIGHT_WHEEL_CPR` | **1435,2 / 1421,6** | cuentas efectivas por vuelta de rueda, izquierda/derecha | Medir por separado con el procedimiento de abajo. |
 | `ODOM_BEAM_HALF_ANGLE_RAD` | π/4 ≈ 0,785398 | rad, semiamplitud **provisional de incertidumbre del modelo** | Revisar con especificación y ensayo de ecos antes de confirmarla. |
 | `ODOM_CALIBRATION_CONFIRMED` | 0 | Confirmación física de ruedas, CPR y base | Cambiar a 1 solo cuando esas medidas hayan sido validadas. |
 | `ODOM_SENSOR_GEOMETRY_CONFIRMED` | 0 | Confirmación física de montaje e incertidumbre | Cambiar a 1 solo después de validar esos parámetros. |
@@ -37,7 +36,7 @@ El `ROBOT_WHEEL_BASE=200` preexistente en `mid_kinematics.h` no se usa para W7;
 no se modifica esa capa histórica ni se cambia el control validado. Los valores
 que realmente usa el mapa proceden únicamente de `odometry_config.h`.
 
-## CPR: evidencia disponible y dato pendiente
+## CPR efectivo y estado de calibración
 
 `Hardware/README.md` identifica dos motores **N20**, sin modelo exacto,
 PPR/CPR ni relación de reducción. Ese nombre no determina una resolución.
@@ -49,14 +48,13 @@ no cuentas por revolución.
 `drv_encoder.c` obtiene deltas modulares firmados. W7 acumula esos mismos
 deltas cada 10 ms, sin otra lectura de los timers. Si se conocieran la resolución
 física y la reducción, habría que comprobar la convención PPR/CPR del fabricante
-antes de aplicar el factor de cuadratura. Aquí esa información no existe y
-**no se inventa un CPR nominal ni se asume que ambos motores son iguales**.
+antes de aplicar el factor de cuadratura. Medir cuentas por vuelta de rueda
+con TIM1/TIM2 evita tener que deducir el producto de esos factores.
 
-Por eso la configuración instalada al compilar W7.4 sigue **incompleta**:
-conserva conteos reales y bloquea coordenadas métricas y ocupación. La geometría
-nominal ya está preparada; completar ambos CPR positivos permitirá una
-estimación provisional, sin esperar el montaje definitivo ni activar los flags
-de confirmación física.
+La entrega W7.4 original tenía ambos CPR en cero y bloqueaba la estimación
+métrica. La configuración consolidada tiene CPR positivos y permite estimación
+métrica aproximada. Ambos indicadores de confirmación siguen en cero, por lo
+que la clase vigente es **provisional**.
 
 ## Tres estados independientes de la antigüedad de datos
 
@@ -182,5 +180,5 @@ Safety, FSM, control, drivers, configuración de periféricos ni particiones.
 
 Estos resultados verifican software con mocks y parámetros sintéticos de test,
 no una calibración o un mapa físico. La RAM indicada no es heap libre medido
-en ejecución. La configuración de producción continúa en clase incompleta
-por CPR desconocido. No se grabaron placas, operaron motores ni hicieron commits.
+en ejecución. En esa entrega la configuración seguía incompleta por CPR
+desconocido. No se grabaron placas, operaron motores ni hicieron commits.

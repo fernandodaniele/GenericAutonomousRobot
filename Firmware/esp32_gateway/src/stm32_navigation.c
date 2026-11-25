@@ -316,8 +316,11 @@ int Stm32Navigation_Json(char *out, size_t capacity, bool stm32_connected, bool 
     static const char *const errors[]={"none","unavailable","stale_or_future","timestamp","wrong_direction","overflow","nonfinite","wheel_disagreement","numeric_range"};
     const char *yes="true", *no="false";
     char nums[20][24], left[24]="null", right[24]="null";
-    char phase[32]="null", reason[40]="null", error[32]="null";
+    char state[32]="null", phase[32]="null", reason[40]="null", error[32]="null";
     if (available) {
+        if (s.state < sizeof states / sizeof states[0]) {
+            (void)snprintf(state,sizeof state,"\"%s\"",states[s.state]);
+        }
         (void)snprintf(phase,sizeof phase,"\"%s\"",states[s.last_phase]);
         (void)snprintf(reason,sizeof reason,"\"%s\"",Stm32Navigation_ReasonName(s.reason));
         (void)snprintf(error,sizeof error,"\"%s\"",errors[s.odometry_error]);
@@ -339,7 +342,7 @@ int Stm32Navigation_Json(char *out, size_t capacity, bool stm32_connected, bool 
         Navigation_Number(nums[0],s.received&&now>=received,age),available?yes:no,(available&&(!connected||terminal))?yes:no,
         !s.received?"null":s.profile==6U?"\"LOCAL_EXPLORE\"":s.profile==5U?"\"AUTO_4_CONTINUOUS\"":s.profile==4U?"\"AUTO_3_EVASION\"":s.profile==3U?"\"AUTO_3_TURN\"":s.profile==2U?"\"AUTO_2\"":s.profile==1U?"\"AUTO_1\"":"\"B7_LEGACY\"",
         Navigation_Number(nums[1],available,s.session_id),Navigation_Number(nums[2],available,s.started_tick),
-        available? (s.state==0U?"\"ESPERAR_DATOS\"":s.state==1U?"\"AVANZAR\"":s.state==2U?"\"DETENIDO\"":s.state==3U?"\"RETROCEDER_ACOTADO\"":s.state==4U?"\"GIRAR_ACOTADO\"":"\"DETENER_Y_ESPERAR\""):"null",
+        state,
         Navigation_Number(nums[3],available,s.state),
         phase,reason,Navigation_Number(nums[4],available,s.reason),Navigation_Boolean(available,terminal),Navigation_Boolean(available,!terminal),
         Navigation_Boolean(available,s.flags&2U),Navigation_Boolean(available,s.flags&4U),Navigation_Boolean(available,s.flags&8U),

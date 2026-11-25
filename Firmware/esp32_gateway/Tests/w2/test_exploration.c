@@ -164,8 +164,11 @@ static void test_exploration(void){
     assert(WaitForSingleObject(writer,10000)==WAIT_OBJECT_0);CloseHandle(writer);
     pass("LOCAL 1000 real UART publications concurrent with 10000 JSON snapshots preserve atomic field tuples and keep network sends outside locks");
     reset();Stm32Navigation_BeginQuery();navigation_feed("NAV,1,1,6,1,1010,6,6,0,1,400,200,0,0,800,800,7,0,0,0,0,-,-,0,0\n");
-    navigation_api();assert(strstr(reply,"\"profile\":\"LOCAL_EXPLORE\"") && strstr(reply,"EXPLORAR"));
-    pass("LOCAL existing navigation endpoint accepts the new profile/wait state while preserving earlier profile contracts");
+    navigation_api();
+    assert(strstr(reply,"\"profile\":\"LOCAL_EXPLORE\""));
+    assert(strstr(reply,"\"state\":\"EXPLORAR\""));
+    assert(strstr(reply,"\"last_phase\":\"EXPLORAR\""));
+    pass("LOCAL navigation endpoint reports the EXPLORAR state and last phase correctly");
     reset();Stm32Navigation_BeginQuery();navigation_feed("NAV,1,1,6,1,1010,2,1,16,1,3000,0,0,0,682,800,7,0,0,0,0,-,-,0,0\n");
     navigation_api();assert(strstr(reply,"\"finish_reason\":\"INTERNAL_LINK_LOST\"") && strstr(reply,"\"historical\":true"));
     pass("LOCAL navigation HTTP accepts the new communication cause without reusing the legacy supervision-loss meaning");

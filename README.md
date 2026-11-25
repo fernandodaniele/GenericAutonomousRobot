@@ -1,33 +1,63 @@
 # GenericAutonomousRobot (GAR)
-A comprehensive educational robotics platform for Electronic Engineering students. Features autonomous navigation, DSP, and Real-Time Systems integration using STM32 F4 (FreeRTOS) and ESP32 S3 (IoT Gateway), focused on modular firmware and technical analysis.
 
-**GenericAutonomousRobot** is an open-source educational platform designed for Electronic Engineering students to bridge the gap between theoretical concepts and industrial applications. 
+Robot móvil diferencial desarrollado por el Grupo 1 para Técnicas Digitales III (TDIII) y Medidas Electrónicas II (MEII). La STM32 controla el movimiento, adquiere los sensores y ejecuta Safety y la navegación. La ESP32 sirve una interfaz web local para operar el robot y consultar su telemetría.
 
-The project focuses on building an autonomous rover capable of real-time navigation, telemetry, and self-logging for analysis.
+- Control manual, STOP y rearme explícito, con supervisión de proximidad, ausencia de piso y validez de sensores.
+- Navegación autónoma supervisada con exploración local, odometría de encoders y maniobras acotadas.
+- Panel web sin Internet, con estado, sensores, calibración manual del giroscopio y mapa 2D de ocupación posible.
+- Registro de eventos en microSD. Funcionó en pruebas anteriores y requiere una nueva comprobación física por inconvenientes recientes del módulo.
 
-## 🚀 Core Concepts
+La [arquitectura del sistema](Docs/ARCHITECTURE.md) describe tareas, interfaces, perfiles de navegación y límites de cada subsistema.
 
-* **Real-Time Systems (RTOS):** Powered by **FreeRTOS** on an **STM32 F4 Discovery**. Focuses on task prioritization, preemptive scheduling, and inter-task communication.
-* **Digital Signal Processing (DSP):** Implementation of digital filters (FIR/IIR).
-* **IoT & Networking:** An **ESP32 S3** acts as a high-level gateway, managing connectivity for real-time monitoring.
-* **Autonomous Navigation:** Integration of simple obstacle avoidance (Ultrasonic) and cliff detection (TCRT5000) for autonomous movement.
-* **Technical Forensics & Appraisal:** Includes a "Black Box" logging system. Students learn to perform post-failure analysis and create technical reports (Pericias).
+## Hardware
 
-## 🛠 Hardware Stack
-- **Control MCU:** STM32F407G-DISC1 (ARM Cortex-M4 @ 168MHz)
-- **Comms MCU:** ESP32 S3 DevKit (Xtensa Dual-Core with AI acceleration)
-- **Sensors:** MPU6050 (IMU), HC-SR04 (Ultrasonic), 5x TCRT5000 (Infrared)
-- **Actuators:** Dual DC Motors via TB6612FNG Driver
-- **Power:** TBD
+| Elemento | Configuración |
+|---|---|
+| Control | STM32F407G-DISC1, Cortex-M4 a 168 MHz, FreeRTOS |
+| Comunicaciones | ESP32 clásico, objetivo `esp32dev` en PlatformIO con ESP-IDF |
+| Tracción | Dos motores DC N20 con encoders, driver TB6612FNG |
+| Sensores | Dos HC-SR04, frontal y trasero, cuatro TCRT5000 para detectar ausencia de piso y un MPU6050 |
+| Registro | microSD por SPI y RTC DS1302 |
+| Alimentación del prototipo | Batería LiPo 2S, 7,4 V nominales |
 
-## 📂 Project Structure
-- `/firmware/stm32_control`: Core control logic, RTOS tasks, and DSP filters.
-- `/firmware/esp32_gateway`: Communication bridge and telemetry.
-- `/analysis`: Octave/Matlab scripts for signal analysis and filter design.
-- `/hardware/kicad`: Electronic design files, including schematics and PCB layouts.
-- `/mechanical`: Bill of Materials (BOM) and physical assembly specifications.
-- `/docs/doxygen`: Automated technical documentation generated from source code.
-- `/docs/reports`: Pericial report templates and valuation tools.
+## Repositorio
 
-## ⚙️ CI/CD
-This repository is configured with **GitHub Actions** to automatically build and verify both STM32 and ESP32 firmwares on every push, ensuring code integrity and modularity.
+| Ruta | Contenido |
+|---|---|
+| [Firmware/stm32_control](Firmware/stm32_control) | Firmware de control, Makefile y pruebas nativas |
+| [Firmware/esp32_gateway](Firmware/esp32_gateway) | Firmware de comunicaciones, recursos web embebidos y pruebas |
+| [Docs](Docs) | Arquitectura, convenciones y documentos de etapas |
+| [Hardware](Hardware) | Lista básica de componentes |
+| [Mechanical](Mechanical) y [Analysis](Analysis) | Directorios con README de reserva |
+
+## Compilación y pruebas
+
+Desde la raíz, con GNU Make y la toolchain ARM en el PATH para STM32, y PlatformIO para ESP32:
+
+```sh
+make -C Firmware/stm32_control -j4
+pio run -d Firmware/esp32_gateway -e esp32
+```
+
+En Windows se puede usar `mingw32-make` como ejecutable de GNU Make. El entorno ESP32 fija la plataforma `espressif32 @ 6.12.0` y usa la configuración ESP-IDF 5.5.0 del proyecto.
+
+Las siguientes pruebas locales usan GCC nativo y Python 3 para Safety y arranque UART, y Node.js para JavaScript:
+
+```powershell
+.\Firmware\stm32_control\Tests\safety_b11\run.bat
+.\Firmware\stm32_control\Tests\ultrasound\run.bat
+powershell -ExecutionPolicy Bypass -File Firmware/esp32_gateway/Tests/w2/run.ps1
+node Firmware/esp32_gateway/Tests/w2/run_js.js
+```
+
+En [las pruebas STM32](Firmware/stm32_control/Tests) también hay runners para sensores, odometría e IMU. El [workflow de GitHub Actions](.github/workflows/main_ci.yml) compila ambos firmwares en pushes a `master` y pull requests dirigidos a `master`. Las regresiones anteriores se ejecutan por separado.
+
+## Uso y límites
+
+Conectarse a la red local `GenericRobot` y abrir la dirección IP del punto de acceso. El panel distingue la disponibilidad del servidor ESP32 de la comunicación con STM32. Iniciar la exploración requiere una solicitud explícita y supervisión presencial.
+
+La pose es relativa y usa parámetros geométricos provisionales. El mapa estima zonas observadas y posibles obstáculos a partir de ecos y odometría, sin SLAM ni cierre de bucle. Los HC-SR04 no cubren todo el espacio lateral durante un giro, y la falta de eco se trata como dato inválido. Si el teléfono pierde la conexión, STOP remoto puede quedar inaccesible.
+
+## Créditos y licencia
+
+Proyecto académico del Grupo 1. El código del proyecto se distribuye bajo la [licencia MIT](LICENSE), copyright 2026 fernandodaniele. Las bibliotecas incorporadas conservan sus avisos y licencias.

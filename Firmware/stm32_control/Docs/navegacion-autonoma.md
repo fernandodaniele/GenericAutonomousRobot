@@ -61,9 +61,13 @@ quieto.
 | Frente | Lados | Acción |
 |---|---|---|
 | Libre (≥ `NAV_CLEAR_MM`, 25 cm) | Cualquiera | Otro tramo recto, con el mismo rumbo de referencia |
-| Bloqueado | Derecha con ≥ `NAV_SIDE_FREE_MM` (40 cm) | Pivota 90° a la derecha y sigue recto |
-| Bloqueado | Solo la izquierda con ≥ 40 cm | Pivota 90° a la izquierda y sigue recto |
+| Bloqueado | Algún lado con ≥ `NAV_SIDE_FREE_MM` (40 cm) | Gira en el lugar hacia el lado con **más** espacio (empate: derecha) y sigue recto |
+| Bloqueado, en medio de una maniobra | Cualquiera | Sigue girando para el **mismo** lado que eligió al empezar |
 | Bloqueado | Ninguno | Retrocede `NAV_SCAN_BACK_MS` y vuelve a medir (hasta 5 veces, luego `FAULT`) |
+
+**Maniobra:** el sentido elegido se mantiene en los escaneos siguientes hasta que el robot avance
+`NAV_CLIFF_LOOP_RESET_MS` (1,5 s) seguidos. Así, en una esquina sigue rotando para el mismo lado
+hasta salir, en vez de oscilar entre las dos paredes. `NAV_SCAN_STUCK_MAX` subió a 12 escaneos.
 
 El colchón entre 20 y 25 cm evita que vuelva a frenar apenas arranca. Después de retroceder
 vuelve a medir antes de moverse. El frontal sin ninguna lectura válida cuenta como bloqueado:
@@ -220,7 +224,7 @@ gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav_scan.c Core/Src/mid_nav.c -o test
 |---|---|---|
 | Frena de frente con menos de 20 cm | `NAV_OBSTACLE_MM` | 200 mm (antes 300) |
 | Frente libre para avanzar | `NAV_CLEAR_MM` | 350 mm (antes 400) |
-| Lado libre para doblar; prefiere la **derecha**, si no la izquierda. Gira 90° y sigue de largo por ese lado | `NAV_SIDE_FREE_MM` | 400 mm |
+| Lado libre para doblar; elige el de **más espacio** (empate: derecha) y lo mantiene durante la maniobra | `NAV_SIDE_FREE_MM` | 400 mm |
 | Sin lado libre: retrocede y vuelve a medir, hasta 5 veces; luego `FAULT` | `NAV_SCAN_BACKUP_MAX` | 5 |
 | Distancia de seguridad en `main.c` | `SAFE_DISTANCE` | 300 mm (antes 200) |
 

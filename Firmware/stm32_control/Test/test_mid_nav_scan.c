@@ -251,9 +251,13 @@ int main(void)
     o = run(&c, walls(200, 900, 100), 11 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
 
-    /* Ambos lados libres: prefiere la derecha aunque la izquierda sea mas amplia */
+    /* Ambos lados libres: elige el de mas espacio (izquierda mas amplia) */
     start(&c);
     o = run(&c, walls(200, 900, NAV_SIDE_FREE_MM), SCAN_TOTAL_MS + 4 * STEP_MS);
+    CHECK(o.angular_rads > 0.0f);
+    /* Empate: derecha */
+    start(&c);
+    o = run(&c, walls(200, 900, 900), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.angular_rads < 0.0f);
 
     /* Derecha con menos de 40 cm: dobla a la izquierda */
@@ -535,6 +539,35 @@ int main(void)
         CHECK(backups == 1 && !faulted);
         CHECK(sim_heading <= -TURN_CUT_MDEG);
     }
+    sim(false);
+
+    /* Esquina (caso del video): tras girar a la derecha el frente sigue
+     * bloqueado y ahora la izquierda parece mas libre. Tiene que SEGUIR a la
+     * derecha, no volver para el otro lado. */
+    sim(true);
+    start(&c);
+    {
+        uint32_t e;
+        int lefts = 0, rights = 0;
+        in = walls(200, 500, 900);                     /* derecha mas libre */
+        for (e = 0; e < 12000u; e += STEP_MS) {
+            o = step(&c, in);
+            if (o.angular_rads < 0.0f) rights++;
+            if (o.angular_rads > 0.0f) lefts++;
+            if (rights > 0) in = walls(200, 900, 500); /* despues del 1er giro: izquierda mas libre */
+            if (o.state == NAV_STATE_FAULT) break;
+        }
+        CHECK(rights > 0 && lefts == 0);
+    }
+    /* Cuando avanzo NAV_CLIFF_LOOP_RESET_MS, la proxima maniobra elige de nuevo */
+    start(&c);
+    o = run_until_turning(&c, walls(200, 500, 900), SCAN_TOTAL_MS + 200);
+    CHECK(o.angular_rads < 0.0f);
+    o = run(&c, base(), 2000);                         /* sale y avanza libre */
+    CHECK(o.state == NAV_STATE_FORWARD);
+    o = run(&c, base(), NAV_CLIFF_LOOP_RESET_MS);
+    o = run_until_turning(&c, walls(150, 900, 500), SCAN_TOTAL_MS + 400);
+    CHECK(o.angular_rads > 0.0f);                      /* ahora izquierda */
     sim(false);
 
     printf(fails ? "%d pruebas fallaron\n" : "Todas las pruebas del escaneo pasaron\n", fails);

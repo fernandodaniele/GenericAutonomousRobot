@@ -210,7 +210,7 @@ extern "C" {
 #endif
 /* Giros o retrocesos seguidos sin avanzar antes de FAULT (salir con STOP y START) */
 #ifndef NAV_SCAN_STUCK_MAX
-#define NAV_SCAN_STUCK_MAX     6
+#define NAV_SCAN_STUCK_MAX     12     // antes 6: salir de una esquina puede llevar varios giros
 #endif
 /* Retrocesos seguidos sin ningun lado libre antes de FAULT */
 #ifndef NAV_SCAN_BACKUP_MAX
@@ -314,6 +314,7 @@ typedef struct {
     uint8_t scan_streak;           // Giros o retrocesos seguidos sin avanzar
     uint8_t backup_streak;         // Retrocesos seguidos sin ningun lado libre
     int32_t heading_target_mdeg;   // Rumbo a mantener en el tramo recto
+    int8_t maneuver_dir;           // Sentido de giro de la maniobra en curso (0 = libre de elegir)
     bool close_backup_done;        // Ya hizo el retroceso corto en esta maniobra
     uint8_t front_block_hits;      // Lecturas de frente seguidas con obstaculo (< NAV_OBSTACLE_MM)
     uint8_t front_close_hits;      // Lecturas de frente seguidas a NAV_SIDE_STOP_MM o menos

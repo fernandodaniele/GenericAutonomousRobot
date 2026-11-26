@@ -292,8 +292,17 @@ static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* ou
     }
     if (ctx->scan_streak >= NAV_SCAN_STUCK_MAX) {
         latch_fault(ctx, out, now);
-    } else if (right >= NAV_SIDE_FREE_MM || left >= NAV_SIDE_FREE_MM) {
-        const int8_t dir = (right >= NAV_SIDE_FREE_MM) ? -1 : 1;   /* prefiere la derecha */
+    } else if (ctx->maneuver_dir != 0
+               || right >= NAV_SIDE_FREE_MM || left >= NAV_SIDE_FREE_MM) {
+        /* Dentro de una maniobra se sigue girando para el mismo lado hasta
+         * que el frente quede libre (si no, en una esquina oscila de un lado
+         * al otro). Al empezar una maniobra elige el lado con mas espacio;
+         * en empate, la derecha. */
+        int8_t dir = ctx->maneuver_dir;
+        if (dir == 0) {
+            dir = (right >= left) ? -1 : 1;
+            ctx->maneuver_dir = dir;
+        }
         ctx->backup_streak = 0;
         if (front <= NAV_FRONT_BACKUP_MM && !ctx->close_backup_done) {
             /* Pegado a la pared: sin lugar para girar en el lugar.
@@ -482,6 +491,7 @@ void Nav_Init(NavContext_t* ctx)
     ctx->backup_streak = 0;
     ctx->heading_target_mdeg = 0;
     ctx->close_backup_done = false;
+    ctx->maneuver_dir = 0;
     ctx->front_block_hits = 0;
     ctx->front_close_hits = 0;
     ctx->left_close_hits = 0;
@@ -571,6 +581,7 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
                 ctx->cliff_streak = 0;
                 ctx->scan_streak = 0;
                 ctx->backup_streak = 0;
+                ctx->maneuver_dir = 0;   /* salio: la proxima maniobra elige de nuevo */
             }
             /* Tramo recto: frena si aparece algo de frente, un lateral a
              * NAV_SIDE_STOP_MM o menos, o al cumplir el tope */

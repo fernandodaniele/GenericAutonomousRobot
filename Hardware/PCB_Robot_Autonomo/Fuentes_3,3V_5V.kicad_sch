@@ -1,0 +1,609 @@
+(kicad_sch
+	(version 20260306)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "da181a33-13df-4e44-b140-77e309e806e4")
+	(paper "A4")
+	(lib_symbols
+		(symbol "Robot_Autonomo:StepDown_Mini_3A_0V8_17V"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "U"
+				(at 0 12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "StepDown_Mini_3A_0V8_17V"
+				(at 0 10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Robot_Autonomo:StepDown_Mini_3A_0V8_17V"
+				(at 0 -10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://www.mercadolibre.com.ar/step-down-salida-fija-y-ajustable-08-17v-mini-3a-pack-x-3/p/MLA2084406221"
+				(at 0 -12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Step Down mini 3 A 0.8-17V fijo/ajustable de 20 x 11 mm, EN IN+ GND VO+"
+				(at 0 -15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "StepDown_Mini_3A_0V8_17V_0_1"
+				(rectangle
+					(start -15.24 7.62)
+					(end 15.24 -7.62)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "StepDown_Mini_3A_0V8_17V_1_1"
+				(pin input line
+					(at -20.32 3.81 0)
+					(length 5.08)
+					(name "EN"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -20.32 1.27 0)
+					(length 5.08)
+					(name "VIN"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -20.32 -1.27 0)
+					(length 5.08)
+					(name "GND"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin power_out line
+					(at -20.32 -3.81 0)
+					(length 5.08)
+					(name "VOUT"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+	)
+	(text "Fuente de 5V\n"
+		(exclude_from_sim no)
+		(at 69.088 14.732 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "14c5c8b0-5703-42c9-bc1b-d5f124a67a6b")
+	)
+	(text "Fuente de 3,3V"
+		(exclude_from_sim no)
+		(at 135.382 15.24 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "c5cbb486-07a8-4b03-a35e-18c113afc5dd")
+	)
+	(text "Entrada de tensión\n"
+		(exclude_from_sim no)
+		(at 25.4 14.478 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "fdce8134-c34e-419a-9cec-dbdea958c8e2")
+	)
+	(wire
+		(pts
+			(xy 114.3 29.21) (xy 115.57 29.21)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "082e42f6-6e2c-4979-8e6b-8406c55abcf0")
+	)
+	(wire
+		(pts
+			(xy 109.22 24.13) (xy 115.57 24.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "20853d61-82d1-4c17-b377-f435656e93db")
+	)
+	(polyline
+		(pts
+			(xy 106 12.5) (xy 106 36.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "31a200bb-538c-4332-ac23-c09e73267789")
+	)
+	(wire
+		(pts
+			(xy 25.4 22.86) (xy 30.48 22.86)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3c520e4a-f2ca-4710-8335-8228482fd563")
+	)
+	(wire
+		(pts
+			(xy 43.18 24.13) (xy 49.53 24.13)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "71105fd7-ae67-4c7d-84fe-10be9841dbe1")
+	)
+	(polyline
+		(pts
+			(xy 171.3 12.9) (xy 171.3 36.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "95223761-173d-471f-b3ae-30cec7ccb6b2")
+	)
+	(polyline
+		(pts
+			(xy 39.9 36.1) (xy 106 36.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "97853446-fc99-4f0e-bc73-f44969b47561")
+	)
+	(polyline
+		(pts
+			(xy 12.4 36.1) (xy 39.7 36.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b1f84ff5-a27b-4867-9736-5ecdf5529060")
+	)
+	(wire
+		(pts
+			(xy 43.18 26.67) (xy 49.53 26.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b26540ab-b810-4fe5-b843-afbd4db56d4b")
+	)
+	(wire
+		(pts
+			(xy 109.22 26.67) (xy 115.57 26.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ba4b5eb3-fd30-4fc8-9dd0-f4951f9da5f0")
+	)
+	(polyline
+		(pts
+			(xy 39.7 12.3) (xy 39.7 36.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bbbbd512-8375-4761-b3f2-7f7134488501")
+	)
+	(polyline
+		(pts
+			(xy 106 36.1) (xy 171.3 36.1)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "be930d3a-a8f6-4fb4-8400-3e99ef997f35")
+	)
+	(wire
+		(pts
+			(xy 46.99 29.21) (xy 49.53 29.21)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d1d28613-751b-43c8-8784-315bb903ef4e")
+	)
+	(wire
+		(pts
+			(xy 25.4 26.67) (xy 30.48 26.67)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "fb9761b0-0450-4e0a-b8d3-e545f5d0b5a2")
+	)
+	(label "GND"
+		(at 30.48 26.67 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "31541400-b803-40bb-abcd-6933626b995c")
+	)
+	(label "GND"
+		(at 43.18 26.67 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "356affb9-c3fc-4418-97b6-429c352ce6f9")
+	)
+	(label "GND"
+		(at 109.22 26.67 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "45fbefa5-f61b-42f3-8b2d-276b7683150d")
+	)
+	(label "VCC"
+		(at 109.22 24.13 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "7e7e903a-dac9-49fd-b594-918beedad189")
+	)
+	(label "VCC"
+		(at 43.18 24.13 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "bb182653-e9e3-479d-a4b4-34e7a0f7b5ff")
+	)
+	(label "VCC"
+		(at 30.48 22.86 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "fce11243-e0ea-43bd-81d3-63983f2bb16d")
+	)
+	(hierarchical_label "VCC"
+		(shape input)
+		(at 25.4 22.86 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "543ecc63-2594-470c-b2d7-34a5202b5ece")
+	)
+	(hierarchical_label "GND"
+		(shape input)
+		(at 25.4 26.67 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "635a6631-985e-4efe-8038-e44310fa0eb4")
+	)
+	(hierarchical_label "5V"
+		(shape output)
+		(at 46.99 29.21 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "a4ed7a08-4f8c-404e-aee3-7991668d9205")
+	)
+	(hierarchical_label "3,3V"
+		(shape output)
+		(at 114.3 29.21 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "eecfc814-d6e6-49c3-b94c-e77b3c29cb41")
+	)
+	(symbol
+		(lib_id "Robot_Autonomo:StepDown_Mini_3A_0V8_17V")
+		(at 69.85 25.4 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "36a55dd6-1502-48d4-855a-593e733f192c")
+		(property "Reference" "U1"
+			(at 86.36 24.1299 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Regulador a 5V"
+			(at 86.36 26.6699 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Robot_Autonomo:StepDown_Mini_3A_0V8_17V"
+			(at 69.85 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.mercadolibre.com.ar/step-down-salida-fija-y-ajustable-08-17v-mini-3a-pack-x-3/p/MLA2084406221"
+			(at 69.85 38.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Step Down mini 3 A 0.8-17V fijo/ajustable de 20 x 11 mm, EN IN+ GND VO+"
+			(at 69.85 40.64 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "4"
+			(uuid "0767ce35-3cff-43b7-8d4a-f0a2e3084af0")
+		)
+		(pin "2"
+			(uuid "aba05c66-de17-4ae4-85e1-823f18a72206")
+		)
+		(pin "3"
+			(uuid "8083074c-8a6a-48a0-b624-c880d2a7e89a")
+		)
+		(pin "1"
+			(uuid "dd851452-a5b3-4e5d-b0ea-570877dfe71b")
+		)
+		(instances
+			(project "PCB_Robot_Autonomo"
+				(path "/f26d005d-cca3-49e1-a9a8-e14c4e8b7551/987d9400-c349-4690-b1ee-777f35968696"
+					(reference "U1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Robot_Autonomo:StepDown_Mini_3A_0V8_17V")
+		(at 135.89 25.4 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "d93fbc68-c9ab-4661-941d-7771c05953e7")
+		(property "Reference" "U2"
+			(at 152.4 24.1299 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Regulador a 3,3V"
+			(at 152.4 26.6699 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Robot_Autonomo:StepDown_Mini_3A_0V8_17V"
+			(at 135.89 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.mercadolibre.com.ar/step-down-salida-fija-y-ajustable-08-17v-mini-3a-pack-x-3/p/MLA2084406221"
+			(at 135.89 38.1 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Step Down mini 3 A 0.8-17V fijo/ajustable de 20 x 11 mm, EN IN+ GND VO+"
+			(at 135.89 40.64 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "2"
+			(uuid "812e87ba-143a-4250-9b51-97d63dab82a0")
+		)
+		(pin "3"
+			(uuid "eee2ba64-46d9-4c73-92e6-477b7ca099ab")
+		)
+		(pin "4"
+			(uuid "e57ada8a-1117-48c4-ac25-97cea91b60e2")
+		)
+		(pin "1"
+			(uuid "d8c99e4e-fdec-45b7-a303-7921a0414aa7")
+		)
+		(instances
+			(project "PCB_Robot_Autonomo"
+				(path "/f26d005d-cca3-49e1-a9a8-e14c4e8b7551/987d9400-c349-4690-b1ee-777f35968696"
+					(reference "U2")
+					(unit 1)
+				)
+			)
+		)
+	)
+)

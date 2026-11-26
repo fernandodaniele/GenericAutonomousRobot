@@ -1,0 +1,5 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "Robot_Autonomo") (type "KiCad") (uri "${KIPRJMOD}/Librerias/Robot_Autonomo.pretty") (options "") (descr "Huellas Robot Autonomo"))
+  (lib (name "Robot_Interruptores") (type "KiCad") (uri "${KIPRJMOD}/Librerias/Robot_Interruptores.pretty") (options "") (descr "Llave inversora de palanca para PCB"))
+)

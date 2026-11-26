@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "Robot_Autonomo") (type "KiCad") (uri "${KIPRJMOD}/Librerias/Robot_Autonomo.kicad_sym") (options "") (descr "Simbolos de modulos del robot autonomo"))
+  (lib (name "Robot_Interruptores") (type "KiCad") (uri "${KIPRJMOD}/Librerias/Robot_Interruptores.kicad_sym") (options "") (descr "Simbolos de llaves inversoras"))
+)

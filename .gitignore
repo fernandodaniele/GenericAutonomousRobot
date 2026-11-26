@@ -77,3 +77,12 @@ Firmware/stm32_control/*.launch
 # ESP32 configuration files (generated per board)
 Firmware/esp32_gateway/sdkconfig*
 Firmware/esp32_gateway/.vscode/
+
+# KiCad - Local settings and temporary files
+Hardware/**/*.kicad_prl
+Hardware/**/~*.lck
+Hardware/**/_autosave-*
+Hardware/**/fp-info-cache
+Hardware/**/.history/
+Hardware/**/*-backups/
+Hardware/**/Backup_files/

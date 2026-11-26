@@ -1,0 +1,454 @@
+(kicad_sch
+	(version 20260306)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "a9cc106f-fbbf-4a99-8ced-dda292a607d8")
+	(paper "A4")
+	(lib_symbols
+		(symbol "Robot_Autonomo:DS1302_RTC_5P"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "U"
+				(at 0 12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "DS1302_RTC_5P"
+				(at 0 10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Robot_Autonomo:DS1302_RTC_5P"
+				(at 0 -10.16 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" "https://www.mercadolibre.com.ar/modulo-ds1302-rtc-real-time-clock/p/MLA2042233465"
+				(at 0 -12.7 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Modulo reloj RTC DS1302 5 pines con portapila CR2032, 43 x 23 mm"
+				(at 0 -15.24 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "DS1302_RTC_5P_0_1"
+				(rectangle
+					(start -15.24 7.62)
+					(end 15.24 -7.62)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+			)
+			(symbol "DS1302_RTC_5P_1_1"
+				(pin power_in line
+					(at -20.32 5.08 0)
+					(length 5.08)
+					(name "VCC"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin power_in line
+					(at -20.32 2.54 0)
+					(length 5.08)
+					(name "GND"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -20.32 0 0)
+					(length 5.08)
+					(name "CLK"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin bidirectional line
+					(at -20.32 -2.54 0)
+					(length 5.08)
+					(name "DAT"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -20.32 -5.08 0)
+					(length 5.08)
+					(name "RST"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "5"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+	)
+	(text "DS_1302\n"
+		(exclude_from_sim no)
+		(at 18.288 15.24 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "4090b68a-52dc-405d-9434-fdaf160ec33f")
+	)
+	(wire
+		(pts
+			(xy 40.64 60.96) (xy 44.45 60.96)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "06317998-2cd0-4f8a-a5d3-5e781c3e2daf")
+	)
+	(wire
+		(pts
+			(xy 35.56 55.88) (xy 35.56 60.96)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1047d1ac-4293-44ae-9643-80f40f6a2d44")
+	)
+	(wire
+		(pts
+			(xy 35.56 60.96) (xy 33.02 60.96)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "41d45bd7-9c9d-4307-9f21-405463d7e877")
+	)
+	(wire
+		(pts
+			(xy 43.18 55.88) (xy 43.18 57.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "445406d2-9d41-47eb-b8b7-f7112cbe7e62")
+	)
+	(wire
+		(pts
+			(xy 38.1 55.88) (xy 38.1 64.77)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "73d3838d-8c9b-481a-a84a-48adf5d8c020")
+	)
+	(wire
+		(pts
+			(xy 38.1 64.77) (xy 36.83 64.77)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8ad8e7c5-494f-4d76-8f78-9da481227e44")
+	)
+	(polyline
+		(pts
+			(xy 66.7 12) (xy 66.7 70.7)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8c0653ec-92c6-48bc-9848-ff8a07c10250")
+	)
+	(wire
+		(pts
+			(xy 40.64 55.88) (xy 40.64 60.96)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "968e6c46-273e-4cda-a5c0-4c097b3d6494")
+	)
+	(wire
+		(pts
+			(xy 43.18 57.15) (xy 46.99 57.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9e11922b-5054-42c6-a7ed-05c959b5a31d")
+	)
+	(wire
+		(pts
+			(xy 33.02 55.88) (xy 33.02 57.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a3f20b2b-c191-44f3-87e1-4c80ea97b78a")
+	)
+	(polyline
+		(pts
+			(xy 12.1 70.7) (xy 66.7 70.7)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bafa4485-a7f1-4c12-8be4-32c891673756")
+	)
+	(wire
+		(pts
+			(xy 33.02 57.15) (xy 30.48 57.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f1ec4dd0-d9db-4c85-be2a-bbf1c1680ee3")
+	)
+	(hierarchical_label "CLK"
+		(shape input)
+		(at 36.83 64.77 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "3f5dbe76-84b7-4f43-907b-93148c1d88e2")
+	)
+	(hierarchical_label "DAT"
+		(shape output)
+		(at 44.45 60.96 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "535dac59-7579-46ae-80cb-2839f5da6be4")
+	)
+	(hierarchical_label "3,3V"
+		(shape input)
+		(at 30.48 57.15 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "938ee59c-55c7-4274-a2f2-4f087aad0994")
+	)
+	(hierarchical_label "GND"
+		(shape input)
+		(at 33.02 60.96 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "a015e262-2935-4649-ad9a-6f66a58d00b2")
+	)
+	(hierarchical_label "RST"
+		(shape input)
+		(at 46.99 57.15 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "b530dd5e-e997-4b5d-b9b9-1e1d8c87c706")
+	)
+	(symbol
+		(lib_id "Robot_Autonomo:DS1302_RTC_5P")
+		(at 38.1 35.56 90)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "8f987832-1860-46fe-bf4c-ed6d1a636897")
+		(property "Reference" "U6"
+			(at 46.99 34.2899 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "DS1302_RTC_5P"
+			(at 46.99 36.8299 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "Robot_Autonomo:DS1302_RTC_5P"
+			(at 48.26 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.mercadolibre.com.ar/modulo-ds1302-rtc-real-time-clock/p/MLA2042233465"
+			(at 50.8 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Modulo reloj RTC DS1302 5 pines con portapila CR2032, 43 x 23 mm"
+			(at 53.34 35.56 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "a95abc9f-29e7-4223-82da-e91180a6805f")
+		)
+		(pin "3"
+			(uuid "5ddd5eed-dcaf-45a9-8552-4d782fa626b7")
+		)
+		(pin "2"
+			(uuid "cb290a35-6607-4b79-a7ee-d8641b387407")
+		)
+		(pin "4"
+			(uuid "3ff726ad-d2f9-4f12-9bdf-322492304802")
+		)
+		(pin "5"
+			(uuid "2af17afc-7b40-4769-85ee-07365ebd88fa")
+		)
+		(instances
+			(project "PCB_Robot_Autonomo"
+				(path "/f26d005d-cca3-49e1-a9a8-e14c4e8b7551/f63a214a-bbf3-401d-b6b1-2e1552e0f0a0"
+					(reference "U6")
+					(unit 1)
+				)
+			)
+		)
+	)
+)

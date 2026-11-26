@@ -26,8 +26,11 @@ La [arquitectura del sistema](Docs/ARCHITECTURE.md) describe tareas, interfaces,
 |---|---|
 | [Firmware/stm32_control](Firmware/stm32_control) | Firmware de control, Makefile y pruebas nativas |
 | [Firmware/esp32_gateway](Firmware/esp32_gateway) | Firmware de comunicaciones, recursos web embebidos y pruebas |
-| [Docs](Docs) | Arquitectura, convenciones y documentos de etapas |
-| [Hardware](Hardware) | Lista básica de componentes |
+| [Docs](Docs) | Arquitectura, diagramas del informe y convenciones |
+| [Docs/Pruebas](Docs/Pruebas) | Procedimientos y resultados documentados por etapa |
+| [Hardware](Hardware) | Lista de componentes y proyecto KiCad |
+
+Abrir [PCB_Robot_Autonomo.kicad_pro](Hardware/PCB_Robot_Autonomo/PCB_Robot_Autonomo.kicad_pro) desde el gestor de KiCad 10. Mantener la estructura de la carpeta para que KiCad resuelva las tablas y modelos locales.
 
 ## Compilación y pruebas
 
@@ -49,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File Firmware/esp32_gateway/Tests/w2/run.ps1
 node Firmware/esp32_gateway/Tests/w2/run_js.js
 ```
 
-En [las pruebas STM32](Firmware/stm32_control/Tests) también hay runners para sensores, odometría e IMU. El [workflow de GitHub Actions](.github/workflows/main_ci.yml) compila ambos firmwares en pushes a `master` y pull requests dirigidos a `master`. Las regresiones anteriores se ejecutan por separado.
+Los runners, las fuentes de prueba y los mocks están en [Tests de STM32](Firmware/stm32_control/Tests) y [Tests de ESP32](Firmware/esp32_gateway/Tests). STM32 también dispone de runners para sensores, odometría e IMU. El [workflow de GitHub Actions](.github/workflows/main_ci.yml) compila ambos firmwares en pushes a `master` y pull requests dirigidos a `master`. Las regresiones anteriores se ejecutan por separado.
 
 ## Uso y límites
 

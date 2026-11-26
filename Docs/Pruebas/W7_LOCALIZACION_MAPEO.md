@@ -2,7 +2,7 @@
 
 Este documento conserva el diseño y la evidencia de la entrega W7 original.
 La configuración consolidada permite pose métrica y mapa aproximados con
-geometría **provisional**. Los parámetros vigentes están en [Arquitectura](ARCHITECTURE.md#sensores-y-estimación).
+geometría **provisional**. Los parámetros vigentes están en [Arquitectura](../ARCHITECTURE.md#sensores-y-estimación).
 [La guía de calibración](W7_4_GEOMETRIA_CALIBRACION.md) describe cómo medirlos y el protocolo POSE v2.
 
 ## Estado y alcance

@@ -4,23 +4,23 @@ AUTO-2F: test_navigation_auto2f.c agrega retroceso real simulado entre 300/800 m
 limite de 800, falta de progreso, STOP/Safety, presupuesto global y rearme con
 Safety 200 mm sin cambios. Fixtures AUTO-2 actualizados a 275 mm / >250 mm;
 AUTO-1/B7 conservan sus parametros. Ver
-[AUTO2F_REFINAMIENTO.md](../../../../Docs/AUTO2F_REFINAMIENTO.md).
+[AUTO2F_REFINAMIENTO.md](../../../../Docs/Pruebas/AUTO2F_REFINAMIENTO.md).
 
 AUTO-2E: `test_navigation_settle.c` verifica la espera supervisada y la nueva
 referencia. Los helpers AUTO-2 recorren la espera real; no se deshabilitan
 regresiones de Safety, permisos, timeout, odometria, retroceso ni giro experimental.
-Ver [AUTO2E_TRANSICION_RETROCESO.md](../../../../Docs/AUTO2E_TRANSICION_RETROCESO.md).
+Ver [AUTO2E_TRANSICION_RETROCESO.md](../../../../Docs/Pruebas/AUTO2E_TRANSICION_RETROCESO.md).
 
 AUTO-2D: `test_navigation_diagnostics.c` observa las fuentes reales y reproduce
 una cuenta positiva residual antes/despues de procesar retroceso. Comprueba
 retencion tras STOP, nueva sesion, publicacion fallida/tardia, clasificacion
 odometrica, formato UART y prioridad inferior de NAV. No modifica expectativas
 anteriores ni agrega la pausa propuesta. Ver
-[contrato AUTO-2D](../../../../Docs/AUTO2D_DIAGNOSTICO_NAVEGACION.md).
+[contrato AUTO-2D](../../../../Docs/Pruebas/AUTO2D_DIAGNOSTICO_NAVEGACION.md).
 
 ## Perfil operativo AUTO-2F
 
-Ver [AUTO2_REACCION_OBSTACULOS.md](../../../../Docs/AUTO2_REACCION_OBSTACULOS.md).
+Ver [AUTO2_REACCION_OBSTACULOS.md](../../../../Docs/Pruebas/AUTO2_REACCION_OBSTACULOS.md).
 `NAV_AUTO2_ENABLED=1` es el valor predeterminado: conserva avance 100 mm/2 s,
 agrega reacción preventiva y retroceso de hasta 20 mm u 800 ms, con ventana global de 3 s.
 Sin cobertura lateral, el giro sigue deshabilitado por defecto. Las causas
@@ -36,7 +36,7 @@ El resto del README conserva el historial de las etapas anteriores.
 
 El perfil conservado usa `NAV_AUTO1_ODOMETRY=1` y `NAV_AUTO2_ENABLED=0`: un unico avance de 100 mm
 estimados, +1600 cps por rueda, plazo global de 2000 ms y parada terminal sin
-retroceso/giro. Ver [AUTO1_AVANCE_ODOMETRIA.md](../../../../Docs/AUTO1_AVANCE_ODOMETRIA.md).
+retroceso/giro. Ver [AUTO1_AVANCE_ODOMETRIA.md](../../../../Docs/Pruebas/AUTO1_AVANCE_ODOMETRIA.md).
 El README que sigue conserva el contexto historico B7; los valores vigentes
 de PI/PWM son los del firmware consolidado (Kp=2,20; Ki=0,10; limite 40%).
 
@@ -68,12 +68,12 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
 - Las APIs genericas siguen siendo exclusivas de MANUAL. B7.5 conserva avance
   AUTO y agrega retroceso acotado con sesion/fase, direccion y permiso de un uso.
   Consulta, arquitectura, compilacion y validacion sin potencia:
-  [B7_5_RETROCESO.md](../../../../Docs/B7_5_RETROCESO.md).
+  [B7_5_RETROCESO.md](../../../../Docs/Pruebas/B7_5_RETROCESO.md).
   Regresion normal actual: 354 casos (350 anteriores +4 de giro deshabilitado),
   mas 19 ultrasonicos. El giro experimental esta deshabilitado por defecto.
   Su cobertura adicional ejecuta 55 casos host con giro izquierdo y otros 55
   con giro derecho, sobre los mismos fuentes de produccion:
-  [B7_7_GIRO_EXPERIMENTAL.md](../../../../Docs/B7_7_GIRO_EXPERIMENTAL.md).
+  [B7_7_GIRO_EXPERIMENTAL.md](../../../../Docs/Pruebas/B7_7_GIRO_EXPERIMENTAL.md).
   Entrar en un modo no genera por si solo un objetivo ni recupera el anterior.
 - No hay productor de ensayos, pulsos directos, tokens, secuencias automaticas
   ni registros historicos de ensayo en RAM.
@@ -81,7 +81,7 @@ Los bancos de ensayo fueron retirados; sus resultados figuran solo como historia
   numericas ni renovacion automatica. La fecha del primer byte se conserva en
   la publicacion y consumo, con barreras de STOP/entrada al modo.
   Protocolo, arquitectura, compilacion B6 y ensayo fisico propuesto:
-  [B6_MOVIMIENTO.md](../../../../Docs/B6_MOVIMIENTO.md).
+  [B6_MOVIMIENTO.md](../../../../Docs/Pruebas/B6_MOVIMIENTO.md).
 
 ## B7.2 historica: AUTO sin movimiento
 

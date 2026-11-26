@@ -2,8 +2,8 @@
 
 ## Configuración única
 
-La fuente de los parámetros operativos es [odometry_config.h](../Firmware/stm32_control/Core/Inc/odometry_config.h).
-[Arquitectura](ARCHITECTURE.md#sensores-y-estimación) resume la geometría vigente.
+La fuente de los parámetros operativos es [odometry_config.h](../../Firmware/stm32_control/Core/Inc/odometry_config.h).
+[Arquitectura](../ARCHITECTURE.md#sensores-y-estimación) resume la geometría vigente.
 La tabla siguiente describe los parámetros y cómo comprobarlos en el prototipo.
 
 | Parámetro | Configuración consolidada | Unidad / significado | Cómo comprobar o ajustar |

@@ -4,20 +4,21 @@ Referencia del firmware consolidado en `Grupo-1`, commit `132dcbb`. Los document
 
 ## Responsabilidades
 
-El [archivo Draw.io](DiagramaRobot.drawio) es un boceto de diseño. El esquema y la tabla siguientes describen la arquitectura implementada.
+Los diagramas de esta página proceden del informe académico. El texto y las tablas detallan la implementación vigente.
 
 La **STM32F407** adquiere los sensores, estima la pose, arbitra los modos, ejecuta Safety y aplica consignas a los motores. La **ESP32 clásica** gestiona el enlace UART, el punto de acceso, la API HTTP y el mapa. El navegador solicita operaciones y muestra telemetría.
 
-```mermaid
-flowchart LR
-    S["Sensores y encoders"] --> M["STM32: adquisición, odometría, FSM y Safety"]
-    M --> D["Control PI y TB6612FNG"]
-    M --> L["Registro local en microSD"]
-    M <-->|UART| E["ESP32: telemetría, mapa y HTTP"]
-    E <-->|Wi-Fi local| B["Panel web"]
-```
+![Arquitectura funcional del robot](arquitectura_funcional.svg)
+
+## Arquitectura de software
+
+![Arquitectura de software de STM32 y ESP32](arquitectura_software.svg)
+
+En el bloque de cinemática y odometría, la estimación operativa corresponde a `mid_odometry`. `Kinematics_Compute()` es un esqueleto sin uso.
 
 ## Tareas y sincronización en STM32
+
+![Tareas de STM32 y sus interacciones](tareas_stm32.svg)
 
 El scheduler usa ticks de 1 ms. La tabla enumera las siete tareas de aplicación, aparte de las tareas del kernel. Los tiempos son nominales y las prioridades son relativas a `tskIDLE_PRIORITY`.
 
@@ -33,7 +34,13 @@ El scheduler usa ticks de 1 ms. La tabla enumera las siete tareas de aplicación
 
 ControlRobot tiene una cola de ocho eventos. Sensores, IMU y MotorControl usan colas de un elemento para la última instantánea o consigna. Los consumidores de sensores e IMU copian la última instantánea sin retirarla. El logger tiene su propia cola estática de ocho eventos y una tarea creada con stack estático de 512 palabras.
 
-La ISR de USART2 ensambla tramas en un buzón con prioridad y conserva el tick del primer byte. TIM3 y DMA1 completan las capturas ultrasónicas por interrupción. Se usan secciones críticas para proteger estados compartidos y se aíslan las IRQ de DMA durante operaciones sobre sus capturas. El logger serializa accesos a RTC y FatFs con un mutex compartido. En ESP32, HTTP obtiene copias de la telemetría y las solicitudes de mando se despachan por la ruta UART existente. Hay un único lector UART en `app_main()` y un mutex para la transmisión.
+La ISR de USART2 ensambla tramas en un buzón con prioridad y conserva el tick del primer byte. TIM3 y DMA1 completan las capturas ultrasónicas por interrupción. Se usan secciones críticas para proteger estados compartidos y se aíslan las IRQ de DMA durante operaciones sobre sus capturas. El logger serializa accesos a RTC y FatFs con un mutex compartido.
+
+## Tareas y servicios en ESP32
+
+![Tareas y servicios de ESP32](tareas_esp32.svg)
+
+`app_main()` despacha órdenes, agenda consultas y concentra la recepción UART. La consola lee la entrada serie en su propia tarea. HTTP obtiene copias de la telemetría y deja las solicitudes de mando para su despacho. La transmisión UART se serializa con un mutex.
 
 ## UART y arranque
 
@@ -47,6 +54,10 @@ El protocolo usa texto ASCII a 115200 baudios, 8N1 y líneas con LF. El receptor
 En `main.c` se inicializa el periférico y se llama a `DrvUart_Init()`. El mensaje de arranque indica que TX puede transmitir. Después de inicializar RTC/logger y crear las tareas, se inicia el scheduler. **`TaskComms_Run()` llama a `DrvUart_StartReceive()`**, de modo que la ISR puede usar `xTaskGetTickCountFromISR()` con FreeRTOS en marcha. La prioridad NVIC de USART2 es 5, compatible con el límite de llamadas al kernel desde ISR. Una falla de `DS1302_Init()` detiene el arranque antes del scheduler.
 
 ## FSM, Safety y navegación
+
+![Máquina de estados del robot](maquina_estados_robot.svg)
+
+La figura resume transiciones. MANUAL y AUTO requieren que Safety permita el movimiento. STOP en SAFETY_STOP mantiene ese estado y el arranque puede pasar de IDLE a SAFETY_STOP por el bloqueo inicial.
 
 | Estado | Código | Comportamiento |
 |---|---:|---|
@@ -64,7 +75,7 @@ Safety supervisa los cuatro IR, la validez y la edad de los ultrasonidos, y la p
 - Conserva memoria de posiciones para evitar ciclos y reconsidera alternativas con información nueva. Las maniobras tienen límites propios. Si no encuentra una opción admisible, mantiene los motores detenidos.
 - La autorización se concede una vez por sesión. El watchdog STM32 de 3000 ms comprueba el ida y vuelta del enlace con ESP32. Cerrar el navegador puede dejar el robot en marcha mientras ese enlace continúe operativo. Una sesión cancelada o terminal exige un inicio nuevo.
 
-El mapa web no interviene en la autorización de maniobras. Los ultrasonidos frontal y trasero no observan toda la envolvente lateral de un giro. [Detalle de LOCAL_EXPLORE](EXPLORACION_LOCAL_SUPERVISADA.md).
+El mapa web no interviene en la autorización de maniobras. Los ultrasonidos frontal y trasero no observan toda la envolvente lateral de un giro. [Detalle de LOCAL_EXPLORE](Pruebas/EXPLORACION_LOCAL_SUPERVISADA.md).
 
 ## Sensores y estimación
 

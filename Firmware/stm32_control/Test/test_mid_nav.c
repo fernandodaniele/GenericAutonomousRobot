@@ -246,7 +246,7 @@ int main(void)
 
     /* ===== Derecho sin eco: no dobla hacia el lado sin lectura ===== */
     start(&c, t);
-    in = base(t); in.front = NAV_RANGE_OK; in.front_mm = 100;
+    in = base(t); in.front = NAV_RANGE_OK; in.front_mm = 200;
     in.left = NAV_RANGE_OK; in.left_mm = 900; in.right = NAV_RANGE_NO_ECHO;
     o = run(&c, in, &t, NAV_BRAKE_MS + NAV_SETTLE_MS + NAV_SCAN_MAX_MS + 4 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.angular_rads > 0.0f);   /* dobla a la izquierda */

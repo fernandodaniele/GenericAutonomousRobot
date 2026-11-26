@@ -44,7 +44,9 @@ enum {
     SPHASE_COLLECT,
     SPHASE_TURN,
     SPHASE_BACKUP,
-    SPHASE_TURN_SETTLE   // pausa tras el giro de 90 grados, luego avanza por ese lado
+    SPHASE_TURN_SETTLE,  // pausa tras el giro de 90 grados, luego avanza por ese lado
+    SPHASE_CLOSE_BACKUP, // frente pegado: retroceso corto antes de girar
+    SPHASE_CLOSE_SETTLE  // pausa tras ese retroceso, luego gira
 };
 
 /* Indices de NavContext_t.scan_samples */
@@ -77,31 +79,42 @@ static bool front_blocked(const NavInput_t* in)
     return (in->front == NAV_RANGE_OK) && (in->front_mm < NAV_OBSTACLE_MM);
 }
 
-/* Lateral bloqueado: ultima lectura propia a NAV_SIDE_STOP_MM o menos, o
- * NAV_SIDE_BAD_MAX lecturas seguidas sin eco o demasiado cerca */
-static bool side_blocked(NavRange_t last, uint32_t mm, uint8_t bad)
+/* Lectura a NAV_SIDE_STOP_MM o menos (TOO_CLOSE incluido) */
+static bool range_close(NavRange_t r, uint32_t mm)
 {
-    if (bad >= NAV_SIDE_BAD_MAX) {
-        return true;
+    return (r == NAV_RANGE_TOO_CLOSE) || ((r == NAV_RANGE_OK) && (mm <= NAV_SIDE_STOP_MM));
+}
+
+/* Cuenta lecturas propias seguidas que cumplen la condicion. NO_ECHO en la
+ * foto = no fue el turno de ese sensor: no suma ni reinicia. */
+static void count_hit(uint8_t* hits, NavRange_t r, bool cond)
+{
+    if (r == NAV_RANGE_NO_ECHO) {
+        return;
     }
-    return (last == NAV_RANGE_OK) && (mm <= NAV_SIDE_STOP_MM);
+    if (!cond) {
+        *hits = 0;
+    } else if (*hits < UINT8_MAX) {
+        (*hits)++;
+    }
 }
 
-static bool left_blocked(const NavInput_t* in)
+/* Lateral bloqueado: NAV_OBSTACLE_CONFIRM lecturas seguidas a NAV_SIDE_STOP_MM
+ * o menos, o NAV_SIDE_BAD_MAX lecturas seguidas sin eco o demasiado cerca */
+static bool left_blocked(const NavContext_t* ctx, const NavInput_t* in)
 {
-    return side_blocked(in->left_last, in->left_last_mm, in->left_bad_count);
+    return ctx->left_close_hits >= NAV_OBSTACLE_CONFIRM || in->left_bad_count >= NAV_SIDE_BAD_MAX;
 }
 
-static bool right_blocked(const NavInput_t* in)
+static bool right_blocked(const NavContext_t* ctx, const NavInput_t* in)
 {
-    return side_blocked(in->right_last, in->right_last_mm, in->right_bad_count);
+    return ctx->right_close_hits >= NAV_OBSTACLE_CONFIRM || in->right_bad_count >= NAV_SIDE_BAD_MAX;
 }
 
-/* Frente pegado (para cortar un giro) */
-static bool front_too_close(const NavInput_t* in)
+/* Frente pegado confirmado (para cortar un giro) */
+static bool front_too_close(const NavContext_t* ctx)
 {
-    return (in->front == NAV_RANGE_TOO_CLOSE)
-        || ((in->front == NAV_RANGE_OK) && (in->front_mm <= NAV_SIDE_STOP_MM));
+    return ctx->front_close_hits >= NAV_OBSTACLE_CONFIRM;
 }
 
 /* true si el tramo recto llego a su tope de tiempo (NAV_STEP_MS = 0: sin tope) */
@@ -276,12 +289,17 @@ static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* ou
     }
     if (ctx->scan_streak >= NAV_SCAN_STUCK_MAX) {
         latch_fault(ctx, out, now);
-    } else if (right >= NAV_SIDE_FREE_MM) {
+    } else if (right >= NAV_SIDE_FREE_MM || left >= NAV_SIDE_FREE_MM) {
+        const int8_t dir = (right >= NAV_SIDE_FREE_MM) ? -1 : 1;   /* prefiere la derecha */
         ctx->backup_streak = 0;
-        begin_turn(ctx, in, SPHASE_TURN, -1, now);   /* derecha */
-    } else if (left >= NAV_SIDE_FREE_MM) {
-        ctx->backup_streak = 0;
-        begin_turn(ctx, in, SPHASE_TURN, 1, now);    /* izquierda */
+        if (front <= NAV_FRONT_BACKUP_MM) {
+            /* Pegado a la pared: sin lugar para girar en el lugar.
+             * Retrocede un poco y despues gira hacia ese lado. */
+            ctx->turn_dir = dir;
+            enter_phase(ctx, SPHASE_CLOSE_BACKUP, now);
+        } else {
+            begin_turn(ctx, in, SPHASE_TURN, dir, now);
+        }
     } else if (ctx->backup_streak >= NAV_SCAN_BACKUP_MAX) {
         latch_fault(ctx, out, now);                  /* sin paso tras los retrocesos */
     } else {
@@ -317,9 +335,9 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
             }
             break;
         case SPHASE_TURN:
-            if (front_too_close(in)
-                || (ctx->turn_dir > 0 && left_blocked(in))
-                || (ctx->turn_dir < 0 && right_blocked(in))) {
+            if (front_too_close(ctx)
+                || (ctx->turn_dir > 0 && left_blocked(ctx, in))
+                || (ctx->turn_dir < 0 && right_blocked(ctx, in))) {
                 /* Algo pegado mientras gira: cortar y volver a medir */
                 set_brake(out);
                 enter_phase(ctx, SPHASE_SETTLE, now);
@@ -341,6 +359,21 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
                 ctx->heading_target_mdeg = in->heading_mdeg;
                 out->brake = false;
                 out->linear_mms = NAV_FWD_SPEED_MMS;
+            }
+            break;
+        case SPHASE_CLOSE_BACKUP:
+            if (t >= NAV_SCAN_CLOSE_BACK_MS) {
+                set_brake(out);
+                enter_phase(ctx, SPHASE_CLOSE_SETTLE, now);
+            } else {
+                out->linear_mms = NAV_BACK_SPEED_MMS;
+            }
+            break;
+        case SPHASE_CLOSE_SETTLE:
+            set_brake(out);
+            if (t >= NAV_SETTLE_MS) {
+                ctx->front_close_hits = 0;   /* la lectura vieja era de antes de retroceder */
+                begin_turn(ctx, in, SPHASE_TURN, ctx->turn_dir, now);
             }
             break;
         case SPHASE_BACKUP:
@@ -442,6 +475,10 @@ void Nav_Init(NavContext_t* ctx)
     ctx->scan_streak = 0;
     ctx->backup_streak = 0;
     ctx->heading_target_mdeg = 0;
+    ctx->front_block_hits = 0;
+    ctx->front_close_hits = 0;
+    ctx->left_close_hits = 0;
+    ctx->right_close_hits = 0;
 }
 
 NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
@@ -477,6 +514,11 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
         } else {
             ctx->cliff_hits = 0;
         }
+        /* Filtro de obstaculos: lecturas propias seguidas */
+        count_hit(&ctx->front_block_hits, in->front, front_blocked(in));
+        count_hit(&ctx->front_close_hits, in->front, range_close(in->front, in->front_mm));
+        count_hit(&ctx->left_close_hits, in->left, range_close(in->left, in->left_mm));
+        count_hit(&ctx->right_close_hits, in->right, range_close(in->right, in->right_mm));
     }
 
     /* --- Comandos --- */
@@ -525,7 +567,8 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
             }
             /* Tramo recto: frena si aparece algo de frente, un lateral a
              * NAV_SIDE_STOP_MM o menos, o al cumplir el tope */
-            if (front_blocked(in) || left_blocked(in) || right_blocked(in)
+            if (ctx->front_block_hits >= NAV_OBSTACLE_CONFIRM
+                || left_blocked(ctx, in) || right_blocked(ctx, in)
                 || step_done(ctx, now)) {
                 enter_state(ctx, NAV_STATE_SCAN, now);
                 set_brake(&out);

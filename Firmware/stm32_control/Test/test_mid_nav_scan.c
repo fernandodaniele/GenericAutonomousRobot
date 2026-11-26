@@ -187,10 +187,12 @@ int main(void)
     o = run(&c, walls(NAV_OBSTACLE_MM, 100, 100), 10 * STEP_MS);
     CHECK(o.state == NAV_STATE_FORWARD && !o.brake);
     o = step(&c, walls(NAV_OBSTACLE_MM - 10, 100, 100));
+    CHECK(o.state == NAV_STATE_FORWARD);                           /* filtro: falta confirmar */
+    o = step(&c, walls(NAV_OBSTACLE_MM - 10, 100, 100));
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
 
     /* No decide antes de terminar la pausa y las lecturas */
-    in = walls(100, 900, 100);
+    in = walls(200, 900, 100);
     start(&c);
     o = run(&c, in, NAV_BRAKE_MS + NAV_SETTLE_MS - 2 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
@@ -209,9 +211,9 @@ int main(void)
     /* Izquierda: termina en ANGLE - COAST leido del giroscopio */
     sim(true);
     start(&c);
-    o = run_until_turning(&c, walls(100, 900, 100), SCAN_TOTAL_MS + 200);
+    o = run_until_turning(&c, walls(200, 900, 100), SCAN_TOTAL_MS + 200);
     CHECK(o.state == NAV_STATE_SCAN && o.angular_rads > 0.0f);
-    o = run_while_turning(&c, walls(100, 900, 100), NAV_TURN_TIMEOUT_MS + 200, &took);
+    o = run_while_turning(&c, walls(200, 900, 100), NAV_TURN_TIMEOUT_MS + 200, &took);
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
     CHECK(sim_heading == TURN_CUT_MDEG);
     CHECK(took < NAV_TURN_TIMEOUT_MS);                           /* corto por angulo, no por tiempo */
@@ -219,10 +221,10 @@ int main(void)
     /* Derecha: idem hacia el otro lado */
     sim(true);
     start(&c);
-    o = run_until_turning(&c, walls(100, 100, 900), SCAN_TOTAL_MS + 200);
+    o = run_until_turning(&c, walls(200, 100, 900), SCAN_TOTAL_MS + 200);
     CHECK(o.state == NAV_STATE_SCAN && o.angular_rads == -NAV_TURN_SPOT_RAD_S);
     CHECK(o.linear_mms == 0.0f);                                   /* en el lugar */
-    o = run_while_turning(&c, walls(100, 100, 900), NAV_TURN_TIMEOUT_MS + 200, &took);
+    o = run_while_turning(&c, walls(200, 100, 900), NAV_TURN_TIMEOUT_MS + 200, &took);
     CHECK(o.brake && sim_heading == -TURN_CUT_MDEG);
     CHECK(took < NAV_TURN_TIMEOUT_MS);
     /* Tras el giro sigue de largo por el lateral libre, sin otra ronda de
@@ -235,32 +237,33 @@ int main(void)
     o = run(&c, walls(900, 100, 900), 500);
     CHECK(o.state == NAV_STATE_FORWARD && o.linear_mms > 0.0f && o.angular_rads == 0.0f);
     /* La pared siguiente a menos de 30 cm: frena y decide */
+    step(&c, walls(NAV_OBSTACLE_MM - 10, 900, 900));
     o = step(&c, walls(NAV_OBSTACLE_MM - 10, 900, 900));
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
     sim(false);
 
     /* Sin cambio de rumbo, el giro se corta por NAV_TURN_TIMEOUT_MS */
     start(&c);
-    o = run_until_turning(&c, walls(100, 900, 100), SCAN_TOTAL_MS + 200);
+    o = run_until_turning(&c, walls(200, 900, 100), SCAN_TOTAL_MS + 200);
     CHECK(o.angular_rads > 0.0f);
-    o = run(&c, walls(100, 900, 100), NAV_TURN_TIMEOUT_MS - 10 * STEP_MS);
+    o = run(&c, walls(200, 900, 100), NAV_TURN_TIMEOUT_MS - 10 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.angular_rads > 0.0f);
-    o = run(&c, walls(100, 900, 100), 11 * STEP_MS);
+    o = run(&c, walls(200, 900, 100), 11 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
 
     /* Ambos lados libres: prefiere la derecha aunque la izquierda sea mas amplia */
     start(&c);
-    o = run(&c, walls(100, 900, NAV_SIDE_FREE_MM), SCAN_TOTAL_MS + 4 * STEP_MS);
+    o = run(&c, walls(200, 900, NAV_SIDE_FREE_MM), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.angular_rads < 0.0f);
 
     /* Derecha con menos de 40 cm: dobla a la izquierda */
     start(&c);
-    o = run(&c, walls(100, NAV_SIDE_FREE_MM, NAV_SIDE_FREE_MM - 10), SCAN_TOTAL_MS + 4 * STEP_MS);
+    o = run(&c, walls(200, NAV_SIDE_FREE_MM, NAV_SIDE_FREE_MM - 10), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.angular_rads > 0.0f);
 
     /* Ningun lado llega a 40 cm: retrocede */
     start(&c);
-    o = run(&c, walls(100, NAV_SIDE_FREE_MM - 10, NAV_SIDE_FREE_MM - 10), SCAN_TOTAL_MS + 4 * STEP_MS);
+    o = run(&c, walls(200, NAV_SIDE_FREE_MM - 10, NAV_SIDE_FREE_MM - 10), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.linear_mms == NAV_BACK_SPEED_MMS && o.angular_rads == 0.0f);
 
     /* Frena a 30 cm de frente */
@@ -268,6 +271,7 @@ int main(void)
     run(&c, base(), SCAN_TOTAL_MS + STEP_MS);
     o = step(&c, walls(NAV_OBSTACLE_MM + 10, 900, 900));
     CHECK(o.state == NAV_STATE_FORWARD && !o.brake);
+    step(&c, walls(NAV_OBSTACLE_MM - 10, 900, 900));
     o = step(&c, walls(NAV_OBSTACLE_MM - 10, 900, 900));
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
 
@@ -275,7 +279,7 @@ int main(void)
     start(&c);
     {
         int backups = 0; bool backing = false; uint32_t evt = 0;
-        in = walls(100, 100, 100);
+        in = walls(200, 100, 100);
         for (uint32_t e = 0; e < 120000u && o.state != NAV_STATE_FAULT; e += STEP_MS) {
             o = step(&c, in); evt |= o.events;
             bool now_back = (o.linear_mms == NAV_BACK_SPEED_MMS);
@@ -292,21 +296,21 @@ int main(void)
     {
         int backups = 0; bool backing = false;
         for (uint32_t e = 0; e < 120000u && backups < NAV_SCAN_BACKUP_MAX - 1; e += STEP_MS) {
-            o = step(&c, walls(100, 100, 100));
+            o = step(&c, walls(200, 100, 100));
             bool now_back = (o.linear_mms == NAV_BACK_SPEED_MMS);
             if (now_back && !backing) backups++;
             backing = now_back;
         }
         /* aparece paso a la derecha: dobla, no FAULT */
         for (uint32_t e = 0; e < 20000u && o.angular_rads == 0.0f && o.state != NAV_STATE_FAULT; e += STEP_MS) {
-            o = step(&c, walls(100, 100, 900));
+            o = step(&c, walls(200, 100, 900));
         }
         CHECK(o.state == NAV_STATE_SCAN && o.angular_rads < 0.0f);
     }
 
     /* Todo bloqueado: retrocede */
     start(&c);
-    o = run(&c, walls(100, 100, 100), SCAN_TOTAL_MS + 4 * STEP_MS);
+    o = run(&c, walls(200, 100, 100), SCAN_TOTAL_MS + 4 * STEP_MS);
     CHECK(o.state == NAV_STATE_SCAN && o.linear_mms == NAV_BACK_SPEED_MMS && o.angular_rads == 0.0f);
 
     /* Un solo sensor valido por foto, como publica task_sensors */
@@ -317,11 +321,11 @@ int main(void)
         run(&c, base(), pause);
         for (int i = 0; i < 3; i++) {
             in = base(); in.left = none; in.right = none;
-            in.front = NAV_RANGE_OK; in.front_mm = 100;
+            in.front = NAV_RANGE_OK; in.front_mm = 200;
             o = step(&c, in);
             in.front = none; in.left = NAV_RANGE_OK; in.left_mm = 100;
             o = step(&c, in);
-            in.left = none; in.front = NAV_RANGE_OK; in.front_mm = 100;
+            in.left = none; in.front = NAV_RANGE_OK; in.front_mm = 200;
             o = step(&c, in);
             in.front = none; in.right = NAV_RANGE_OK; in.right_mm = 900;
             o = step(&c, in);
@@ -332,7 +336,7 @@ int main(void)
 
     /* La misma foto repetida no suma lecturas */
     start(&c);
-    in = walls(100, 900, 100);
+    in = walls(200, 900, 100);
     in.sensor_ms = 777;
     for (uint32_t e = 0; e < NAV_BRAKE_MS + NAV_SETTLE_MS + 5 * STEP_MS; e += STEP_MS) {
         t += STEP_MS; in.now_ms = t;
@@ -344,7 +348,7 @@ int main(void)
     start(&c);
     run(&c, base(), NAV_BRAKE_MS + NAV_SETTLE_MS);
     step(&c, walls(900, 900, 100));
-    step(&c, walls(100, 900, 100));
+    step(&c, walls(200, 900, 100));
     step(&c, walls(900, 900, 100));
     o = step(&c, walls(900, 900, 100));
     CHECK(o.state == NAV_STATE_FORWARD);
@@ -395,7 +399,7 @@ int main(void)
 
     /* Atrapado: tras NAV_SCAN_STUCK_MAX maniobras queda en FAULT */
     start(&c);
-    in = walls(100, 100, 100);
+    in = walls(200, 100, 100);
     {
         uint32_t evt = 0;
         o = step(&c, in);
@@ -419,9 +423,9 @@ int main(void)
     sim(true);
     start(&c);
     for (int k = 0; k < NAV_SCAN_STUCK_MAX + 2; k++) {
-        o = run_until_turning(&c, walls(100, 900, 100), 4000);
+        o = run_until_turning(&c, walls(200, 900, 100), 4000);
         CHECK(o.state == NAV_STATE_SCAN && o.angular_rads > 0.0f);
-        o = run_while_turning(&c, walls(100, 900, 100), NAV_TURN_TIMEOUT_MS + 200, NULL);
+        o = run_while_turning(&c, walls(200, 900, 100), NAV_TURN_TIMEOUT_MS + 200, NULL);
         CHECK(o.state == NAV_STATE_SCAN && o.brake);
         for (int i = 0; i < 200 && o.state != NAV_STATE_FORWARD; i++) o = step(&c, base());
         CHECK(o.state == NAV_STATE_FORWARD);
@@ -438,21 +442,27 @@ int main(void)
 
     CHECK(strcmp(Nav_StateName(NAV_STATE_SCAN), "SCAN") == 0);
 
-    /* ===== Limite lateral (NAV_SIDE_STOP_MM) ===== */
-    /* Avanzando, un lateral a NAV_SIDE_STOP_MM o menos frena y pasa a SCAN */
+    /* ===== Limite lateral (NAV_SIDE_STOP_MM) con filtro ===== */
+    /* Avanzando, una lectura lateral suelta a 5 cm no frena; dos seguidas si */
     start(&c);
     o = run(&c, base(), SCAN_TOTAL_MS + STEP_MS);
     CHECK(o.state == NAV_STATE_FORWARD);
-    in = base(); in.left_last = NAV_RANGE_OK; in.left_last_mm = NAV_SIDE_STOP_MM;
-    o = step(&c, in);
-    CHECK(o.state == NAV_STATE_SCAN && o.brake);
-    /* Un poco mas lejos no frena */
-    start(&c);
-    run(&c, base(), SCAN_TOTAL_MS + STEP_MS);
-    in = base(); in.right_last = NAV_RANGE_OK; in.right_last_mm = NAV_SIDE_STOP_MM + 1;
+    in = base(); in.left = NAV_RANGE_OK; in.left_mm = NAV_SIDE_STOP_MM;
     o = step(&c, in);
     CHECK(o.state == NAV_STATE_FORWARD);
-    /* Lecturas malas seguidas (sin eco / TOO_CLOSE) cuentan como bloqueado */
+    { NavInput_t other = base(); other.front = other.left = other.right = NAV_RANGE_NO_ECHO;
+      o = step(&c, other); }                              /* foto de otro sensor: no reinicia */
+    o = step(&c, in);
+    CHECK(o.state == NAV_STATE_SCAN && o.brake);
+    /* Lectura lejana en el medio reinicia la cuenta */
+    start(&c);
+    run(&c, base(), SCAN_TOTAL_MS + STEP_MS);
+    in = base(); in.right = NAV_RANGE_OK; in.right_mm = NAV_SIDE_STOP_MM;
+    step(&c, in);
+    { NavInput_t far = base(); far.right = NAV_RANGE_OK; far.right_mm = 600; step(&c, far); }
+    o = step(&c, in);
+    CHECK(o.state == NAV_STATE_FORWARD);
+    /* NAV_SIDE_BAD_MAX lecturas malas seguidas cuentan como bloqueado */
     in = base(); in.right_bad_count = NAV_SIDE_BAD_MAX - 1;
     o = step(&c, in);
     CHECK(o.state == NAV_STATE_FORWARD);
@@ -460,21 +470,50 @@ int main(void)
     o = step(&c, in);
     CHECK(o.state == NAV_STATE_SCAN);
 
-    /* Girando a la izquierda, si el lateral izquierdo queda pegado corta el
-     * giro y vuelve a medir */
+    /* Frente: un eco fantasma suelto no frena */
+    start(&c);
+    run(&c, base(), SCAN_TOTAL_MS + STEP_MS);
+    in = base(); in.front = NAV_RANGE_TOO_CLOSE;
+    o = step(&c, in);
+    CHECK(o.state == NAV_STATE_FORWARD);
+    o = step(&c, base());                                 /* FAR reinicia */
+    o = step(&c, in);
+    CHECK(o.state == NAV_STATE_FORWARD);
+    o = step(&c, in);
+    CHECK(o.state == NAV_STATE_SCAN);
+
+    /* Girando a la izquierda, el lateral izquierdo pegado (confirmado) corta el giro */
     sim(true);
     start(&c);
-    o = run_until_turning(&c, walls(100, 900, 100), SCAN_TOTAL_MS + 200);
+    o = run_until_turning(&c, walls(200, 900, 100), SCAN_TOTAL_MS + 200);
     CHECK(o.state == NAV_STATE_SCAN && o.angular_rads > 0.0f);
-    in = walls(100, 900, 100); in.left_last_mm = NAV_SIDE_STOP_MM - 10;
+    in = walls(200, NAV_SIDE_STOP_MM - 10, 100);
+    o = step(&c, in);
     o = step(&c, in);
     CHECK(o.state == NAV_STATE_SCAN && o.brake && o.angular_rads == 0.0f);
-    /* Frente pegado tambien corta el giro */
+    sim(false);
+
+    /* Pegado a la pared con un lado libre: retrocede NAV_SCAN_CLOSE_BACK_MS,
+     * gira y sale. Antes el giro se cortaba por "frente pegado" y caia en FAULT. */
+    sim(true);
     start(&c);
-    o = run_until_turning(&c, walls(100, 900, 100), SCAN_TOTAL_MS + 200);
-    in = walls(NAV_SIDE_STOP_MM, 900, 100);
-    o = step(&c, in);
-    CHECK(o.brake && o.angular_rads == 0.0f);
+    {
+        uint32_t back_ms = 0, e;
+        bool turned = false, faulted = false;
+        in = walls(40, 100, 900);                         /* frente a 4 cm, derecha libre */
+        for (e = 0; e < 4000u && !turned; e += STEP_MS) {
+            o = step(&c, in);
+            if (o.linear_mms == NAV_BACK_SPEED_MMS) back_ms += STEP_MS;
+            if (o.angular_rads < 0.0f) { turned = true; in = walls(300, 100, 900); }
+            if (o.state == NAV_STATE_FAULT) faulted = true;
+        }
+        CHECK(turned && !faulted);
+        CHECK(back_ms + STEP_MS >= NAV_SCAN_CLOSE_BACK_MS && back_ms <= NAV_SCAN_CLOSE_BACK_MS + STEP_MS);
+        o = run_while_turning(&c, in, NAV_TURN_TIMEOUT_MS + 200, &took);
+        CHECK(sim_heading == -TURN_CUT_MDEG);             /* termino el giro por angulo */
+        for (e = 0; e < 2000u && o.state != NAV_STATE_FORWARD; e += STEP_MS) o = step(&c, in);
+        CHECK(o.state == NAV_STATE_FORWARD);
+    }
     sim(false);
 
     printf(fails ? "%d pruebas fallaron\n" : "Todas las pruebas del escaneo pasaron\n", fails);

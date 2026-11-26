@@ -85,13 +85,20 @@ seguridad: a ~60°/s, un giro que no corta por ángulo no queda dando vueltas.
   opuestos (`NAV_TURN_SPOT_RAD_S`). Se dejó el pivote: barría un círculo de radio B y chocaba
   de costado.
 
-### Límite lateral
+### Límite lateral y filtro de obstáculos
 - Avanzando, si un lateral está a `NAV_SIDE_STOP_MM` (5 cm) o menos, frena y pasa directo a SCAN.
 - Girando, si el lateral del lado del giro o el frente quedan a 5 cm o menos, corta el giro y
   vuelve a medir.
-- Se usa la **última lectura propia** de cada lateral (se miden 1 de cada 4 fotos).
-- `NAV_SIDE_BAD_MAX` (3) lecturas seguidas sin eco o `TOO_CLOSE` de un lateral también cuentan
+- **Filtro:** todo obstáculo (frente < 30 cm o `TOO_CLOSE`, lateral o frente a 5 cm o menos) tiene
+  que verse en `NAV_OBSTACLE_CONFIRM` (2) lecturas propias seguidas de ese sensor. Una lectura
+  suelta (eco fantasma) no frena. Las fotos en que le tocó a otro sensor no suman ni reinician.
+- `NAV_SIDE_BAD_MAX` (10) lecturas seguidas sin eco o `TOO_CLOSE` de un lateral también cuentan
   como bloqueado (`us_bad_count` en `task_sensors`).
+
+### Pegado a la pared
+Si al decidir el frente está a `NAV_FRONT_BACKUP_MM` (10 cm) o menos y hay un lado libre,
+retrocede `NAV_SCAN_CLOSE_BACK_MS` (300 ms), espera quieto y recién ahí gira. Antes giraba
+directo, el corte por "frente pegado" frenaba el giro, y tras 6 intentos caía en `FAULT`.
 
 ### Precipicio
 Retrocede lo mínimo (`NAV_CLIFF_BACKUP_MS`), gira 90° en el lugar alejándose del sensor que vio

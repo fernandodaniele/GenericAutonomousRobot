@@ -81,7 +81,20 @@ extern "C" {
 /* Lecturas propias seguidas de un lateral sin eco o demasiado cerca (TOO_CLOSE)
  * con las que ese lado cuenta como bloqueado. */
 #ifndef NAV_SIDE_BAD_MAX
-#define NAV_SIDE_BAD_MAX       3
+#define NAV_SIDE_BAD_MAX       10     // antes 3: frenaba por lecturas sueltas
+#endif
+
+/* Filtro: lecturas propias seguidas que tienen que confirmar un obstaculo
+ * (frente < NAV_OBSTACLE_MM o TOO_CLOSE, lateral o frente a NAV_SIDE_STOP_MM o
+ * menos) antes de frenar o cortar un giro. Una lectura suelta (eco fantasma)
+ * ya no frena. El frente se lee cada ~120 ms: 2 lecturas = ~1 cm mas de avance. */
+#ifndef NAV_OBSTACLE_CONFIRM
+#define NAV_OBSTACLE_CONFIRM   2
+#endif
+/* Frente tan cerca que no hay lugar para girar en el lugar: antes del giro
+ * retrocede NAV_SCAN_CLOSE_BACK_MS. */
+#ifndef NAV_FRONT_BACKUP_MM
+#define NAV_FRONT_BACKUP_MM    100
 #endif
 
 /* ===== Tiempos ===== */
@@ -104,6 +117,10 @@ extern "C" {
  * PROVISORIO: verificar en el piso. */
 #ifndef NAV_SCAN_BACK_MS
 #define NAV_SCAN_BACK_MS       1000
+#endif
+/* Retroceso corto antes de girar cuando el frente esta pegado */
+#ifndef NAV_SCAN_CLOSE_BACK_MS
+#define NAV_SCAN_CLOSE_BACK_MS 300
 #endif
 /* Retroceso del precipicio: lo minimo para que ambos TCRT queden sobre el
  * piso, mas ~1 cm (atras no hay sensores). PROVISORIO: verificar en el piso. */
@@ -297,6 +314,10 @@ typedef struct {
     uint8_t scan_streak;           // Giros o retrocesos seguidos sin avanzar
     uint8_t backup_streak;         // Retrocesos seguidos sin ningun lado libre
     int32_t heading_target_mdeg;   // Rumbo a mantener en el tramo recto
+    uint8_t front_block_hits;      // Lecturas de frente seguidas con obstaculo (< NAV_OBSTACLE_MM)
+    uint8_t front_close_hits;      // Lecturas de frente seguidas a NAV_SIDE_STOP_MM o menos
+    uint8_t left_close_hits;       // Lecturas izquierdas seguidas a NAV_SIDE_STOP_MM o menos
+    uint8_t right_close_hits;
 } NavContext_t;
 
 void Nav_Init(NavContext_t* ctx);

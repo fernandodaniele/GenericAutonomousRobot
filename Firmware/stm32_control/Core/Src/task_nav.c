@@ -157,6 +157,7 @@ static void NavTask(void* argument)
     int16_t pwm_l = 0;
     int16_t pwm_r = 0;
     float x_mm = 0.0f, y_mm = 0.0f, theta = 0.0f;
+    int32_t heading0_mdeg = 0;   // Rumbo al arrancar: el mapa empieza mirando a +x
     NavState_t prev_state = NAV_STATE_IDLE;
     SensorSnapshot_t snap;
     TickType_t last_wake = xTaskGetTickCount();
@@ -246,6 +247,7 @@ static void NavTask(void* argument)
         /* Odometria estimada a partir del PWM aplicado (no hay encoders) */
         if (prev_state == NAV_STATE_IDLE && out.state != NAV_STATE_IDLE) {
             x_mm = y_mm = theta = 0.0f;
+            heading0_mdeg = in.heading_mdeg;
         }
         prev_state = out.state;
         {
@@ -256,7 +258,13 @@ static void NavTask(void* argument)
             float v = (v_l + v_r) / 2.0f;
             x_mm += v * cosf(theta) * dt;
             y_mm += v * sinf(theta) * dt;
-            theta += ((v_r - v_l) / ROBOT_WHEEL_BASE) * dt;
+            if (in.imu_ok) {
+                /* Con giroscopio, el angulo sale del rumbo medido (el modelo
+                 * por PWM no ve patinadas ni diferencias entre motores) */
+                theta = (float)(in.heading_mdeg - heading0_mdeg) * (3.14159265f / 180000.0f);
+            } else {
+                theta += ((v_r - v_l) / ROBOT_WHEEL_BASE) * dt;
+            }
         }
 
         status_led(out.state, out.fault_latched, &in, now);

@@ -24,7 +24,7 @@ bool Telemetry_HandleLine(const char *line);
 /**
  * @brief Escribe el ultimo estado del robot en formato JSON.
  * @param out Buffer destino.
- * @param size Tamano del buffer (al menos 1536 bytes).
+ * @param size Tamano del buffer (al menos 3072 bytes).
  * @return Largo del texto escrito, o 0 si no entro en el buffer.
  */
 size_t Telemetry_ToJson(char *out, size_t size);

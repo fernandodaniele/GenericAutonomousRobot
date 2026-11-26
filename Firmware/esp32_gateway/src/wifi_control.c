@@ -12,7 +12,7 @@
 #include "telemetry.h"
 #include "uart_comm.h"
 
-#define STATUS_JSON_SIZE 1536
+#define STATUS_JSON_SIZE 3072   // Estado + 16 puntos del mapa
 #define TIME_BODY_SIZE   24     // "AAAA,MM,DD,hh,mm,ss" = 19 caracteres
 #define TIME_FIELDS      6
 

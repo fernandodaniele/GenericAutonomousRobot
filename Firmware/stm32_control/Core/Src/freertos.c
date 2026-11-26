@@ -216,12 +216,17 @@ static void send_int(DrvUart_t *uart, int32_t v)
   DrvUart_SendString(uart, u32_to_str((uint32_t)v, &num[sizeof(num) - 1]));
 }
 
-/* 9999 = nada al alcance; 0 = sin lectura */
+/* Ultima lectura propia del sensor (los laterales se miden 1 de cada 4 pings:
+ * con la foto actual casi nunca aparecerian). 9999 = nada al alcance;
+ * 0 = sin lectura; TOO_CLOSE = 20 mm. */
 static int32_t map_range(const SensorSnapshot_t *s, UltrasoundIndex_t i)
 {
-  if (s->us_status[i] == ULTRASOUND_STATUS_FAR) return 9999;
-  if (s->us_status[i] == ULTRASOUND_STATUS_NO_ECHO) return 0;
-  return (int32_t)s->dist_mm[i];
+  switch (s->us_last_status[i]) {
+    case ULTRASOUND_STATUS_FAR:       return 9999;
+    case ULTRASOUND_STATUS_TOO_CLOSE: return 20;
+    case ULTRASOUND_STATUS_OK:        return (int32_t)s->dist_mm[i];
+    default:                          return 0;
+  }
 }
 
 /* MAP,<ms>,<x_mm>,<y_mm>,<theta_mrad>,<frente_mm>,<izq_mm>,<der_mm> */

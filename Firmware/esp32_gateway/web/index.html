@@ -11,14 +11,13 @@
   --surface: #fcfcfb;
   --ink: #0b0b0b;
   --ink-2: #52514e;
-  --muted: #6f6d68;
   --grid: #e1e0d9;
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, .10);
-  --body: #e1e0d9;
   --front: #2a78d6;
   --left: #eb6834;
   --right: #1baf7a;
+  --path: #52514e;
   --good: #0ca30c;
   --warning: #c98500;
   --critical: #d03b3b;
@@ -30,85 +29,60 @@
     --surface: #1a1a19;
     --ink: #f0efec;
     --ink-2: #c3c2b7;
-    --muted: #a5a39b;
     --grid: #2c2c2a;
     --axis: #383835;
     --border: rgba(255, 255, 255, .10);
-    --body: #383835;
     --front: #3987e5;
     --left: #d95926;
     --right: #199e70;
+    --path: #c3c2b7;
     --warning: #e0a030;
   }
 }
 * { box-sizing: border-box; }
-body {
-  margin: 0;
-  padding: 16px;
-  background: var(--page);
-  color: var(--ink);
-  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-main { max-width: 960px; margin: 0 auto; display: grid; gap: 12px; }
-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+body { margin: 0; padding: 12px; background: var(--page); color: var(--ink);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 760px; margin: 0 auto; display: grid; gap: 12px; }
+header { display: flex; justify-content: space-between; align-items: center; }
 h1 { font-size: 18px; margin: 0; }
-h2 { font-size: 14px; margin: 0 0 8px; color: var(--ink-2); font-weight: 600; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; min-width: 0; }
-.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+h2 { font-size: 14px; margin: 0; color: var(--ink-2); font-weight: 600; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
 .pill i { width: 9px; height: 9px; border-radius: 50%; background: var(--critical); }
 .pill.on i { background: var(--good); }
-#hero { display: grid; gap: 12px; }
-#state { font-size: 30px; font-weight: 700; line-height: 1.15; }
-#action { color: var(--ink-2); }
+#state { font-size: 26px; font-weight: 700; }
+#action { color: var(--ink-2); margin-bottom: 12px; }
 .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-button { padding: 16px 0; font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
+button { padding: 14px 0; font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 10px; cursor: pointer; }
 #start { background: #0b7a0b; }
 #stop { background: var(--critical); }
-#msg { min-height: 1.4em; font-size: 13px; color: var(--ink-2); margin: 0; }
-.grid { display: grid; gap: 12px; }
-#robot svg { display: block; width: 100%; max-width: 420px; height: auto; margin: 0 auto; }
-svg text { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink); }
-svg text.sub { font-size: 11px; fill: var(--ink-2); }
-.row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 12px; padding: 7px 0; border-top: 1px solid var(--grid); }
-.row:first-of-type { border-top: 0; }
-.row b { font-size: 20px; font-variant-numeric: tabular-nums; }
-.row small { grid-column: 1 / -1; color: var(--ink-2); font-size: 13px; }
-.name { display: inline-flex; align-items: center; gap: 7px; }
-.name i { width: 10px; height: 10px; border-radius: 3px; }
-.row small.alert { color: var(--critical); font-weight: 600; }
-.bar { grid-column: 1 / -1; position: relative; height: 6px; margin-top: 3px; background: var(--grid); border-radius: 3px; overflow: hidden; }
-.bar span { position: absolute; top: 0; bottom: 0; background: var(--ink-2); }
-.bar::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--surface); }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
+button.small { padding: 8px 12px; font-size: 14px; font-weight: 600; background: var(--ink-2); }
+#msg { min-height: 1.2em; font-size: 13px; color: var(--ink-2); margin: 8px 0 0; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tile { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.tile span { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.tile span i { width: 10px; height: 10px; border-radius: 3px; }
+.tile b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+.tile.alert b { color: var(--critical); }
+.maphead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+#map { display: block; width: 100%; height: 420px; border-radius: 8px; background: var(--page); touch-action: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { width: 14px; height: 3px; border-radius: 2px; }
-#charts { position: relative; touch-action: pan-y; }
-canvas { display: block; width: 100%; height: 130px; }
-#tip {
-  position: absolute; top: 0; z-index: 2; display: none; pointer-events: none;
-  background: var(--surface); color: var(--ink); border: 1px solid var(--axis); border-radius: 8px;
-  padding: 6px 9px; font-size: 12px; line-height: 1.5; white-space: nowrap;
-  font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
-}
-#log { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 14px; }
-#log li { display: flex; gap: 10px; padding: 4px 0; border-top: 1px solid var(--grid); }
-#log li:first-child { border-top: 0; }
-#log time { color: var(--ink-2); font-variant-numeric: tabular-nums; min-width: 62px; }
-.note { margin: 0; font-size: 12px; color: var(--ink-2); }
-#modules .row b { font-size: 15px; font-weight: 600; text-align: right; }
-#modules .name i { border-radius: 50%; }
-.ok i.dot { background: var(--good); }
-.warn i.dot { background: var(--warning); }
-.fail i.dot { background: var(--critical); }
-.off i.dot { background: var(--axis); }
-.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
-#syncTime { padding: 10px 14px; background: var(--ink-2); font-size: 14px; }
-@media (min-width: 720px) { #modules .list { columns: 2; column-gap: 24px; } #modules .row { break-inside: avoid; } }
+.legend i { width: 10px; height: 10px; border-radius: 2px; }
+.note { margin: 6px 0 0; font-size: 12px; color: var(--ink-2); }
+details summary { cursor: pointer; font-weight: 600; color: var(--ink-2); font-size: 14px; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; padding: 6px 0; border-top: 1px solid var(--grid); font-size: 14px; }
+.row:first-child { border-top: 0; }
+.row b { font-weight: 600; text-align: right; }
+.row small { grid-column: 1 / -1; color: var(--ink-2); font-size: 12px; }
+.row .name { display: inline-flex; align-items: center; gap: 7px; }
+.row .name i { width: 9px; height: 9px; border-radius: 50%; }
+.ok i { background: var(--good); } .warn i { background: var(--warning); }
+.fail i { background: var(--critical); } .off i { background: var(--axis); }
+#log { list-style: none; margin: 8px 0 0; padding: 0; max-height: 200px; overflow-y: auto; font-size: 14px; }
+#log li { display: flex; gap: 10px; padding: 3px 0; border-top: 1px solid var(--grid); }
+#log time { color: var(--ink-2); min-width: 58px; font-variant-numeric: tabular-nums; }
 .stale .live { opacity: .45; }
-@media (min-width: 720px) {
-  .grid.two { grid-template-columns: 1fr 1fr; }
-  .buttons { max-width: 360px; }
-}
 </style>
 </head>
 <body>
@@ -118,7 +92,7 @@ canvas { display: block; width: 100%; height: 130px; }
     <span class="pill" id="link"><i></i><span id="linkText">Conectando…</span></span>
   </header>
 
-  <section class="card" id="hero">
+  <section class="card">
     <div class="live">
       <div id="state">—</div>
       <div id="action">Esperando datos</div>
@@ -130,307 +104,139 @@ canvas { display: block; width: 100%; height: 130px; }
     <p id="msg" role="status"></p>
   </section>
 
-  <section class="card" id="modules">
-    <h2>Estado de módulos</h2>
-    <div class="list" id="moduleList"></div>
-    <div class="tools">
-      <button id="syncTime" type="button">Sincronizar hora del robot</button>
-      <span class="note">Copia al reloj DS1302 la hora de este celular.</span>
-    </div>
-  </section>
-
-  <div class="grid two">
-    <section class="card live" id="robot">
-      <h2>Vista superior</h2>
-      <svg viewBox="0 -16 340 286" role="img" aria-label="Robot visto desde arriba con la distancia medida por cada sensor">
-        <line id="beamF" x1="170" y1="118" x2="170" y2="118" stroke="var(--front)" stroke-width="4" stroke-linecap="round"/>
-        <line id="beamL" x1="126" y1="132" x2="126" y2="132" stroke="var(--left)" stroke-width="4" stroke-linecap="round"/>
-        <line id="beamR" x1="214" y1="132" x2="214" y2="132" stroke="var(--right)" stroke-width="4" stroke-linecap="round"/>
-        <text id="labelF" x="180" y="0">—</text>
-        <text id="labelL" x="26" y="122">—</text>
-        <text id="labelR" x="314" y="122" text-anchor="end">—</text>
-        <rect x="138" y="118" width="64" height="88" rx="10" fill="var(--body)" stroke="var(--axis)"/>
-        <rect id="wheelL" x="126" y="146" width="10" height="44" rx="3" fill="var(--axis)"/>
-        <rect id="wheelR" x="204" y="146" width="10" height="44" rx="3" fill="var(--axis)"/>
-        <circle id="edgeL" cx="150" cy="128" r="6" fill="var(--good)"/>
-        <circle id="edgeR" cx="190" cy="128" r="6" fill="var(--good)"/>
-        <text id="motorL" x="118" y="174" text-anchor="end">—</text>
-        <text id="motorR" x="222" y="174">—</text>
-        <text class="sub" x="170" y="228" text-anchor="middle">Círculos: sensores de piso (verde = piso, rojo = borde)</text>
-        <text class="sub" x="170" y="246" text-anchor="middle">Líneas: distancia, escala hasta 1 m</text>
-      </svg>
-    </section>
-
-    <div class="grid">
-      <section class="card live">
-        <h2>Motores</h2>
-        <div id="motors"></div>
-        <p class="note">Es lo que ordena el STM32. Sin encoders no se puede confirmar que la rueda gire.</p>
-      </section>
-      <section class="card live">
-        <h2>Sensores de piso e IMU</h2>
-        <div id="floor"></div>
-      </section>
-    </div>
-  </div>
-
   <section class="card live">
-    <h2>Ultrasonidos</h2>
-    <div id="sonars"></div>
-  </section>
-
-  <section class="card">
-    <h2>Últimos 60 segundos</h2>
-    <div id="charts">
-      <div class="legend">
-        <span><i style="background:var(--front)"></i>Frente</span>
-        <span><i style="background:var(--left)"></i>Izquierda</span>
-        <span><i style="background:var(--right)"></i>Derecha</span>
-        <span style="color:var(--muted)">Distancia (cm)</span>
-      </div>
-      <canvas id="chartDist"></canvas>
-      <div class="legend" style="margin-top:8px">
-        <span><i style="background:var(--left)"></i>Motor izquierdo</span>
-        <span><i style="background:repeating-linear-gradient(90deg,var(--right) 0 5px,transparent 5px 8px)"></i>Motor derecho</span>
-        <span style="color:var(--muted)">PWM (%)</span>
-      </div>
-      <canvas id="chartPwm"></canvas>
-      <div id="tip"></div>
+    <div class="tiles">
+      <div class="tile" id="tF"><span><i style="background:var(--front)"></i>Frente</span><b>—</b></div>
+      <div class="tile" id="tL"><span><i style="background:var(--left)"></i>Izquierda</span><b>—</b></div>
+      <div class="tile" id="tR"><span><i style="background:var(--right)"></i>Derecha</span><b>—</b></div>
+      <div class="tile" id="tH"><span>Rumbo</span><b>—</b></div>
+      <div class="tile" id="tML"><span>Motor izq.</span><b>—</b></div>
+      <div class="tile" id="tMR"><span>Motor der.</span><b>—</b></div>
     </div>
   </section>
 
   <section class="card">
-    <h2>Registro</h2>
-    <ul id="log"><li><span>Sin novedades</span></li></ul>
+    <div class="maphead">
+      <h2>Mapa de lo que ve el robot</h2>
+      <button class="small" id="clearMap" type="button">Borrar mapa</button>
+    </div>
+    <canvas id="map"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--front)"></i>Frente</span>
+      <span><i style="background:var(--left)"></i>Izquierda</span>
+      <span><i style="background:var(--right)"></i>Derecha</span>
+      <span><i style="background:var(--path);height:3px"></i>Recorrido</span>
+      <span id="mapInfo"></span>
+    </div>
+    <p class="note">Posición estimada con el giroscopio y el PWM (sin encoders): el mapa se deforma con el tiempo.
+      Se borra solo al apretar START.</p>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Diagnóstico y registro</summary>
+      <div id="moduleList" style="margin-top:8px"></div>
+      <div style="margin-top:8px"><button class="small" id="syncTime" type="button">Sincronizar hora del robot</button></div>
+      <ul id="log"></ul>
+    </details>
   </section>
 </main>
 
 <script>
 'use strict';
-const PWM_MAX = 8399;       // MOTOR_MAX_SPEED en la STM32
-const CLEAR_CM = 40;        // NAV_CLEAR_MM: desde aca el frente cuenta como libre
-const BEAM_MAX_CM = 100;    // Escala de la vista superior y del grafico
-const HISTORY_MS = 60000;
-const GAP_MS = 1500;
+const PWM_MAX = 8399;        // MOTOR_MAX_SPEED en la STM32
 const POLL_MS = 250;
 const LOG_MAX = 40;
+const MAP_RANGE_MAX = 2000;  // mm: lecturas mas lejanas no se dibujan (poco confiables)
+const CELL = 20;             // mm por celda del mapa
+const CELLS_MAX = 6000;
+const PATH_MAX = 4000;
+const SENSOR_ANGLE = [0, Math.PI / 2, -Math.PI / 2];   // frente, izquierda (+), derecha
+const SENSOR_COLOR = ['--front', '--left', '--right'];
 
-const STATES = {
-  IDLE: 'En espera', FORWARD: 'Avanzando', SCAN: 'Escaneo',
-  AVOID: 'Esquivando', CLIFF: 'Borde detectado', FAULT: 'Falla'
-};
-const EVENTS = {
-  ALERTA: 'Giro brusco', CLIFF: 'Borde detectado', FAULT: 'Falla',
-  HORA_OK: 'Reloj puesto en hora', HORA_ERR: 'No se pudo poner en hora el reloj'
-};
-const SD_TYPES = ['', 'SDSC', 'SDHC'];
-const SONAR_NAMES = ['Frente', 'Izquierda', 'Derecha'];
-const SONAR_COLORS = ['--front', '--left', '--right'];
+const STATES = { IDLE: 'En espera', FORWARD: 'Avanzando', SCAN: 'Escaneo',
+  CLIFF: 'Borde detectado', FAULT: 'Falla' };
+const EVENTS = { ALERTA: 'Giro brusco', CLIFF: 'Borde detectado', FAULT: 'Falla',
+  HORA_OK: 'Reloj puesto en hora', HORA_ERR: 'No se pudo poner en hora el reloj' };
 
 const $ = id => document.getElementById(id);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-let history = [];
-let hoverX = null;
-let lastEventId = 0;
-let lastState = null;
-let logEmpty = true;
+let lastState = null, lastEventId = 0, lastMapId = 0, lastMapMs = 0;
+let cells = new Map();   // "cx,cy" -> indice de sensor
+let path = [];           // [{x, y}]
+let pose = null;         // {x, y, th}
 
-function sonarCm(u) {
-  if (u.s === 'O') return u.mm / 10;
-  if (u.s === 'F') return BEAM_MAX_CM;
-  if (u.s === 'C') return 1;
-  return null;
-}
-
-function sonarValue(u) {
-  if (u.s === 'O') return (u.mm / 10).toFixed(1) + ' cm';
+/* ---------- Datos en pantalla ---------- */
+function sonarText(u) {
+  if (u.s === 'O') return (u.mm / 10).toFixed(0) + ' cm';
   if (u.s === 'F') return 'Libre';
   if (u.s === 'C') return '< 2 cm';
   return 'Sin eco';
 }
-
-function sonarDetail(u) {
-  if (u.s === 'N') return 'El sensor no respondió';
-  if (u.s === 'C') return 'Obstáculo pegado';
-  if (u.s === 'F') return 'Nada al alcance';
-  return u.mm / 10 >= CLEAR_CM ? 'Camino libre' : 'Detecta un obstáculo';
+function setTile(id, text, alert) {
+  $(id).lastElementChild.textContent = text;
+  $(id).classList.toggle('alert', !!alert);
 }
-
-function motorText(pwm, brake) {
-  if (pwm > 0) return 'Adelante';
-  if (pwm < 0) return 'Atrás';
-  return brake ? 'Freno' : 'Detenido';
-}
-
-/* Diagnostico del MPU6050 (IMU_DIAG_* en task_sensors.h de la STM32) */
-function imuProblem(diag) {
-  if (diag === -3) return 'SDA o SCL en bajo: el módulo está sin alimentación o un cable va a masa (se reintenta cada 2 s)';
-  if (diag === -2) return 'Respondía y dejó de responder: revisar conexiones flojas';
-  if (diag === -1) return 'No responde por I2C: revisar SCL→PB6, SDA→PB9, GND y VCC';
-  if (diag === -4) return 'Desactivada en el firmware';
-  if (diag === -5) return 'Calibrando: mantener el robot quieto';
-  if (typeof diag === 'number' && diag >= 0) {
-    return 'Responde con ID 0x' + diag.toString(16).toUpperCase() + ': modelo no reconocido';
-  }
-  return 'IMU sin respuesta';
-}
-
-function pct(pwm) { return Math.round(Math.abs(pwm) * 100 / PWM_MAX); }
+const pct = pwm => Math.round(pwm * 100 / PWM_MAX);
 
 function action(d) {
   const [l, r] = d.pwm;
   if (d.state === 'FAULT') return 'Motores frenados. Salir con STOP y START';
   if (d.state === 'IDLE') return 'Apretá START para arrancar';
-  if (l > 0 && r > 0) return l === r ? 'Avanzando recto' : 'Avanzando con corrección';
+  if (l > 0 && r > 0) return 'Avanzando';
   if (l < 0 && r < 0) return 'Retrocediendo';
   if (l < 0 && r > 0) return 'Girando a la izquierda';
   if (l > 0 && r < 0) return 'Girando a la derecha';
-  if (l !== 0 || r !== 0) return 'Moviendo un solo motor';
   return d.state === 'SCAN' ? 'Quieto, midiendo' : 'Motores detenidos';
 }
 
-function setRow(host, i, name, color, value, detail, alert, bar) {
-  let row = host.children[i];
-  if (!row) {
-    row = document.createElement('div');
-    row.className = 'row';
-    row.innerHTML = '<span class="name"></span><b></b><small></small>';
-    if (color) {
-      const dot = document.createElement('i');
-      dot.style.background = 'var(' + color + ')';
-      row.firstChild.append(dot);
-    }
-    row.firstChild.append(document.createTextNode(name));
-    if (bar !== undefined) {
-      const track = document.createElement('div');
-      track.className = 'bar';
-      track.append(document.createElement('span'));
-      row.append(track);
-    }
-    host.append(row);
-  }
-  row.children[1].textContent = value;
-  row.children[2].textContent = detail;
-  row.children[2].className = alert ? 'alert' : '';
-  if (bar !== undefined) {
-    const span = row.querySelector('.bar span');
-    const half = Math.min(Math.abs(bar), 1) * 50;
-    span.style.left = (bar < 0 ? 50 - half : 50) + '%';
-    span.style.width = half + '%';
-  }
-}
-
-function setBeam(id, labelId, dx, dy, u) {
-  const beam = $(id);
-  const cm = sonarCm(u);
-  const len = cm === null ? BEAM_MAX_CM : Math.min(cm, BEAM_MAX_CM);
-  beam.setAttribute('x2', +beam.getAttribute('x1') + dx * len);
-  beam.setAttribute('y2', +beam.getAttribute('y1') + dy * len);
-  beam.style.strokeDasharray = cm === null ? '2 8' : '';
-  beam.style.opacity = cm === null ? '.5' : '1';
-  $(labelId).textContent = sonarValue(u);
-}
-
-function setMotor(id, wheel, pwm, brake) {
-  const arrow = pwm > 0 ? '▲ ' : pwm < 0 ? '▼ ' : '';
-  $(id).textContent = pwm !== 0 ? arrow + pct(pwm) + ' %' : motorText(pwm, brake);
-  $(wheel).style.fill = pwm !== 0 ? 'var(--ink)' : 'var(--axis)';
-}
-
 function addLog(ms, text) {
-  const log = $('log');
-  if (logEmpty) { log.textContent = ''; logEmpty = false; }
   const li = document.createElement('li');
-  const time = document.createElement('time');
-  const body = document.createElement('span');
-  time.textContent = (ms / 1000).toFixed(1) + ' s';
-  body.textContent = text;
-  li.append(time, body);
-  log.prepend(li);
-  while (log.children.length > LOG_MAX) log.lastChild.remove();
+  const t = document.createElement('time');
+  const s = document.createElement('span');
+  t.textContent = (ms / 1000).toFixed(1) + ' s';
+  s.textContent = text;
+  li.append(t, s);
+  $('log').prepend(li);
+  while ($('log').children.length > LOG_MAX) $('log').lastChild.remove();
 }
 
-/* Una fila de "Estado de modulos": level = ok | warn | fail | off */
 function setModule(i, name, level, value, detail) {
   const host = $('moduleList');
   let row = host.children[i];
   if (!row) {
     row = document.createElement('div');
-    row.className = 'row';
-    row.innerHTML = '<span class="name"><i class="dot"></i></span><b></b><small></small>';
+    row.innerHTML = '<span class="name"><i></i></span><b></b><small></small>';
     row.firstChild.append(document.createTextNode(name));
     host.append(row);
   }
-  row.classList.remove('ok', 'warn', 'fail', 'off');
-  row.classList.add(level);
+  row.className = 'row ' + level;
   row.children[1].textContent = value;
   row.children[2].textContent = detail;
 }
 
-const two = n => String(n).padStart(2, '0');
-
-function dateText(t) {
-  return two(t[2]) + '/' + two(t[1]) + '/' + t[0] + ' ' + two(t[3]) + ':' + two(t[4]) + ':' + two(t[5]);
-}
-
-function sonarModule(u) {
-  if (u.s === 'N') return ['fail', 'Sin eco', 'No responde: revisar TRIG, ECHO y 5 V'];
-  if (u.s === 'C') return ['warn', '< 2 cm', 'Responde, pero algo está pegado al sensor'];
-  if (u.s === 'F') return ['ok', 'Libre', 'Responde: nada al alcance'];
-  return ['ok', (u.mm / 10).toFixed(1) + ' cm', 'Responde'];
-}
-
 function renderModules(d) {
-  const link = d.link;
-  const sys = d.sys || { ok: false };
+  const link = d.link, sys = d.sys || {};
   let i = 0;
-
-  setModule(i++, 'STM32 (enlace UART)', link ? 'ok' : 'fail', link ? 'Conectado' : 'Sin datos',
-    link ? 'Recibe telemetría cada 200 ms' : 'Revisar TX/RX entre ESP32 y STM32, GND y que la STM32 esté encendida');
-
-  SONAR_NAMES.forEach((name, k) => {
-    const [level, value, detail] = link ? sonarModule(d.us[k]) : ['off', '—', 'Sin datos del STM32'];
-    setModule(i++, 'Ultrasonido ' + name.toLowerCase(), level, value, detail);
+  setModule(i++, 'STM32 (UART)', link ? 'ok' : 'fail', link ? 'Conectado' : 'Sin datos',
+    link ? '' : 'Revisar TX/RX, GND y que la STM32 esté encendida');
+  ['frente', 'izquierda', 'derecha'].forEach((n, k) => {
+    const u = d.us[k];
+    const level = !link ? 'off' : u.s === 'N' ? 'fail' : u.s === 'C' ? 'warn' : 'ok';
+    setModule(i++, 'Ultrasonido ' + n, level, link ? sonarText(u) : '—',
+      u.s === 'N' && link ? 'No responde: revisar TRIG, ECHO y 5 V' : '');
   });
-
-  ['izquierdo', 'derecho'].forEach((side, k) => {
-    if (!link) { setModule(i++, 'Sensor de piso ' + side, 'off', '—', 'Sin datos del STM32'); return; }
-    const v = d.tcrt[k];
-    const level = v === 0 ? 'warn' : 'ok';
-    setModule(i++, 'Sensor de piso ' + side, level, 'ADC ' + v,
-      v === 0 ? 'Lee 0: sin señal o desactivado en el firmware' : (d.cliff[k] ? 'Responde: ve un borde' : 'Responde: ve piso'));
-  });
-
-  if (!link) setModule(i++, 'Giroscopio MPU6050', 'off', '—', 'Sin datos del STM32');
-  else setModule(i++, 'Giroscopio MPU6050', d.imu ? 'ok' : 'fail', d.imu ? d.gyro + ' °/s' : 'Falla',
-    d.imu ? 'Responde por I2C1 (PB6/PB9)' : imuProblem(d.imuDiag));
-
-  setModule(i++, 'Motores', link ? 'ok' : 'off',
-    link ? pct(d.pwm[0]) + ' % / ' + pct(d.pwm[1]) + ' %' : '—',
-    'Lo que ordena el STM32 (sin encoders no se confirma el giro)');
-
-  if (!sys.ok) {
-    setModule(i++, 'Tarjeta SD', 'off', '—', 'Sin estado del STM32 (firmware sin datalogger o sin enlace)');
-    setModule(i++, 'Reloj DS1302', 'off', '—', 'Sin estado del STM32');
-    setModule(i++, 'Datalogger', 'off', '—', 'Sin estado del STM32');
-    return;
-  }
-
-  if (sys.sd === 1) setModule(i++, 'Tarjeta SD', 'ok', SD_TYPES[sys.sdType] || 'OK',
-    'Guardando GAR.LOG: ' + sys.sdLines + ' líneas desde el arranque');
-  else if (sys.sd === 2) setModule(i++, 'Tarjeta SD', 'fail', 'Falló',
-    'Falló una escritura: se dejó de usar. Revisar contacto y alimentación; reiniciar');
-  else setModule(i++, 'Tarjeta SD', 'warn', 'No detectada',
-    'Sin tarjeta o no responde (SPI2: PB13/PB14/PB15, CS en PC4). Se detecta al arrancar');
-
-  setModule(i++, 'Reloj DS1302', sys.clock ? 'ok' : 'warn', sys.clock ? dateText(sys.date) : 'Sin hora',
-    sys.clock ? 'Responde y está en hora' : 'No responde o nunca se puso en hora: tocá «Sincronizar hora del robot»');
-
-  const saving = sys.sd === 1;
-  setModule(i++, 'Datalogger', sys.rows > 0 ? (saving ? 'ok' : 'warn') : 'fail', sys.rows + ' filas',
-    sys.rows === 0 ? 'La tarea no está generando filas' :
-    saving ? 'Una fila cada 200 ms en GAR.LOG' : 'Genera filas, pero sin SD solo salen por USB');
+  ['izquierdo', 'derecho'].forEach((n, k) => setModule(i++, 'Piso ' + n,
+    !link ? 'off' : d.tcrt[k] === 0 ? 'warn' : 'ok', link ? 'ADC ' + d.tcrt[k] : '—',
+    link && d.cliff[k] ? 'Ve un borde' : ''));
+  setModule(i++, 'Giroscopio', !link ? 'off' : d.imu ? 'ok' : 'fail',
+    link ? (d.imu ? d.gyro + ' °/s' : 'Falla') : '—', link && !d.imu ? 'Revisar MPU6050 (PB6/PB9)' : '');
+  if (!sys.ok) { setModule(i++, 'SD / reloj', 'off', '—', 'Sin estado del STM32'); return; }
+  setModule(i++, 'Tarjeta SD', sys.sd === 1 ? 'ok' : sys.sd === 2 ? 'fail' : 'warn',
+    sys.sd === 1 ? sys.sdLines + ' líneas' : sys.sd === 2 ? 'Falló' : 'No detectada', '');
+  setModule(i++, 'Reloj DS1302', sys.clock ? 'ok' : 'warn', sys.clock ? 'En hora' : 'Sin hora',
+    sys.clock ? '' : 'Tocá «Sincronizar hora del robot»');
 }
 
 function setLink(on, text) {
@@ -439,15 +245,114 @@ function setLink(on, text) {
   document.body.classList.toggle('stale', !on);
 }
 
-function record(d) {
-  const last = history[history.length - 1];
-  if (last && d.ms < last.ms) history = [];
-  if (last && d.ms === last.ms) return;
-  history.push({ ms: d.ms, us: d.us.map(sonarCm), raw: d.us, pwm: d.pwm, state: d.state,
-    heading: d.imu ? d.heading / 10 : null });
-  while (history.length && d.ms - history[0].ms > HISTORY_MS) history.shift();
+/* ---------- Mapa ---------- */
+function clearMap() {
+  cells = new Map();
+  path = [];
+  pose = null;
 }
 
+function addMapPoints(list) {
+  list.slice().sort((a, b) => a[0] - b[0]).forEach(p => {
+    const [id, ms, x, y, thm, ...ranges] = p;
+    if (id <= lastMapId) return;
+    if (ms < lastMapMs) clearMap();          // la STM32 se reinicio
+    lastMapId = id;
+    lastMapMs = ms;
+    const th = thm / 1000;
+    pose = { x, y, th };
+    const last = path[path.length - 1];
+    if (!last || Math.hypot(x - last.x, y - last.y) >= 10) {
+      path.push({ x, y });
+      if (path.length > PATH_MAX) path.shift();
+    }
+    ranges.forEach((r, k) => {
+      if (r <= 0 || r >= 9999 || r > MAP_RANGE_MAX) return;   // sin lectura o libre
+      const a = th + SENSOR_ANGLE[k];
+      const key = Math.round((x + r * Math.cos(a)) / CELL) + ',' + Math.round((y + r * Math.sin(a)) / CELL);
+      cells.delete(key);
+      cells.set(key, k);
+      if (cells.size > CELLS_MAX) cells.delete(cells.keys().next().value);
+    });
+  });
+}
+
+function drawMap() {
+  const canvas = $('map');
+  const ratio = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = Math.round(w * ratio);
+  canvas.height = Math.round(h * ratio);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  // Limites: recorrido + obstaculos + 30 cm de margen (minimo 1,5 m)
+  let minX = 0, maxX = 0, minY = 0, maxY = 0;
+  const grow = (x, y) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y); };
+  path.forEach(p => grow(p.x, p.y));
+  cells.forEach((k, key) => { const [cx, cy] = key.split(','); grow(cx * CELL, cy * CELL); });
+  const midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
+  const spanX = Math.max(maxX - minX + 600, 1500);   // x del robot = vertical en pantalla
+  const spanY = Math.max(maxY - minY + 600, 1500);
+  const scale = Math.min(h / spanX, w / spanY);      // px por mm
+  // Pantalla: +x (adelante al arrancar) hacia arriba, +y (izquierda) hacia la izquierda
+  const sx = y => w / 2 - (y - midY) * scale;
+  const sy = x => h / 2 - (x - midX) * scale;
+
+  // Cuadricula cada 50 cm (cada 1 m si el mapa es grande)
+  const step = (spanX > 6000 || spanY > 6000) ? 1000 : 500;
+  ctx.strokeStyle = css('--grid');
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let g = Math.floor((midY - w / 2 / scale) / step) * step; sx(g) >= 0; g += step) {
+    ctx.moveTo(sx(g), 0); ctx.lineTo(sx(g), h);
+  }
+  for (let g = Math.floor((midX - h / 2 / scale) / step) * step; sy(g) >= 0; g += step) {
+    ctx.moveTo(0, sy(g)); ctx.lineTo(w, sy(g));
+  }
+  ctx.stroke();
+  ctx.fillStyle = css('--ink-2');
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText('Cuadros de ' + (step / 10) + ' cm', 8, h - 8);
+
+  // Recorrido
+  if (path.length > 1) {
+    ctx.strokeStyle = css('--path');
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    path.forEach((p, i) => i ? ctx.lineTo(sx(p.y), sy(p.x)) : ctx.moveTo(sx(p.y), sy(p.x)));
+    ctx.stroke();
+  }
+
+  // Obstaculos vistos
+  const size = Math.max(CELL * scale, 3);
+  const colors = SENSOR_COLOR.map(css);
+  cells.forEach((k, key) => {
+    const [cx, cy] = key.split(',');
+    ctx.fillStyle = colors[k];
+    ctx.fillRect(sx(cy * CELL) - size / 2, sy(cx * CELL) - size / 2, size, size);
+  });
+
+  // Robot (triangulo apuntando a su rumbo)
+  if (pose) {
+    const px = sx(pose.y), py = sy(pose.x);
+    const a = -pose.th - Math.PI / 2;   // angulo de pantalla del rumbo
+    const r = 11;
+    ctx.fillStyle = css('--ink');
+    ctx.beginPath();
+    ctx.moveTo(px + r * Math.cos(a), py + r * Math.sin(a));
+    ctx.lineTo(px + r * Math.cos(a + 2.5), py + r * Math.sin(a + 2.5));
+    ctx.lineTo(px + r * Math.cos(a - 2.5), py + r * Math.sin(a - 2.5));
+    ctx.closePath();
+    ctx.fill();
+  }
+  $('mapInfo').textContent = cells.size + ' puntos';
+}
+
+/* ---------- Ciclo ---------- */
 function render(d) {
   renderModules(d);
   if (!d.link) {
@@ -455,187 +360,25 @@ function render(d) {
     return;
   }
   setLink(true, 'Conectado');
-
   $('state').textContent = STATES[d.state] || d.state;
   $('action').textContent = action(d);
 
-  setBeam('beamF', 'labelF', 0, -1, d.us[0]);
-  setBeam('beamL', 'labelL', -1, 0, d.us[1]);
-  setBeam('beamR', 'labelR', 1, 0, d.us[2]);
-  setMotor('motorL', 'wheelL', d.pwm[0], d.brake);
-  setMotor('motorR', 'wheelR', d.pwm[1], d.brake);
-  $('edgeL').style.fill = d.cliff[0] ? 'var(--critical)' : 'var(--good)';
-  $('edgeR').style.fill = d.cliff[1] ? 'var(--critical)' : 'var(--good)';
-
-  d.us.forEach((u, i) => setRow($('sonars'), i, SONAR_NAMES[i], SONAR_COLORS[i],
-    sonarValue(u), sonarDetail(u), u.s === 'N' || u.s === 'C'));
-
-  ['Izquierdo', 'Derecho'].forEach((name, i) => {
-    const pwm = d.pwm[i];
-    setRow($('motors'), i, name, i ? '--right' : '--left', pct(pwm) + ' %',
-      motorText(pwm, d.brake) + (pwm !== 0 ? ', en movimiento' : ''), false, pwm / PWM_MAX);
-  });
-
-  ['Piso izquierdo', 'Piso derecho'].forEach((name, i) => {
-    setRow($('floor'), i, name, null, String(d.tcrt[i]),
-      d.cliff[i] ? 'Borde detectado' : 'Ve piso', !!d.cliff[i]);
-  });
-  setRow($('floor'), 2, 'Giro Z', null, d.imu ? d.gyro + ' °/s' : '—',
-    d.imu ? 'Positivo = girando a la izquierda' : imuProblem(d.imuDiag), !d.imu);
-  setRow($('floor'), 3, 'Rumbo', null, d.imu ? (d.heading / 10).toFixed(1) + ' °' : '—',
-    d.imu ? 'Ángulo girado desde el encendido' : 'Sin corrección de rumbo', !d.imu);
+  ['tF', 'tL', 'tR'].forEach((id, k) => setTile(id, sonarText(d.us[k]), d.us[k].s === 'N' || d.us[k].s === 'C'));
+  setTile('tH', d.imu ? (d.heading / 10).toFixed(0) + ' °' : 'Sin IMU', !d.imu);
+  setTile('tML', pct(d.pwm[0]) + ' %');
+  setTile('tMR', pct(d.pwm[1]) + ' %');
 
   if (lastState !== null && d.state !== lastState) {
+    if (lastState === 'IDLE') clearMap();   // START: la STM32 reinicia la posicion
     addLog(d.ms, (STATES[lastState] || lastState) + ' → ' + (STATES[d.state] || d.state));
   }
   lastState = d.state;
-
-  d.events.slice().sort((a, b) => a.id - b.id).forEach(e => {
-    if (e.id > lastEventId) {
-      lastEventId = e.id;
-      addLog(e.ms, EVENTS[e.t] || e.t);
-    }
+  (d.events || []).slice().sort((a, b) => a.id - b.id).forEach(e => {
+    if (e.id > lastEventId) { lastEventId = e.id; addLog(e.ms, EVENTS[e.t] || e.t); }
   });
 
-  record(d);
-  drawAll();
-}
-
-function setupCanvas(canvas) {
-  const ratio = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-  if (canvas.width !== Math.round(w * ratio) || canvas.height !== Math.round(h * ratio)) {
-    canvas.width = Math.round(w * ratio);
-    canvas.height = Math.round(h * ratio);
-  }
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  return { ctx, w, h };
-}
-
-const MARGIN = { l: 36, r: 8, t: 8, b: 20 };
-
-function timeToX(ms, end, w) {
-  return w - MARGIN.r - (end - ms) / HISTORY_MS * (w - MARGIN.l - MARGIN.r);
-}
-
-function drawChart(canvas, min, max, ticks, series) {
-  const { ctx, w, h } = setupCanvas(canvas);
-  const plotH = h - MARGIN.t - MARGIN.b;
-  const toY = v => MARGIN.t + (max - Math.min(Math.max(v, min), max)) / (max - min) * plotH;
-
-  ctx.font = '11px system-ui, sans-serif';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'right';
-  ctx.lineWidth = 1;
-  ticks.forEach(t => {
-    ctx.strokeStyle = css(t === 0 ? '--axis' : '--grid');
-    ctx.beginPath();
-    ctx.moveTo(MARGIN.l, toY(t));
-    ctx.lineTo(w - MARGIN.r, toY(t));
-    ctx.stroke();
-    ctx.fillStyle = css('--muted');
-    ctx.fillText(String(t), MARGIN.l - 6, toY(t));
-  });
-
-  ctx.textBaseline = 'alphabetic';
-  [['-60 s', 'left', MARGIN.l], ['-30 s', 'center', (MARGIN.l + w - MARGIN.r) / 2], ['ahora', 'right', w - MARGIN.r]]
-    .forEach(([text, align, x]) => {
-      ctx.textAlign = align;
-      ctx.fillText(text, x, h - 5);
-    });
-
-  if (!history.length) return;
-  const end = history[history.length - 1].ms;
-
-  series.forEach(s => {
-    ctx.strokeStyle = css(s.color);
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    ctx.setLineDash(s.dash ? [6, 5] : []);
-    ctx.beginPath();
-    let prev = null;
-    history.forEach(p => {
-      const v = s.get(p);
-      if (v === null) { prev = null; return; }
-      const x = timeToX(p.ms, end, w);
-      if (prev === null || p.ms - prev > GAP_MS) ctx.moveTo(x, toY(v));
-      else ctx.lineTo(x, toY(v));
-      prev = p.ms;
-    });
-    ctx.stroke();
-    ctx.setLineDash([]);
-  });
-
-  if (hoverX !== null) {
-    const p = nearest(w);
-    if (p) {
-      const x = timeToX(p.ms, end, w);
-      ctx.strokeStyle = css('--axis');
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, MARGIN.t);
-      ctx.lineTo(x, h - MARGIN.b);
-      ctx.stroke();
-      series.forEach(s => {
-        const v = s.get(p);
-        if (v === null) return;
-        ctx.fillStyle = css('--surface');
-        ctx.beginPath(); ctx.arc(x, toY(v), 6, 0, 7); ctx.fill();
-        ctx.fillStyle = css(s.color);
-        ctx.beginPath(); ctx.arc(x, toY(v), 4, 0, 7); ctx.fill();
-      });
-    }
-  }
-}
-
-function nearest(w) {
-  if (!history.length) return null;
-  const end = history[history.length - 1].ms;
-  let best = null;
-  let bestDist = 1e9;
-  history.forEach(p => {
-    const dist = Math.abs(timeToX(p.ms, end, w) - hoverX);
-    if (dist < bestDist) { bestDist = dist; best = p; }
-  });
-  return bestDist <= 24 ? best : null;
-}
-
-function updateTip() {
-  const tip = $('tip');
-  const canvas = $('chartDist');
-  const p = hoverX === null ? null : nearest(canvas.clientWidth);
-  if (!p) { tip.style.display = 'none'; return; }
-  const end = history[history.length - 1].ms;
-  tip.textContent = '';
-  [
-    'Hace ' + ((end - p.ms) / 1000).toFixed(1) + ' s · ' + (STATES[p.state] || p.state),
-    SONAR_NAMES.map((n, i) => n + ': ' + sonarValue(p.raw[i])).join(' · '),
-    'Motores: ' + Math.round(p.pwm[0] * 100 / PWM_MAX) + ' % / ' + Math.round(p.pwm[1] * 100 / PWM_MAX) + ' %'
-      + (p.heading === null ? '' : ' · Rumbo ' + p.heading.toFixed(1) + ' °')
-  ].forEach(line => {
-    const div = document.createElement('div');
-    div.textContent = line;
-    tip.append(div);
-  });
-  tip.style.display = 'block';
-  const max = canvas.clientWidth - tip.offsetWidth;
-  tip.style.left = Math.max(0, Math.min(hoverX + 12, max)) + 'px';
-}
-
-function drawAll() {
-  drawChart($('chartDist'), 0, BEAM_MAX_CM, [0, 25, 50, 75, 100], [
-    { color: '--front', get: p => p.us[0] },
-    { color: '--left', get: p => p.us[1] },
-    { color: '--right', get: p => p.us[2] }
-  ]);
-  drawChart($('chartPwm'), -100, 100, [-100, 0, 100], [
-    { color: '--left', get: p => p.pwm[0] * 100 / PWM_MAX },
-    { color: '--right', dash: true, get: p => p.pwm[1] * 100 / PWM_MAX }
-  ]);
-  updateTip();
+  addMapPoints(d.map || []);
+  drawMap();
 }
 
 async function poll() {
@@ -651,42 +394,25 @@ async function poll() {
   setTimeout(poll, POLL_MS);
 }
 
-async function send(command) {
+async function post(url, body) {
   try {
-    const response = await fetch('/' + command, { method: 'POST' });
+    const response = await fetch(url, { method: 'POST', body });
     $('msg').textContent = await response.text();
   } catch (e) {
     $('msg').textContent = 'Sin conexión con la ESP32';
   }
 }
 
-async function syncTime() {
+$('start').onclick = () => post('/start');
+$('stop').onclick = () => post('/stop');
+$('clearMap').onclick = () => { clearMap(); drawMap(); };
+$('syncTime').onclick = () => {
   const t = new Date();
-  const body = [t.getFullYear(), t.getMonth() + 1, t.getDate(),
-    t.getHours(), t.getMinutes(), t.getSeconds()].join(',');
-  try {
-    const response = await fetch('/time', { method: 'POST', body });
-    $('msg').textContent = await response.text();
-  } catch (e) {
-    $('msg').textContent = 'Sin conexión con la ESP32';
-  }
-}
-
-$('syncTime').onclick = syncTime;
-$('start').onclick = () => send('start');
-$('stop').onclick = () => send('stop');
-
-const charts = $('charts');
-charts.addEventListener('pointermove', e => {
-  hoverX = e.clientX - charts.getBoundingClientRect().left;
-  drawAll();
-});
-charts.addEventListener('pointerleave', () => { hoverX = null; drawAll(); });
-window.addEventListener('resize', drawAll);
-if (window.matchMedia) {
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
-}
-
+  post('/time', [t.getFullYear(), t.getMonth() + 1, t.getDate(),
+    t.getHours(), t.getMinutes(), t.getSeconds()].join(','));
+};
+window.addEventListener('resize', drawMap);
+drawMap();
 poll();
 </script>
 </body>

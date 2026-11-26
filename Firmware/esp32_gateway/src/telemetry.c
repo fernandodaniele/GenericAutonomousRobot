@@ -12,6 +12,7 @@
 #define EVENT_COUNT     8
 #define US_COUNT        3
 #define LINK_TIMEOUT_MS 1500
+#define MAP_COUNT       16    // Puntos del mapa guardados (la web los pide cada 250 ms)
 
 typedef struct {
     char status;              // O = valido, F = libre, C = pegado, N = sin eco
@@ -55,11 +56,21 @@ typedef struct {
     unsigned long rows;       // Filas de datos generadas
 } System_t;
 
+/* Linea MAP de la STM32: pose estimada y ultima lectura de cada ultrasonido */
+typedef struct {
+    uint32_t id;              // 0 = vacio
+    unsigned long ms;
+    long x_mm, y_mm, theta_mrad;
+    long range_mm[US_COUNT];  // Frente, izquierda, derecha (9999 = libre, 0 = sin lectura)
+} MapPoint_t;
+
 static SemaphoreHandle_t lock;
 static Sample_t latest;
 static System_t system_status;
 static Event_t events[EVENT_COUNT];
 static uint32_t next_event_id = 1;
+static MapPoint_t map_points[MAP_COUNT];
+static uint32_t next_map_id = 1;
 
 void Telemetry_Init(void) {
     lock = xSemaphoreCreateMutex();
@@ -152,6 +163,18 @@ static void handle_event(const char *line) {
     xSemaphoreGive(lock);
 }
 
+static void handle_map(const char *line) {
+    MapPoint_t p;
+    if (sscanf(line, "MAP,%lu,%ld,%ld,%ld,%ld,%ld,%ld", &p.ms, &p.x_mm, &p.y_mm, &p.theta_mrad,
+               &p.range_mm[0], &p.range_mm[1], &p.range_mm[2]) != 7) {
+        return;   // Linea cortada o con ruido: se descarta
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    p.id = next_map_id++;
+    map_points[p.id % MAP_COUNT] = p;
+    xSemaphoreGive(lock);
+}
+
 bool Telemetry_HandleLine(const char *line) {
     if (strncmp(line, "TEL,", 4) == 0) {
         handle_sample(line);
@@ -165,18 +188,24 @@ bool Telemetry_HandleLine(const char *line) {
         handle_system(line);
         return true;
     }
-    return strncmp(line, "MAP,", 4) == 0;
+    if (strncmp(line, "MAP,", 4) == 0) {
+        handle_map(line);
+        return true;
+    }
+    return false;
 }
 
 size_t Telemetry_ToJson(char *out, size_t size) {
     Sample_t s;
     System_t sys;
     Event_t copy[EVENT_COUNT];
+    MapPoint_t map_copy[MAP_COUNT];
 
     xSemaphoreTake(lock, portMAX_DELAY);
     s = latest;
     sys = system_status;
     memcpy(copy, events, sizeof(copy));
+    memcpy(map_copy, map_points, sizeof(map_copy));
     xSemaphoreGive(lock);
 
     // El estado de modulos llega cada 1 s: se da por viejo a los 3 s
@@ -212,11 +241,26 @@ size_t Telemetry_ToJson(char *out, size_t size) {
     if (used > 0 && (size_t)used < size) {
         used += snprintf(out + used, size - used,
             "],\"sys\":{\"ok\":%s,\"sd\":%d,\"sdType\":%d,\"sdLines\":%lu,"
-            "\"clock\":%s,\"date\":[%d,%d,%d,%d,%d,%d],\"rows\":%lu}}",
+            "\"clock\":%s,\"date\":[%d,%d,%d,%d,%d,%d],\"rows\":%lu},\"map\":[",
             sys_fresh ? "true" : "false", sys.sd, sys.sd_type, sys.sd_lines,
             sys.clock_ok ? "true" : "false",
             sys.date[0], sys.date[1], sys.date[2], sys.date[3], sys.date[4], sys.date[5],
             sys.rows);
+    }
+    /* Puntos del mapa: [id, ms, x_mm, y_mm, theta_mrad, frente, izq, der] */
+    first = true;
+    for (int i = 0; i < MAP_COUNT && used > 0 && (size_t)used < size; i++) {
+        const MapPoint_t *p = &map_copy[i];
+        if (p->id == 0) {
+            continue;
+        }
+        used += snprintf(out + used, size - used, "%s[%lu,%lu,%ld,%ld,%ld,%ld,%ld,%ld]",
+                         first ? "" : ",", (unsigned long)p->id, p->ms, p->x_mm, p->y_mm,
+                         p->theta_mrad, p->range_mm[0], p->range_mm[1], p->range_mm[2]);
+        first = false;
+    }
+    if (used > 0 && (size_t)used < size) {
+        used += snprintf(out + used, size - used, "]}");
     }
 
     return (used > 0 && (size_t)used < size) ? (size_t)used : 0;

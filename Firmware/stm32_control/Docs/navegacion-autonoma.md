@@ -53,7 +53,7 @@ quieto.
 
 1. Avanza recto a `NAV_SPEED_PCT` (50 %), manteniendo el rumbo con el giroscopio.
 2. Frena cuando el frente baja de `NAV_OBSTACLE_MM` (30 cm; con la latencia de lectura
-   debería quedar cerca de 25 cm) o al cumplir `NAV_STEP_MS` (2 s). Con `NAV_STEP_MS = 0`
+   debería quedar cerca de 25 cm) o al cumplir `NAV_STEP_MS` (3 s), o si un lateral queda a 5 cm o menos. Con `NAV_STEP_MS = 0`
    corre hasta la pared.
 3. Espera quieto (`NAV_BRAKE_MS` + `NAV_SETTLE_MS`) y toma `NAV_SCAN_SAMPLES` lecturas por
    ultrasonido, con un máximo de `NAV_SCAN_MAX_MS`. Usa la mediana.
@@ -74,16 +74,24 @@ Con `NAV_SCAN_STUCK_MAX` (6) maniobras seguidas sin avanzar 1,5 s, entra en `FAU
 (4 destellos, salir con `STOP` y `START`).
 
 ### Giros por ángulo
-Los giros de 90° **terminan por ángulo**, leído del rumbo del MPU6050, no por tiempo. Se cortan
-en `NAV_TURN_ANGLE_MDEG - NAV_TURN_COAST_MDEG` (84°) porque al frenar el robot sigue girando
-un poco. `NAV_TURN_TIMEOUT_MS` (5 s) es solo un tope de seguridad. Por eso
-`NAV_REQUIRE_IMU = 1`: sin MPU6050 el robot queda en `FAULT` (1 destello) y retoma solo
-cuando el IMU vuelve a responder.
+Los giros **terminan por ángulo**, leído del rumbo del MPU6050. **Prueba actual:** en el panel,
+un giro físico de ~90° se lee como ~10°, así que se usa `NAV_TURN_ANGLE_MDEG = 10000` (10° leídos)
+con `NAV_TURN_COAST_MDEG = 0`. Si el factor se confirma con las 10 lecturas a cada lado, hay que
+corregir la escala del giroscopio y volver a 90°. `NAV_TURN_TIMEOUT_MS` (1 s) es el tope de
+seguridad: a ~60°/s, un giro que no corta por ángulo no queda dando vueltas.
+`NAV_REQUIRE_IMU = 1`: sin MPU6050 el robot queda en `FAULT` (1 destello).
 
-- **Escaneo:** pivota sobre la rueda interna (queda quieta) y la externa va al 50 %
-  (`NAV_TURN_PIVOT_RAD_S`).
-- **Precipicio:** gira en el lugar, cada rueda al 50 % en sentidos opuestos
-  (`NAV_TURN_SPOT_RAD_S`). Pivotando, la rueda externa avanzaría hacia el borde.
+- **Todos los giros (escaneo y precipicio) son en el lugar:** cada rueda al 50 % en sentidos
+  opuestos (`NAV_TURN_SPOT_RAD_S`). Se dejó el pivote: barría un círculo de radio B y chocaba
+  de costado.
+
+### Límite lateral
+- Avanzando, si un lateral está a `NAV_SIDE_STOP_MM` (5 cm) o menos, frena y pasa directo a SCAN.
+- Girando, si el lateral del lado del giro o el frente quedan a 5 cm o menos, corta el giro y
+  vuelve a medir.
+- Se usa la **última lectura propia** de cada lateral (se miden 1 de cada 4 fotos).
+- `NAV_SIDE_BAD_MAX` (3) lecturas seguidas sin eco o `TOO_CLOSE` de un lateral también cuentan
+  como bloqueado (`us_bad_count` en `task_sensors`).
 
 ### Precipicio
 Retrocede lo mínimo (`NAV_CLIFF_BACKUP_MS`), gira 90° en el lugar alejándose del sensor que vio

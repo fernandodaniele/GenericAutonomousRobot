@@ -20,6 +20,8 @@ static NavInput_t base(uint32_t t)
     in.front = NAV_RANGE_FAR;
     in.left = NAV_RANGE_FAR;
     in.right = NAV_RANGE_FAR;
+    in.left_last = NAV_RANGE_FAR;
+    in.right_last = NAV_RANGE_FAR;
     in.imu_ok = true;
     return in;
 }

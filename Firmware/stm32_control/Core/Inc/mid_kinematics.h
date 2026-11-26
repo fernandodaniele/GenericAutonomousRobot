@@ -14,9 +14,11 @@
 #define ROBOT_WHEEL_BASE 200.0f  // Distance between wheels in mm
 
 // Velocidad de rueda (mm/s) que se obtiene con PWM maximo (MOTOR_MAX_SPEED).
-// Medido a ojo por el grupo: a lo sumo 50 mm/s. Ajustar si se mide mejor.
+// Conjunto nuevo: motor Pololu de 100 RPM con rueda de 40 mm de diametro:
+//   100 RPM / 60 * pi * 40 mm = 209 mm/s (nominal, sin carga).
+// Con carga va a ser algo menor: ajustar si se mide en el piso.
 #ifndef ROBOT_MAX_WHEEL_SPEED_MMS
-#define ROBOT_MAX_WHEEL_SPEED_MMS 50.0f
+#define ROBOT_MAX_WHEEL_SPEED_MMS 209.0f
 #endif
 
 // PWM proporcional a la velocidad pedida, con un piso de arranque: una rueda

@@ -7,9 +7,9 @@
  *  Maquina de estados de la navegacion autonoma (sin HAL). Recorrido por tramos:
  *
  *  IDLE           -> SCAN            : comando START (mide antes de moverse)
- *  FORWARD        -> SCAN            : frente a menos de NAV_OBSTACLE_MM o termino el tramo (NAV_STEP_MS)
+ *  FORWARD        -> SCAN            : frente a menos de NAV_OBSTACLE_MM, lateral a NAV_SIDE_STOP_MM o menos, o termino el tramo (NAV_STEP_MS)
  *  SCAN           -> FORWARD         : frente con NAV_CLEAR_MM libres
- *  SCAN (gira 90 grados en pivote) -> FORWARD : sigue por el lateral que tenia NAV_SIDE_FREE_MM libres
+ *  SCAN (gira 90 grados en el lugar) -> FORWARD : sigue por el lateral que tenia NAV_SIDE_FREE_MM libres
  *  SCAN (retrocede)        -> SCAN    : ningun lado libre, vuelve a medir
  *  SCAN           -> FAULT           : NAV_SCAN_BACKUP_MAX retrocesos o NAV_SCAN_STUCK_MAX maniobras sin avanzar
  *  FORWARD/SCAN   -> CLIFF_RECOVER   : algun TCRT5000 ve precipicio en NAV_CLIFF_CONFIRM lecturas seguidas
@@ -75,6 +75,33 @@ static bool front_blocked(const NavInput_t* in)
         return true;
     }
     return (in->front == NAV_RANGE_OK) && (in->front_mm < NAV_OBSTACLE_MM);
+}
+
+/* Lateral bloqueado: ultima lectura propia a NAV_SIDE_STOP_MM o menos, o
+ * NAV_SIDE_BAD_MAX lecturas seguidas sin eco o demasiado cerca */
+static bool side_blocked(NavRange_t last, uint32_t mm, uint8_t bad)
+{
+    if (bad >= NAV_SIDE_BAD_MAX) {
+        return true;
+    }
+    return (last == NAV_RANGE_OK) && (mm <= NAV_SIDE_STOP_MM);
+}
+
+static bool left_blocked(const NavInput_t* in)
+{
+    return side_blocked(in->left_last, in->left_last_mm, in->left_bad_count);
+}
+
+static bool right_blocked(const NavInput_t* in)
+{
+    return side_blocked(in->right_last, in->right_last_mm, in->right_bad_count);
+}
+
+/* Frente pegado (para cortar un giro) */
+static bool front_too_close(const NavInput_t* in)
+{
+    return (in->front == NAV_RANGE_TOO_CLOSE)
+        || ((in->front == NAV_RANGE_OK) && (in->front_mm <= NAV_SIDE_STOP_MM));
 }
 
 /* true si el tramo recto llego a su tope de tiempo (NAV_STEP_MS = 0: sin tope) */
@@ -290,14 +317,18 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
             }
             break;
         case SPHASE_TURN:
-            if (turn_done(ctx, in, t)) {
+            if (front_too_close(in)
+                || (ctx->turn_dir > 0 && left_blocked(in))
+                || (ctx->turn_dir < 0 && right_blocked(in))) {
+                /* Algo pegado mientras gira: cortar y volver a medir */
+                set_brake(out);
+                enter_phase(ctx, SPHASE_SETTLE, now);
+            } else if (turn_done(ctx, in, t)) {
                 set_brake(out);
                 enter_phase(ctx, SPHASE_TURN_SETTLE, now);
             } else {
-                /* Pivote: v = w * B / 2 deja la rueda interna en 0
-                 * (v_int = v - w*B/2 = 0) y la externa en w * B. */
-                out->angular_rads = (float)ctx->turn_dir * NAV_TURN_PIVOT_RAD_S;
-                out->linear_mms = NAV_TURN_PIVOT_RAD_S * NAV_WHEEL_BASE_MM * 0.5f;
+                /* En el lugar: ruedas en sentidos opuestos */
+                out->angular_rads = (float)ctx->turn_dir * NAV_TURN_SPOT_RAD_S;
             }
             break;
         case SPHASE_TURN_SETTLE:
@@ -492,8 +523,10 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
                 ctx->scan_streak = 0;
                 ctx->backup_streak = 0;
             }
-            /* Tramo recto: frena si aparece algo de frente o al cumplir el tope */
-            if (front_blocked(in) || step_done(ctx, now)) {
+            /* Tramo recto: frena si aparece algo de frente, un lateral a
+             * NAV_SIDE_STOP_MM o menos, o al cumplir el tope */
+            if (front_blocked(in) || left_blocked(in) || right_blocked(in)
+                || step_done(ctx, now)) {
                 enter_state(ctx, NAV_STATE_SCAN, now);
                 set_brake(&out);
             } else {

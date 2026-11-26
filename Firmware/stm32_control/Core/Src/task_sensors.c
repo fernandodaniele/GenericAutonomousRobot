@@ -270,6 +270,13 @@ static void SensorsTask(void* argument)
             snap.us_status[turn] = st;
             snap.us_last_status[turn] = st;
             snap.dist_mm[turn] = mm;
+            if (st == ULTRASOUND_STATUS_NO_ECHO || st == ULTRASOUND_STATUS_TOO_CLOSE) {
+                if (snap.us_bad_count[turn] < UINT8_MAX) {
+                    snap.us_bad_count[turn]++;
+                }
+            } else {
+                snap.us_bad_count[turn] = 0;
+            }
 
             /* 4. Lógica especial con Promedio Móvil si es el turno del SENSOR FRONTAL */
             if (turn == ULTRASOUND_FRONT) {

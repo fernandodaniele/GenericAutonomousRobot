@@ -193,6 +193,12 @@ static void NavTask(void* argument)
             in.right = to_range(snap.us_status[ULTRASOUND_RIGHT]);
             in.right_mm = snap.dist_mm[ULTRASOUND_RIGHT];
             in.front_no_echo_count = snap.front_no_echo_count;
+            in.left_last = to_range(snap.us_last_status[ULTRASOUND_LEFT]);
+            in.left_last_mm = snap.dist_mm[ULTRASOUND_LEFT];
+            in.left_bad_count = snap.us_bad_count[ULTRASOUND_LEFT];
+            in.right_last = to_range(snap.us_last_status[ULTRASOUND_RIGHT]);
+            in.right_last_mm = snap.dist_mm[ULTRASOUND_RIGHT];
+            in.right_bad_count = snap.us_bad_count[ULTRASOUND_RIGHT];
             in.sensor_ms = snap.timestamp_ms;
             in.cliff_left = snap.cliff_left;
             in.cliff_right = snap.cliff_right;
@@ -226,8 +232,8 @@ static void NavTask(void* argument)
             int16_t target_r = 0;
             Kinematics_Compute(rc, &target_l, &target_r);
             if (out.angular_rads != 0.0f && out.state == NAV_STATE_SCAN) {
-                /* Giro del escaneo (pivote, termina por angulo): sin rampa,
-                 * la rueda externa arranca directo al PWM pedido */
+                /* Giro del escaneo (en el lugar, termina por angulo): sin
+                 * rampa, las dos ruedas arrancan directo al PWM pedido */
                 pwm_l = target_l;
                 pwm_r = target_r;
             } else {

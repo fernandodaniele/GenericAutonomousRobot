@@ -33,7 +33,8 @@ extern "C" {
 
 /* ===== Velocidades =====
  * Avance, retroceso y giros van a NAV_SPEED_PCT % del PWM maximo. Con
- * ROBOT_MAX_WHEEL_SPEED_MMS = 50 (nominal), 50 % = 25 mm/s = PWM 4200.
+ * ROBOT_MAX_WHEEL_SPEED_MMS = 209 (Pololu 100 RPM, rueda 40 mm), 50 % =
+ * ~105 mm/s = PWM 4200.
  * Para cambiar la velocidad alcanza con tocar NAV_SPEED_PCT. */
 #ifndef NAV_SPEED_PCT
 #define NAV_SPEED_PCT          50
@@ -48,13 +49,9 @@ extern "C" {
 #ifndef NAV_BACK_SPEED_MMS
 #define NAV_BACK_SPEED_MMS     (-NAV_FWD_SPEED_MMS)
 #endif
-/* Giro del escaneo en pivote: la rueda interna queda quieta y la externa va a
- * NAV_FWD_SPEED_MMS (w * B = v). */
-#ifndef NAV_TURN_PIVOT_RAD_S
-#define NAV_TURN_PIVOT_RAD_S   (NAV_FWD_SPEED_MMS / NAV_WHEEL_BASE_MM)
-#endif
-/* Giro del precipicio en el lugar: cada rueda a NAV_FWD_SPEED_MMS en sentidos
- * opuestos (w * B / 2 = v). */
+/* Todos los giros (escaneo y precipicio) son en el lugar: cada rueda a
+ * NAV_FWD_SPEED_MMS en sentidos opuestos (w * B / 2 = v). Ya no se usa el
+ * pivote sobre una rueda (barria un circulo de radio B y chocaba de costado). */
 #ifndef NAV_TURN_SPOT_RAD_S
 #define NAV_TURN_SPOT_RAD_S    (2.0f * NAV_FWD_SPEED_MMS / NAV_WHEEL_BASE_MM)
 #endif
@@ -75,6 +72,17 @@ extern "C" {
 #ifndef NAV_SIDE_FREE_MM
 #define NAV_SIDE_FREE_MM       400
 #endif
+/* Limite lateral (un solo valor): un lateral a esto o menos frena el avance y
+ * pasa directo a SCAN, y corta un giro hacia ese lado. Tambien corta el giro
+ * si el frente esta a esto o menos. */
+#ifndef NAV_SIDE_STOP_MM
+#define NAV_SIDE_STOP_MM       50
+#endif
+/* Lecturas propias seguidas de un lateral sin eco o demasiado cerca (TOO_CLOSE)
+ * con las que ese lado cuenta como bloqueado. */
+#ifndef NAV_SIDE_BAD_MAX
+#define NAV_SIDE_BAD_MAX       3
+#endif
 
 /* ===== Tiempos ===== */
 #ifndef NAV_BRAKE_MS
@@ -90,7 +98,7 @@ extern "C" {
  * frena y vuelve a medir aunque el frente siga libre.
  * 0 = sin tope (corre hasta la pared). */
 #ifndef NAV_STEP_MS
-#define NAV_STEP_MS            2000
+#define NAV_STEP_MS            3000   // antes 2000: +50 % de avance por tramo
 #endif
 /* Retroceso del escaneo con todo bloqueado (atras no hay sensores).
  * PROVISORIO: verificar en el piso. */
@@ -105,17 +113,23 @@ extern "C" {
 
 /* ===== Giros por angulo (giroscopio) ===== */
 #ifndef NAV_TURN_ANGLE_MDEG
-#define NAV_TURN_ANGLE_MDEG    90000   // 90 grados
+/* PRUEBA: en el panel, un giro fisico de ~90 grados se lee como ~10 grados.
+ * Se usa 10 grados leidos como referencia del giro "de 90" para ver como
+ * responde; si el factor se confirma, corregir la escala del giroscopio y
+ * volver a 90000. */
+#define NAV_TURN_ANGLE_MDEG    10000
 #endif
 /* Al frenar el robot sigue girando un poco: el giro se corta en
  * NAV_TURN_ANGLE_MDEG - NAV_TURN_COAST_MDEG (84 grados). Ajustar con lo que
  * se pasa de 90 en el campo "rumbo" de la telemetria. */
 #ifndef NAV_TURN_COAST_MDEG
-#define NAV_TURN_COAST_MDEG    6000
+#define NAV_TURN_COAST_MDEG    0       // sin descuento mientras se prueba con 10 grados
 #endif
-/* Tope de seguridad de un giro: >= 1,5 veces lo que tarda uno normal */
+/* Tope de seguridad de un giro. A ~60 grados/s (en el lugar al 50 %) 90
+ * grados reales tardan ~1,5 s nominal; se limita a 1 s para que un giro que no
+ * corta por angulo no quede dando vueltas. */
 #ifndef NAV_TURN_TIMEOUT_MS
-#define NAV_TURN_TIMEOUT_MS    5000
+#define NAV_TURN_TIMEOUT_MS    1000
 #endif
 
 /* ===== Precipicio ===== */
@@ -240,6 +254,14 @@ typedef struct {
     NavRange_t right;
     uint32_t right_mm;
     uint8_t front_no_echo_count;
+    /* Ultima lectura propia de cada lateral (se conserva entre fotos: los
+     * laterales se miden 1 de cada 4 fotos) y lecturas malas seguidas */
+    NavRange_t left_last;
+    uint32_t left_last_mm;
+    uint8_t left_bad_count;
+    NavRange_t right_last;
+    uint32_t right_last_mm;
+    uint8_t right_bad_count;
     uint32_t sensor_ms;            // Marca de tiempo de la foto de sensores (una lectura nueva la cambia)
     bool cliff_left;
     bool cliff_right;

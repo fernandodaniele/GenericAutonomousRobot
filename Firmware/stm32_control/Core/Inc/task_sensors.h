@@ -39,6 +39,7 @@ typedef struct {
     UltrasoundStatus_t us_status[ULTRASOUND_COUNT];// Motivo de la lectura de este ciclo (solo el sensor de turno)
     UltrasoundStatus_t us_last_status[ULTRASOUND_COUNT]; // Motivo de la ultima lectura de cada sensor
     uint8_t front_no_echo_count;                   // Lecturas frontales sin eco seguidas
+    uint8_t us_bad_count[ULTRASOUND_COUNT];        // Lecturas propias seguidas NO_ECHO o TOO_CLOSE
     uint16_t tcrt_left;                            // Valor ADC filtrado
     uint16_t tcrt_right;
     bool cliff_left;                               // TCRT izquierdo ve precipicio

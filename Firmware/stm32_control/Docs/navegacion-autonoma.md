@@ -32,61 +32,74 @@ por UART (o desde el celular a través del ESP32) siguen funcionando. Con
 - **PWM proporcional** (`mid_kinematics.c`): cada rueda recibe un PWM proporcional a los
   mm/s pedidos, con un piso de arranque `ROBOT_WHEEL_MIN_PWM`: la rueda recibe 0 o al
   menos ese valor. Reemplaza el antiguo todo/nada al 80 %.
+- **Velocidad única `NAV_SPEED_PCT`** (50 %): avance, retroceso y giros van a ese
+  porcentaje del PWM máximo (PWM 4200). Para cambiarla se toca solo esa macro. El piso
+  `ROBOT_WHEEL_MIN_PWM` (3000, provisorio) tiene que quedar por debajo de 4200; si no,
+  el 50 % no se respeta.
 - **Pausa `NAV_SETTLE_MS`** (300 ms, con freno) entre frenar y retroceder, entre
-  retroceder y girar y entre girar y avanzar, en la evasiva y en la recuperación del
-  borde. El lado de giro de la evasiva se decide al final de la pausa, con el robot
-  quieto.
+  retroceder y girar y entre girar y avanzar.
 
 ### Reglas de la máquina de estados
 | Regla | Parámetro |
 |---|---|
 | El borde se confirma con 3 lecturas nuevas seguidas antes de `CLIFF_RECOVER` | `NAV_CLIFF_CONFIRM` |
-| 3 `CLIFF_RECOVER` seguidos sin 2 s de `FORWARD` → `FAULT` frenado + `EVT,FAULT` | `NAV_CLIFF_LOOP_MAX`, `NAV_CLIFF_LOOP_RESET_MS` |
+| 3 `CLIFF_RECOVER` seguidos sin 1,5 s de `FORWARD` → `FAULT` frenado + `EVT,FAULT` | `NAV_CLIFF_LOOP_MAX`, `NAV_CLIFF_LOOP_RESET_MS` |
 | Ese `FAULT` **no se recupera solo**: hay que mandar `STOP` y luego `START` (o resetear la placa). LD3 da 4 destellos | — |
-| Giro de esquina de más de 8 s → rutina evasiva | `NAV_CORNER_MAX_MS` |
 | Lado sin eco al elegir el giro: 0 = espacio libre 0 (actual), 1 = "desconocido" | `NAV_NO_ECHO_AS_UNKNOWN` |
 
-### Ultrasonido derecho sin eco
-Con el derecho siempre en `NO_ECHO`, la evasiva sin pared gira **siempre a la izquierda**
-(el lado sin eco cuenta como espacio 0). Se dejó así a propósito: la izquierda es el lado
-del único TCRT5000 activo (`SENSORS_USE_TCRT_RIGHT = 0`), y el derecho no tiene ni
-ultrasonido ni infrarrojo. La opción `NAV_NO_ECHO_AS_UNKNOWN = 1` permite girar a la
-derecha cuando la izquierda tiene menos de `NAV_CLEAR_MM`, pero eso lleva al robot hacia
-el lado ciego: activarla solo cuando el ultrasonido derecho funcione.
+### Recorrido por tramos
+No hay giros "buscando" espacio libre: cada decisión se toma **una sola vez**, con el robot
+quieto.
 
-### Avance por tramos con escaneo
-Con `NAV_STEP_SCAN_ENABLE = 1` (valor actual, `Core/Inc/mid_nav.h`) el robot recorre por
-tramos en lugar de seguir la pared. Con `0` vuelve el seguimiento de pared continuo.
-
-1. Avanza recto `NAV_STEP_MM` (500 mm). Sin encoders, el tramo se controla por tiempo
-   con `NAV_STEP_MS`. Si aparece algo a menos de `NAV_OBSTACLE_MM`, corta el tramo.
-2. Frena, espera quieto (`NAV_BRAKE_MS` + `NAV_SETTLE_MS`) y toma `NAV_SCAN_SAMPLES`
-   lecturas por ultrasonido, con un máximo de `NAV_SCAN_MAX_MS`. Usa la mediana.
-3. Decide con esas medianas:
+1. Avanza recto a `NAV_SPEED_PCT` (50 %), manteniendo el rumbo con el giroscopio.
+2. Frena cuando el frente baja de `NAV_OBSTACLE_MM` (30 cm; con la latencia de lectura
+   debería quedar cerca de 25 cm) o al cumplir `NAV_STEP_MS` (2 s). Con `NAV_STEP_MS = 0`
+   corre hasta la pared.
+3. Espera quieto (`NAV_BRAKE_MS` + `NAV_SETTLE_MS`) y toma `NAV_SCAN_SAMPLES` lecturas por
+   ultrasonido, con un máximo de `NAV_SCAN_MAX_MS`. Usa la mediana.
+4. Decide con esas medianas:
 
 | Frente | Lados | Acción |
 |---|---|---|
-| Libre (≥ `NAV_CLEAR_MM`) | Cualquiera | Otro tramo recto |
-| Bloqueado | Uno libre | Dobla 90° hacia ese lado |
-| Bloqueado | Ambos libres | Dobla 90° a la derecha |
-| Bloqueado | Ambos bloqueados | Retrocede unos 10 cm |
+| Libre (≥ `NAV_CLEAR_MM`, 35 cm) | Cualquiera | Otro tramo recto, con el mismo rumbo de referencia |
+| Bloqueado | Derecha con ≥ `NAV_SIDE_FREE_MM` (40 cm) | Pivota 90° a la derecha y sigue recto |
+| Bloqueado | Solo la izquierda con ≥ 40 cm | Pivota 90° a la izquierda y sigue recto |
+| Bloqueado | Ninguno | Retrocede `NAV_SCAN_BACK_MS` y vuelve a medir (hasta 5 veces, luego `FAULT`) |
 
-Después de doblar o retroceder vuelve a medir antes de moverse. El borde (TCRT5000)
-sigue teniendo prioridad y al terminar la recuperación también vuelve a medir. El frontal
-sin ninguna lectura válida cuenta como bloqueado: el robot no avanza a ciegas.
+El colchón entre 30 y 35 cm evita que vuelva a frenar apenas arranca. Después de retroceder
+vuelve a medir antes de moverse. El frontal sin ninguna lectura válida cuenta como bloqueado:
+el robot no avanza a ciegas. Un lateral sin eco no cuenta como libre.
 
-Con `NAV_SCAN_STUCK_MAX` (6) maniobras seguidas sin avanzar 2 s, entra en `FAULT` frenado
+Con `NAV_SCAN_STUCK_MAX` (6) maniobras seguidas sin avanzar 1,5 s, entra en `FAULT` frenado
 (4 destellos, salir con `STOP` y `START`).
 
-**Calibrar en el piso:** medir cuánto recorre realmente y ajustar `NAV_STEP_MS`, y lo mismo
-con `NAV_SCAN_TURN_MS` para que el giro sea de 90°. Los valores actuales salen de las
-velocidades nominales, que no están medidas.
+### Giros por ángulo
+Los giros de 90° **terminan por ángulo**, leído del rumbo del MPU6050, no por tiempo. Se cortan
+en `NAV_TURN_ANGLE_MDEG - NAV_TURN_COAST_MDEG` (84°) porque al frenar el robot sigue girando
+un poco. `NAV_TURN_TIMEOUT_MS` (5 s) es solo un tope de seguridad. Por eso
+`NAV_REQUIRE_IMU = 1`: sin MPU6050 el robot queda en `FAULT` (1 destello) y retoma solo
+cuando el IMU vuelve a responder.
 
-### Giro del escaneo
-El giro de 90° dura `NAV_SCAN_TURN_MS` = 350 ms (medido en el robot) y **pivotea** sobre la
-rueda interna: esa rueda queda quieta y solo avanza la externa (`NAV_SCAN_PIVOT = 1`;
-con 0 gira en el lugar con las dos ruedas). En este giro no se aplica la rampa de
-arranque suave, para que la rueda externa alcance a moverse en los 350 ms.
+- **Escaneo:** pivota sobre la rueda interna (queda quieta) y la externa va al 50 %
+  (`NAV_TURN_PIVOT_RAD_S`).
+- **Precipicio:** gira en el lugar, cada rueda al 50 % en sentidos opuestos
+  (`NAV_TURN_SPOT_RAD_S`). Pivotando, la rueda externa avanzaría hacia el borde.
+
+### Precipicio
+Retrocede lo mínimo (`NAV_CLIFF_BACKUP_MS`), gira 90° en el lugar alejándose del sensor que vio
+el borde (con los dos, a la derecha) y vuelve a medir. Si al terminar el giro sigue viendo
+borde, retrocede otra vez. Los ultrasonidos laterales no se usan para elegir el lado: no ven
+el vacío y lo leen como espacio libre.
+
+### Valores provisorios a verificar en el piso
+| Macro | Valor | Qué medir |
+|---|---|---|
+| `ROBOT_WHEEL_MIN_PWM` | 3000 | Las dos ruedas arrancan desde parado con ese PWM; si no, subirlo (máximo 4000) |
+| `NAV_CLIFF_BACKUP_MS` | 600 ms | El mínimo con el que ambos TCRT quedan sobre el piso, más ~1 cm |
+| `NAV_SCAN_BACK_MS` | 1000 ms | Retroceso con todo bloqueado (atrás no hay sensores) |
+| `NAV_TURN_COAST_MDEG` | 6000 | Cuántos grados se pasa de 90° en el campo `rumbo` |
+| `NAV_TURN_TIMEOUT_MS` | 5000 ms | 1,5 veces lo que tarda un giro normal de 90° |
+| `NAV_OBSTACLE_MM` | 300 mm | Que pare a ~25 cm de la pared (medir con regla) |
 
 ### Arranque suave
 Desde parado, cada rueda salta a `TASK_NAV_SOFT_START_PWM` (4000, por debajo del PWM con el
@@ -104,10 +117,12 @@ los demás sensores. Esto cubre el caso de un módulo que recibe alimentación d
 por ejemplo desde la batería de los motores. Si se conecta con el robot en marcha, calibra en
 movimiento y el rumbo puede desviarse: conviene encender todo junto.
 
-En cada tramo recto el robot mantiene el rumbo que tenía al decidir avanzar: corrige
-proporcionalmente al desvío (`NAV_HEADING_KP`), con un máximo de `NAV_HEADING_MAX_RAD_S` y sin
-corregir desvíos menores a 0,5°. Si el MPU6050 deja de responder, el tramo sigue sin
-corrección. Se desactiva con `NAV_HEADING_HOLD = 0`.
+En cada tramo recto el robot mantiene un rumbo de referencia que se toma al recibir `START`,
+al salir de `FAULT` y al terminar cada giro. Cortar y retomar un tramo **no** lo cambia: así el
+desvío de una frenada no se vuelve el nuevo "recto". Corrige proporcionalmente al desvío
+(`NAV_HEADING_KP`), con un máximo de `NAV_HEADING_MAX_RAD_S` y sin corregir desvíos menores a
+2° (`NAV_HEADING_DEADBAND_MDEG`). Si el MPU6050 deja de responder, el robot entra en `FAULT`.
+La corrección se desactiva con `NAV_HEADING_HOLD = 0`.
 
 **Verificar el signo antes de la primera prueba:** con el robot quieto, girarlo a mano hacia
 la izquierda (antihorario visto desde arriba). En el panel, "Giro Z" tiene que dar positivo y
@@ -141,7 +156,7 @@ usarlo, el panel indica la causa en "Giro Z":
 | Apagado | `IDLE` |
 | Fijo | `FORWARD` |
 | Parpadeo lento | `SCAN`: midiendo o maniobrando entre tramos |
-| Parpadeo rápido | Evasiva o borde |
+| Parpadeo rápido | Recuperándose de un borde |
 | 1 / 2 / 3 / 4 destellos | `FAULT`: MPU6050 / frontal sin eco / sensores sin actualizar / atrapado (bucle de retroceso o de escaneo) |
 
 ## Panel web de verificación
@@ -169,10 +184,10 @@ que la rueda realmente gire.
 2. **Calibrar TCRT5000 en el granito**: medir el ADC del izquierdo sobre el piso y
    mirando al vacío y ajustar `TCRT_THRESHOLD_CLIFF` (hoy 2000, provisorio) con la regla
    de `drv_TCRT5000.c`.
-3. **Calibrar `ROBOT_WHEEL_MIN_PWM`** (hoy 4200): el menor PWM con el que ambas ruedas
-   arrancan desde parado en el granito.
-4. **Medir `ROBOT_MAX_WHEEL_SPEED_MMS`** (hoy 50 mm/s, a ojo) y la distancia de frenado a
-   35 mm/s; ajustar `NAV_FWD_SPEED_MMS` para que frene antes de 5 cm.
+3. **Calibrar `ROBOT_WHEEL_MIN_PWM`** (hoy 3000, provisorio): el menor PWM con el que ambas
+   ruedas arrancan desde parado en el granito. Tiene que quedar por debajo de 4200.
+4. **Verificar los valores provisorios** de la tabla de "Recorrido por tramos" (retrocesos,
+   giro de 90° y distancia de parada).
 5. Revisar el signo del giro (`angular > 0` = izquierda) con las ruedas en el aire.
 6. Medir el heap libre con `xPortGetFreeHeapSize()`.
 
@@ -180,7 +195,7 @@ que la rueda realmente gire.
 
 ```bash
 cd Firmware/stm32_control
-gcc -Wall -Wextra -DNAV_STEP_SCAN_ENABLE=0 -ICore/Inc Test/test_mid_nav.c Core/Src/mid_nav.c -o test_mid_nav && ./test_mid_nav
+gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav.c Core/Src/mid_nav.c -o test_mid_nav && ./test_mid_nav
 gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav_scan.c Core/Src/mid_nav.c -o test_mid_nav_scan && ./test_mid_nav_scan
 ```
 
@@ -188,10 +203,10 @@ gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav_scan.c Core/Src/mid_nav.c -o test
 
 | Regla | Parámetro | Valor |
 |---|---|---|
-| Frena de frente si no tiene 40 cm libres | `NAV_OBSTACLE_MM` | 400 mm (antes 180) |
-| Frente libre para avanzar | `NAV_CLEAR_MM` | 400 mm (antes 250) |
+| Frena de frente con menos de 30 cm (para parar cerca de 25 cm) | `NAV_OBSTACLE_MM` | 300 mm (antes 400) |
+| Frente libre para avanzar | `NAV_CLEAR_MM` | 350 mm (antes 400) |
 | Lado libre para doblar; prefiere la **derecha**, si no la izquierda. Gira 90° y sigue de largo por ese lado | `NAV_SIDE_FREE_MM` | 400 mm |
-| Sin lado libre: retrocede ~10 cm y vuelve a medir, hasta 5 veces; luego `FAULT` | `NAV_SCAN_BACKUP_MAX` | 5 |
+| Sin lado libre: retrocede y vuelve a medir, hasta 5 veces; luego `FAULT` | `NAV_SCAN_BACKUP_MAX` | 5 |
 | Distancia de seguridad en `main.c` | `SAFE_DISTANCE` | 300 mm (antes 200) |
 
 Un lateral sin eco no cuenta como libre; un eco largo sí. Falta medir la distancia de

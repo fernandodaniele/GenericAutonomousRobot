@@ -115,7 +115,7 @@ static int16_t ramp(int16_t current, int16_t target)
  *   apagado            -> IDLE (esperando START)
  *   encendido fijo     -> FORWARD
  *   parpadeo lento     -> SCAN (midiendo o maniobrando entre tramos)
- *   parpadeo rapido    -> esquivando obstaculo o precipicio
+ *   parpadeo rapido    -> recuperandose de un precipicio
  *   N destellos + pausa -> FAULT: 1 = MPU6050 no responde,
  *                         2 = ultrasonido frontal sin eco,
  *                         3 = sensores sin actualizar,
@@ -130,7 +130,6 @@ static void status_led(NavState_t state, bool fault_latched, const NavInput_t* i
         case NAV_STATE_SCAN:
             on = ((now / 500u) % 2u) ? GPIO_PIN_SET : GPIO_PIN_RESET;
             break;
-        case NAV_STATE_AVOID_OBSTACLE:
         case NAV_STATE_CLIFF_RECOVER:
             on = ((now / 100u) % 2u) ? GPIO_PIN_SET : GPIO_PIN_RESET;
             break;
@@ -227,8 +226,8 @@ static void NavTask(void* argument)
             int16_t target_r = 0;
             Kinematics_Compute(rc, &target_l, &target_r);
             if (out.angular_rads != 0.0f && out.state == NAV_STATE_SCAN) {
-                /* Giro del escaneo (350 ms): sin rampa, porque con el
-                 * arranque suave la rueda no llegaria a moverse a tiempo */
+                /* Giro del escaneo (pivote, termina por angulo): sin rampa,
+                 * la rueda externa arranca directo al PWM pedido */
                 pwm_l = target_l;
                 pwm_r = target_r;
             } else {

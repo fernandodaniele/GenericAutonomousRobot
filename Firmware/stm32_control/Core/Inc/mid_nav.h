@@ -8,15 +8,16 @@
  *  dependencias de HAL ni de FreeRTOS: se puede compilar y probar en la PC
  *  (ver Test/test_mid_nav.c y Test/test_mid_nav_scan.c).
  *
- *  Modo por defecto (NAV_STEP_SCAN_ENABLE = 1): avanzar recto NAV_STEP_MM,
- *  frenar, medir con el robot quieto y decidir si seguir, doblar o retroceder.
+ *  Recorrido por tramos: avanza recto manteniendo el rumbo con el giroscopio.
+ *  Con el frente a menos de NAV_OBSTACLE_MM (o al cumplir NAV_STEP_MS) frena,
+ *  mide quieto y decide una sola vez: seguir, girar 90 grados en pivote
+ *  (derecha si tiene NAV_SIDE_FREE_MM, si no izquierda) o retroceder y volver
+ *  a medir. Los giros terminan por angulo, leido del MPU6050. No hay giros
+ *  "buscando" espacio libre.
  *
- *  Modo continuo (NAV_STEP_SCAN_ENABLE = 0): seguir la pared a NAV_WALL_MM y
- *  girar en las esquinas; a menos de NAV_OBSTACLE_MM de frente, maniobra
- *  evasiva.
- *
- *  En ambos modos se esquiva el precipicio y se emite una alerta ante un giro
- *  brusco.
+ *  El precipicio tiene prioridad: retrocede lo minimo, gira 90 grados en el
+ *  lugar alejandose del sensor que vio el borde y vuelve a medir. Ante un giro
+ *  brusco se emite una alerta.
  */
 
 #ifndef CORE_INC_MID_NAV_H_
@@ -28,55 +29,56 @@ extern "C" {
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "mid_kinematics.h"   /* solo macros y tipos (ROBOT_MAX_WHEEL_SPEED_MMS, ROBOT_WHEEL_BASE), sin HAL */
 
-/* ===== Parametros (ajustar con la distancia de frenado medida) ===== */
-#ifndef NAV_OBSTACLE_MM
-#define NAV_OBSTACLE_MM        400    // De frente: frena si no tiene 40 cm libres y decide si dobla
+/* ===== Velocidades =====
+ * Avance, retroceso y giros van a NAV_SPEED_PCT % del PWM maximo. Con
+ * ROBOT_MAX_WHEEL_SPEED_MMS = 50 (nominal), 50 % = 25 mm/s = PWM 4200.
+ * Para cambiar la velocidad alcanza con tocar NAV_SPEED_PCT. */
+#ifndef NAV_SPEED_PCT
+#define NAV_SPEED_PCT          50
 #endif
-#ifndef NAV_CLEAR_MM
-#define NAV_CLEAR_MM           400   // Frente libre con 40 cm: termina el giro o la evasiva (plan)
-#endif
-#ifndef NAV_WALL_MM
-#define NAV_WALL_MM            100   // Distancia a mantener con la pared
-#endif
-#ifndef NAV_WALL_ACQUIRE_MM
-#define NAV_WALL_ACQUIRE_MM    300   // Toma como pared lo que vea a menos de esto
-#endif
-#ifndef NAV_WALL_DEADBAND_MM
-#define NAV_WALL_DEADBAND_MM   20     // Dentro de +/- esto va recto
-#endif
-#ifndef NAV_WALL_MAX_RAD_S
-#define NAV_WALL_MAX_RAD_S     0.1f   // Correccion al seguir la pared: frena la rueda interna (25 mm/s, sobre el piso de PWM)
-#endif
-#ifndef NAV_CORNER_RAD_S
-#define NAV_CORNER_RAD_S       0.35f  // Giro en esquinas (35 mm/s por rueda)
-#endif
-#ifndef NAV_EVADE_BACK_MS
-#define NAV_EVADE_BACK_MS      1150  // Retroceso de la evasiva (misma distancia a 35 mm/s)
-#endif
-#ifndef NAV_EVADE_TURN_MIN_MS
-#define NAV_EVADE_TURN_MIN_MS  1450  // Giro minimo antes de volver a avanzar (mismo angulo a 0,35 rad/s)
-#endif
-#ifndef NAV_EVADE_TURN_MAX_MS
-#define NAV_EVADE_TURN_MAX_MS  5000  // Si sigue bloqueado: retrocede otra vez
+/* Distancia entre ruedas (mm): la misma que usa la cinematica */
+#ifndef NAV_WHEEL_BASE_MM
+#define NAV_WHEEL_BASE_MM      ROBOT_WHEEL_BASE
 #endif
 #ifndef NAV_FWD_SPEED_MMS
-#define NAV_FWD_SPEED_MMS      35.0f    // ~70 % de PWM (proporcional, ver mid_kinematics.h)
+#define NAV_FWD_SPEED_MMS      (ROBOT_MAX_WHEEL_SPEED_MMS * NAV_SPEED_PCT / 100.0f)
 #endif
 #ifndef NAV_BACK_SPEED_MMS
-#define NAV_BACK_SPEED_MMS     (-35.0f)
+#define NAV_BACK_SPEED_MMS     (-NAV_FWD_SPEED_MMS)
 #endif
-#ifndef NAV_TURN_RAD_S
-#define NAV_TURN_RAD_S         0.35f    // 35 mm/s por rueda en el giro
+/* Giro del escaneo en pivote: la rueda interna queda quieta y la externa va a
+ * NAV_FWD_SPEED_MMS (w * B = v). */
+#ifndef NAV_TURN_PIVOT_RAD_S
+#define NAV_TURN_PIVOT_RAD_S   (NAV_FWD_SPEED_MMS / NAV_WHEEL_BASE_MM)
 #endif
+/* Giro del precipicio en el lugar: cada rueda a NAV_FWD_SPEED_MMS en sentidos
+ * opuestos (w * B / 2 = v). */
+#ifndef NAV_TURN_SPOT_RAD_S
+#define NAV_TURN_SPOT_RAD_S    (2.0f * NAV_FWD_SPEED_MMS / NAV_WHEEL_BASE_MM)
+#endif
+
+/* ===== Distancias ===== */
+/* De frente: frena con menos de esto. Se pone 30 cm para absorber la latencia
+ * de lectura y parar cerca de 25 cm. */
+#ifndef NAV_OBSTACLE_MM
+#define NAV_OBSTACLE_MM        300
+#endif
+/* Frente libre para arrancar un tramo: 5 cm de colchon sobre NAV_OBSTACLE_MM
+ * para no volver a frenar apenas arranca. */
+#ifndef NAV_CLEAR_MM
+#define NAV_CLEAR_MM           350
+#endif
+/* Un lado cuenta como libre para doblar con al menos esto.
+ * Se prefiere la derecha; si no esta libre, la izquierda. */
+#ifndef NAV_SIDE_FREE_MM
+#define NAV_SIDE_FREE_MM       400
+#endif
+
+/* ===== Tiempos ===== */
 #ifndef NAV_BRAKE_MS
 #define NAV_BRAKE_MS           400
-#endif
-#ifndef NAV_BACKUP_MS
-#define NAV_BACKUP_MS          2150
-#endif
-#ifndef NAV_CLIFF_TURN_MS
-#define NAV_CLIFF_TURN_MS      4300
 #endif
 /* Pausa con freno entre frenar y retroceder, entre retroceder y girar y
  * entre girar y avanzar: el robot queda quieto y los ultrasonidos leen
@@ -84,6 +86,39 @@ extern "C" {
 #ifndef NAV_SETTLE_MS
 #define NAV_SETTLE_MS          300
 #endif
+/* Tope del tramo recto (ms, fijo, no depende de la velocidad): al cumplirlo
+ * frena y vuelve a medir aunque el frente siga libre.
+ * 0 = sin tope (corre hasta la pared). */
+#ifndef NAV_STEP_MS
+#define NAV_STEP_MS            2000
+#endif
+/* Retroceso del escaneo con todo bloqueado (atras no hay sensores).
+ * PROVISORIO: verificar en el piso. */
+#ifndef NAV_SCAN_BACK_MS
+#define NAV_SCAN_BACK_MS       1000
+#endif
+/* Retroceso del precipicio: lo minimo para que ambos TCRT queden sobre el
+ * piso, mas ~1 cm (atras no hay sensores). PROVISORIO: verificar en el piso. */
+#ifndef NAV_CLIFF_BACKUP_MS
+#define NAV_CLIFF_BACKUP_MS    600
+#endif
+
+/* ===== Giros por angulo (giroscopio) ===== */
+#ifndef NAV_TURN_ANGLE_MDEG
+#define NAV_TURN_ANGLE_MDEG    90000   // 90 grados
+#endif
+/* Al frenar el robot sigue girando un poco: el giro se corta en
+ * NAV_TURN_ANGLE_MDEG - NAV_TURN_COAST_MDEG (84 grados). Ajustar con lo que
+ * se pasa de 90 en el campo "rumbo" de la telemetria. */
+#ifndef NAV_TURN_COAST_MDEG
+#define NAV_TURN_COAST_MDEG    6000
+#endif
+/* Tope de seguridad de un giro: >= 1,5 veces lo que tarda uno normal */
+#ifndef NAV_TURN_TIMEOUT_MS
+#define NAV_TURN_TIMEOUT_MS    5000
+#endif
+
+/* ===== Precipicio ===== */
 /* Precipicio confirmado: lecturas de sensores seguidas con borde antes de
  * entrar en CLIFF_RECOVER (evita falsos positivos del granito). */
 #ifndef NAV_CLIFF_CONFIRM
@@ -95,18 +130,19 @@ extern "C" {
 #ifndef NAV_CLIFF_LOOP_MAX
 #define NAV_CLIFF_LOOP_MAX     3
 #endif
+/* Tiene que ser menor que NAV_STEP_MS: si no, un tramo completo nunca
+ * reiniciaria los contadores de maniobras. */
 #ifndef NAV_CLIFF_LOOP_RESET_MS
-#define NAV_CLIFF_LOOP_RESET_MS 2000
+#define NAV_CLIFF_LOOP_RESET_MS 1500
 #endif
-/* Giro de esquina mas largo que esto: pasa a la rutina evasiva */
-#ifndef NAV_CORNER_MAX_MS
-#define NAV_CORNER_MAX_MS      8000
+#if (NAV_STEP_MS > 0) && (NAV_CLIFF_LOOP_RESET_MS >= NAV_STEP_MS)
+#error "NAV_CLIFF_LOOP_RESET_MS tiene que ser menor que NAV_STEP_MS"
 #endif
+
+/* ===== Sensores y fallas ===== */
 /* Lado sin eco al elegir hacia donde girar:
- * 0 = cuenta como espacio libre 0 (actual: con el derecho sin eco gira
- *     siempre a la izquierda, el lado que tiene el unico TCRT activo).
- * 1 = cuenta como "desconocido" (NAV_CLEAR_MM): solo gana el lado medido si
- *     tiene mas que eso. Puede girar hacia el lado sin TCRT ni ultrasonido. */
+ * 0 = cuenta como espacio libre 0 (no dobla hacia un lado sin lectura).
+ * 1 = cuenta como "desconocido" (NAV_CLEAR_MM). */
 #ifndef NAV_NO_ECHO_AS_UNKNOWN
 #define NAV_NO_ECHO_AS_UNKNOWN 0
 #endif
@@ -118,10 +154,11 @@ extern "C" {
 #ifndef NAV_FRONT_NO_ECHO_MAX
 #define NAV_FRONT_NO_ECHO_MAX  3
 #endif
-/* 1 = sin MPU6050 el robot entra en FAULT (lo que pide el plan).
- * 0 = se navega igual sin MPU6050 (solo se pierde la alerta de giro brusco). */
+/* 1 = sin MPU6050 el robot entra en FAULT (1 destello) y retoma solo cuando
+ *     el IMU vuelve a responder: los giros terminan por angulo.
+ * 0 = solo para pruebas: sin IMU los giros terminan por NAV_TURN_TIMEOUT_MS. */
 #ifndef NAV_REQUIRE_IMU
-#define NAV_REQUIRE_IMU        0
+#define NAV_REQUIRE_IMU        1
 #endif
 #ifndef NAV_GYRO_ALERT_DPS
 #define NAV_GYRO_ALERT_DPS     200
@@ -130,40 +167,7 @@ extern "C" {
 #define NAV_ALERT_HOLDOFF_MS   500
 #endif
 
-/* ===== Avance por tramos con escaneo =====
- * 1 = avanza recto NAV_STEP_MM, frena, mide con el robot quieto y decide:
- *     adelante, doblar hacia el lado libre o retroceder.
- * 0 = seguimiento de pared continuo (comportamiento anterior). */
-#ifndef NAV_STEP_SCAN_ENABLE
-#define NAV_STEP_SCAN_ENABLE   1
-#endif
-/* Sin encoders el tramo se mide por tiempo: si el robot no recorre 50 cm,
- * ajustar NAV_STEP_MS con lo medido en el piso. */
-#ifndef NAV_STEP_MM
-#define NAV_STEP_MM            500    // tramo de 50 cm (antes 20 cm)
-#endif
-#ifndef NAV_STEP_MS
-#define NAV_STEP_MS            ((uint32_t)((float)NAV_STEP_MM * 1000.0f / NAV_FWD_SPEED_MMS))
-#endif
-/* Giro de 90 grados del escaneo: duracion medida en el robot (antes 4488 ms,
- * calculados con la velocidad nominal). Ajustar si no da 90 grados. */
-#ifndef NAV_SCAN_TURN_MS
-#define NAV_SCAN_TURN_MS       350
-#endif
-/* 1 = el giro del escaneo pivotea sobre la rueda interna (queda quieta y
- *     solo avanza la externa). 0 = gira en el lugar (las dos ruedas). */
-#ifndef NAV_SCAN_PIVOT
-#define NAV_SCAN_PIVOT         1
-#endif
-/* Distancia entre ruedas (mm), igual a ROBOT_WHEEL_BASE de mid_kinematics.h.
- * Se repite aca para que mid_nav no dependa del driver de motores. */
-#ifndef NAV_WHEEL_BASE_MM
-#define NAV_WHEEL_BASE_MM      200.0f
-#endif
-/* Retroceso con todo bloqueado: unos 10 cm a 35 mm/s (atras no hay sensores) */
-#ifndef NAV_SCAN_BACK_MS
-#define NAV_SCAN_BACK_MS       2857
-#endif
+/* ===== Escaneo (robot quieto) ===== */
 /* Lecturas validas por sensor; se usa la mediana */
 #ifndef NAV_SCAN_SAMPLES
 #define NAV_SCAN_SAMPLES       3
@@ -173,8 +177,18 @@ extern "C" {
 #ifndef NAV_SCAN_MAX_MS
 #define NAV_SCAN_MAX_MS        1200
 #endif
-/* Mantener el rumbo con el MPU6050 en cada tramo recto: el rumbo de referencia
- * es el que tenia al decidir avanzar. Sin IMU el tramo va sin corregir. */
+/* Giros o retrocesos seguidos sin avanzar antes de FAULT (salir con STOP y START) */
+#ifndef NAV_SCAN_STUCK_MAX
+#define NAV_SCAN_STUCK_MAX     6
+#endif
+/* Retrocesos seguidos sin ningun lado libre antes de FAULT */
+#ifndef NAV_SCAN_BACKUP_MAX
+#define NAV_SCAN_BACKUP_MAX    5
+#endif
+
+/* ===== Rumbo recto con el MPU6050 =====
+ * El rumbo de referencia se toma al recibir START, al salir de FAULT y al
+ * terminar cada giro. Cortar y retomar un tramo no lo cambia. */
 #ifndef NAV_HEADING_HOLD
 #define NAV_HEADING_HOLD       1
 #endif
@@ -182,29 +196,15 @@ extern "C" {
 #define NAV_HEADING_KP         1.0f     // rad/s de correccion por radian de desvio
 #endif
 #ifndef NAV_HEADING_MAX_RAD_S
-#define NAV_HEADING_MAX_RAD_S  0.15f    // Correccion maxima (rueda externa a ~50 mm/s)
+#define NAV_HEADING_MAX_RAD_S  0.15f    // Correccion maxima
 #endif
 #ifndef NAV_HEADING_DEADBAND_MDEG
-#define NAV_HEADING_DEADBAND_MDEG 5000  // Desvios menores a 5 grados no se corrigen (antes 0,5)
-#endif
-/* Giros o retrocesos seguidos sin avanzar antes de FAULT (salir con STOP y START) */
-#ifndef NAV_SCAN_STUCK_MAX
-#define NAV_SCAN_STUCK_MAX     6
-#endif
-/* Un lado cuenta como libre para doblar con al menos esto (plan: 40 cm).
- * Se prefiere la derecha; si no esta libre, la izquierda. */
-#ifndef NAV_SIDE_FREE_MM
-#define NAV_SIDE_FREE_MM       NAV_CLEAR_MM
-#endif
-/* Retrocesos seguidos sin camino libre antes de FAULT (plan: 5) */
-#ifndef NAV_SCAN_BACKUP_MAX
-#define NAV_SCAN_BACKUP_MAX    5
+#define NAV_HEADING_DEADBAND_MDEG 2000  // Desvios menores a 2 grados no se corrigen
 #endif
 
 typedef enum {
     NAV_STATE_IDLE = 0,
     NAV_STATE_FORWARD,
-    NAV_STATE_AVOID_OBSTACLE,
     NAV_STATE_CLIFF_RECOVER,
     NAV_STATE_FAULT,
     NAV_STATE_SCAN
@@ -260,14 +260,12 @@ typedef struct {
 typedef struct {
     NavState_t state;
     uint32_t state_enter_ms;
-    uint8_t phase;                 // Sub-fase dentro de AVOID/CLIFF (MPHASE_*)
+    uint8_t phase;                 // Sub-fase dentro de SCAN (SPHASE_*) o CLIFF_RECOVER (MPHASE_*)
     uint32_t phase_enter_ms;
     int8_t turn_dir;               // +1 izquierda, -1 derecha
+    int32_t turn_start_mdeg;       // Rumbo al empezar el giro en curso
     uint32_t last_alert_ms;
     bool alert_armed;
-    int8_t wall_side;              // Pared seguida: +1 izquierda, -1 derecha, 0 ninguna
-    bool corner;                   // Girando en una esquina
-    uint32_t corner_enter_ms;      // Inicio del giro de esquina
     uint32_t last_sensor_ms;       // Ultima foto contada para el borde
     uint8_t cliff_hits;            // Lecturas seguidas con borde
     uint8_t cliff_streak;          // CLIFF_RECOVER seguidos sin avanzar

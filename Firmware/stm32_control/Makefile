@@ -157,7 +157,6 @@ AS_DEFS =
 C_DEFS =  \
 -DUSE_HAL_DRIVER \
 -DSTM32F407xx
--DNAV_WALL_MAX_RAD_S=0.0f
 
 
 # AS includes

@@ -56,6 +56,9 @@ static void enter_state(NavContext_t* ctx, NavState_t s, uint32_t now)
 {
     ctx->state = s;
     ctx->state_enter_ms = now;
+    if (s != NAV_STATE_SCAN) {
+        ctx->close_backup_done = false;   /* termino la maniobra */
+    }
     ctx->phase = 0;
     ctx->phase_enter_ms = now;
 }
@@ -292,9 +295,10 @@ static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* ou
     } else if (right >= NAV_SIDE_FREE_MM || left >= NAV_SIDE_FREE_MM) {
         const int8_t dir = (right >= NAV_SIDE_FREE_MM) ? -1 : 1;   /* prefiere la derecha */
         ctx->backup_streak = 0;
-        if (front <= NAV_FRONT_BACKUP_MM) {
+        if (front <= NAV_FRONT_BACKUP_MM && !ctx->close_backup_done) {
             /* Pegado a la pared: sin lugar para girar en el lugar.
-             * Retrocede un poco y despues gira hacia ese lado. */
+             * Retrocede un poco UNA vez y despues gira hacia ese lado. */
+            ctx->close_backup_done = true;
             ctx->turn_dir = dir;
             enter_phase(ctx, SPHASE_CLOSE_BACKUP, now);
         } else {
@@ -335,7 +339,9 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
             }
             break;
         case SPHASE_TURN:
-            if (front_too_close(ctx)
+            /* Tras el retroceso corto no se corta por el frente: gira y sale
+             * (si no, volvia a medir, retroceder y girar sin fin) */
+            if ((front_too_close(ctx) && !ctx->close_backup_done)
                 || (ctx->turn_dir > 0 && left_blocked(ctx, in))
                 || (ctx->turn_dir < 0 && right_blocked(ctx, in))) {
                 /* Algo pegado mientras gira: cortar y volver a medir */
@@ -475,6 +481,7 @@ void Nav_Init(NavContext_t* ctx)
     ctx->scan_streak = 0;
     ctx->backup_streak = 0;
     ctx->heading_target_mdeg = 0;
+    ctx->close_backup_done = false;
     ctx->front_block_hits = 0;
     ctx->front_close_hits = 0;
     ctx->left_close_hits = 0;

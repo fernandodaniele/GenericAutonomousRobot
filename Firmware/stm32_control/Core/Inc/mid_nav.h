@@ -60,12 +60,12 @@ extern "C" {
 /* De frente: frena con menos de esto. Se pone 30 cm para absorber la latencia
  * de lectura y parar cerca de 25 cm. */
 #ifndef NAV_OBSTACLE_MM
-#define NAV_OBSTACLE_MM        300
+#define NAV_OBSTACLE_MM        200    // antes 300
 #endif
 /* Frente libre para arrancar un tramo: 5 cm de colchon sobre NAV_OBSTACLE_MM
  * para no volver a frenar apenas arranca. */
 #ifndef NAV_CLEAR_MM
-#define NAV_CLEAR_MM           350
+#define NAV_CLEAR_MM           250    // antes 350 (sigue 5 cm sobre NAV_OBSTACLE_MM)
 #endif
 /* Un lado cuenta como libre para doblar con al menos esto.
  * Se prefiere la derecha; si no esta libre, la izquierda. */
@@ -76,7 +76,7 @@ extern "C" {
  * pasa directo a SCAN, y corta un giro hacia ese lado. Tambien corta el giro
  * si el frente esta a esto o menos. */
 #ifndef NAV_SIDE_STOP_MM
-#define NAV_SIDE_STOP_MM       50
+#define NAV_SIDE_STOP_MM       40     // antes 50
 #endif
 /* Lecturas propias seguidas de un lateral sin eco o demasiado cerca (TOO_CLOSE)
  * con las que ese lado cuenta como bloqueado. */
@@ -111,7 +111,7 @@ extern "C" {
  * frena y vuelve a medir aunque el frente siga libre.
  * 0 = sin tope (corre hasta la pared). */
 #ifndef NAV_STEP_MS
-#define NAV_STEP_MS            3000   // antes 2000: +50 % de avance por tramo
+#define NAV_STEP_MS            0      // avance continuo: solo frena por obstaculo (antes 3000)
 #endif
 /* Retroceso del escaneo con todo bloqueado (atras no hay sensores).
  * PROVISORIO: verificar en el piso. */
@@ -120,7 +120,7 @@ extern "C" {
 #endif
 /* Retroceso corto antes de girar cuando el frente esta pegado */
 #ifndef NAV_SCAN_CLOSE_BACK_MS
-#define NAV_SCAN_CLOSE_BACK_MS 300
+#define NAV_SCAN_CLOSE_BACK_MS 150    // antes 300; una sola vez por maniobra
 #endif
 /* Retroceso del precipicio: lo minimo para que ambos TCRT queden sobre el
  * piso, mas ~1 cm (atras no hay sensores). PROVISORIO: verificar en el piso. */
@@ -314,6 +314,7 @@ typedef struct {
     uint8_t scan_streak;           // Giros o retrocesos seguidos sin avanzar
     uint8_t backup_streak;         // Retrocesos seguidos sin ningun lado libre
     int32_t heading_target_mdeg;   // Rumbo a mantener en el tramo recto
+    bool close_backup_done;        // Ya hizo el retroceso corto en esta maniobra
     uint8_t front_block_hits;      // Lecturas de frente seguidas con obstaculo (< NAV_OBSTACLE_MM)
     uint8_t front_close_hits;      // Lecturas de frente seguidas a NAV_SIDE_STOP_MM o menos
     uint8_t left_close_hits;       // Lecturas izquierdas seguidas a NAV_SIDE_STOP_MM o menos

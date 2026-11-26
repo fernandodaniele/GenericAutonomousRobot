@@ -52,21 +52,20 @@ No hay giros "buscando" espacio libre: cada decisión se toma **una sola vez**, 
 quieto.
 
 1. Avanza recto a `NAV_SPEED_PCT` (50 %), manteniendo el rumbo con el giroscopio.
-2. Frena cuando el frente baja de `NAV_OBSTACLE_MM` (30 cm; con la latencia de lectura
-   debería quedar cerca de 25 cm) o al cumplir `NAV_STEP_MS` (3 s), o si un lateral queda a 5 cm o menos. Con `NAV_STEP_MS = 0`
-   corre hasta la pared.
+2. Frena cuando el frente baja de `NAV_OBSTACLE_MM` (20 cm) o si un lateral queda a 4 cm o menos. Avance continuo: `NAV_STEP_MS = 0`, sin tope de
+   tiempo (con un valor en ms vuelve a frenar y medir cada ese tiempo).
 3. Espera quieto (`NAV_BRAKE_MS` + `NAV_SETTLE_MS`) y toma `NAV_SCAN_SAMPLES` lecturas por
    ultrasonido, con un máximo de `NAV_SCAN_MAX_MS`. Usa la mediana.
 4. Decide con esas medianas:
 
 | Frente | Lados | Acción |
 |---|---|---|
-| Libre (≥ `NAV_CLEAR_MM`, 35 cm) | Cualquiera | Otro tramo recto, con el mismo rumbo de referencia |
+| Libre (≥ `NAV_CLEAR_MM`, 25 cm) | Cualquiera | Otro tramo recto, con el mismo rumbo de referencia |
 | Bloqueado | Derecha con ≥ `NAV_SIDE_FREE_MM` (40 cm) | Pivota 90° a la derecha y sigue recto |
 | Bloqueado | Solo la izquierda con ≥ 40 cm | Pivota 90° a la izquierda y sigue recto |
 | Bloqueado | Ninguno | Retrocede `NAV_SCAN_BACK_MS` y vuelve a medir (hasta 5 veces, luego `FAULT`) |
 
-El colchón entre 30 y 35 cm evita que vuelva a frenar apenas arranca. Después de retroceder
+El colchón entre 20 y 25 cm evita que vuelva a frenar apenas arranca. Después de retroceder
 vuelve a medir antes de moverse. El frontal sin ninguna lectura válida cuenta como bloqueado:
 el robot no avanza a ciegas. Un lateral sin eco no cuenta como libre.
 
@@ -86,10 +85,10 @@ seguridad: a ~60°/s, un giro que no corta por ángulo no queda dando vueltas.
   de costado.
 
 ### Límite lateral y filtro de obstáculos
-- Avanzando, si un lateral está a `NAV_SIDE_STOP_MM` (5 cm) o menos, frena y pasa directo a SCAN.
-- Girando, si el lateral del lado del giro o el frente quedan a 5 cm o menos, corta el giro y
+- Avanzando, si un lateral está a `NAV_SIDE_STOP_MM` (4 cm) o menos, frena y pasa directo a SCAN.
+- Girando, si el lateral del lado del giro o el frente quedan a 4 cm o menos, corta el giro y
   vuelve a medir.
-- **Filtro:** todo obstáculo (frente < 30 cm o `TOO_CLOSE`, lateral o frente a 5 cm o menos) tiene
+- **Filtro:** todo obstáculo (frente < 20 cm o `TOO_CLOSE`, lateral o frente a 4 cm o menos) tiene
   que verse en `NAV_OBSTACLE_CONFIRM` (2) lecturas propias seguidas de ese sensor. Una lectura
   suelta (eco fantasma) no frena. Las fotos en que le tocó a otro sensor no suman ni reinician.
 - `NAV_SIDE_BAD_MAX` (10) lecturas seguidas sin eco o `TOO_CLOSE` de un lateral también cuentan
@@ -97,7 +96,8 @@ seguridad: a ~60°/s, un giro que no corta por ángulo no queda dando vueltas.
 
 ### Pegado a la pared
 Si al decidir el frente está a `NAV_FRONT_BACKUP_MM` (10 cm) o menos y hay un lado libre,
-retrocede `NAV_SCAN_CLOSE_BACK_MS` (300 ms), espera quieto y recién ahí gira. Antes giraba
+retrocede `NAV_SCAN_CLOSE_BACK_MS` (150 ms) **una sola vez**, espera quieto y gira; en ese giro
+no se corta por el frente (sí por el lateral), así no vuelve a retroceder sin fin. Antes giraba
 directo, el corte por "frente pegado" frenaba el giro, y tras 6 intentos caía en `FAULT`.
 
 ### Precipicio
@@ -114,7 +114,7 @@ el vacío y lo leen como espacio libre.
 | `NAV_SCAN_BACK_MS` | 1000 ms | Retroceso con todo bloqueado (atrás no hay sensores) |
 | `NAV_TURN_COAST_MDEG` | 6000 | Cuántos grados se pasa de 90° en el campo `rumbo` |
 | `NAV_TURN_TIMEOUT_MS` | 5000 ms | 1,5 veces lo que tarda un giro normal de 90° |
-| `NAV_OBSTACLE_MM` | 300 mm | Que pare a ~25 cm de la pared (medir con regla) |
+| `NAV_OBSTACLE_MM` | 200 mm | Que pare cerca de 20 cm de la pared (medir con regla) |
 
 ### Arranque suave
 Desde parado, cada rueda salta a `TASK_NAV_SOFT_START_PWM` (4000, por debajo del PWM con el
@@ -218,11 +218,11 @@ gcc -Wall -Wextra -ICore/Inc Test/test_mid_nav_scan.c Core/Src/mid_nav.c -o test
 
 | Regla | Parámetro | Valor |
 |---|---|---|
-| Frena de frente con menos de 30 cm (para parar cerca de 25 cm) | `NAV_OBSTACLE_MM` | 300 mm (antes 400) |
+| Frena de frente con menos de 20 cm | `NAV_OBSTACLE_MM` | 200 mm (antes 300) |
 | Frente libre para avanzar | `NAV_CLEAR_MM` | 350 mm (antes 400) |
 | Lado libre para doblar; prefiere la **derecha**, si no la izquierda. Gira 90° y sigue de largo por ese lado | `NAV_SIDE_FREE_MM` | 400 mm |
 | Sin lado libre: retrocede y vuelve a medir, hasta 5 veces; luego `FAULT` | `NAV_SCAN_BACKUP_MAX` | 5 |
 | Distancia de seguridad en `main.c` | `SAFE_DISTANCE` | 300 mm (antes 200) |
 
 Un lateral sin eco no cuenta como libre; un eco largo sí. Falta medir la distancia de
-frenado a `NAV_FWD_SPEED_MMS` para confirmar que el robot se detiene antes de 30 cm.
+frenado a `NAV_FWD_SPEED_MMS` para confirmar que el robot se detiene antes de 20 cm.

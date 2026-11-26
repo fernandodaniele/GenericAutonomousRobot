@@ -516,6 +516,27 @@ int main(void)
     }
     sim(false);
 
+    /* Pegado y el frente sigue pegado mientras gira (caso del video): retrocede
+     * UNA sola vez, no corta el giro por el frente y termina por angulo */
+    sim(true);
+    start(&c);
+    {
+        uint32_t e;
+        int backups = 0;
+        bool was_back = false, faulted = false;
+        in = walls(30, 100, 900);
+        for (e = 0; e < 6000u && sim_heading > -TURN_CUT_MDEG; e += STEP_MS) {
+            o = step(&c, in);
+            const bool back = (o.linear_mms == NAV_BACK_SPEED_MMS);
+            if (back && !was_back) backups++;
+            was_back = back;
+            if (o.state == NAV_STATE_FAULT) faulted = true;
+        }
+        CHECK(backups == 1 && !faulted);
+        CHECK(sim_heading <= -TURN_CUT_MDEG);
+    }
+    sim(false);
+
     printf(fails ? "%d pruebas fallaron\n" : "Todas las pruebas del escaneo pasaron\n", fails);
     return fails ? 1 : 0;
 }

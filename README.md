@@ -54,6 +54,8 @@ node Firmware/esp32_gateway/Tests/w2/run_js.js
 
 Los runners, las fuentes de prueba y los mocks están en [Tests de STM32](Firmware/stm32_control/Tests) y [Tests de ESP32](Firmware/esp32_gateway/Tests). STM32 también dispone de runners para sensores, odometría e IMU. El [workflow de GitHub Actions](.github/workflows/main_ci.yml) compila ambos firmwares en pushes a `master` y pull requests dirigidos a `master`. Las regresiones anteriores se ejecutan por separado.
 
+Para programar ambas placas, consultar el [procedimiento de grabación del firmware](Docs/Pruebas/AUTO3_GIRO_SUPERVISADO.md#programacion-y-validacion-posteriores-requieren-revision-previa).
+
 ## Uso y límites
 
 Conectarse a la red local `GenericRobot` y abrir la dirección IP del punto de acceso. El panel distingue la disponibilidad del servidor ESP32 de la comunicación con STM32. Iniciar la exploración requiere una solicitud explícita y supervisión presencial.

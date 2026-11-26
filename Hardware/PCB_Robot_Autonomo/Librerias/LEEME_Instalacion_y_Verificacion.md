@@ -16,9 +16,9 @@
 
 Las tablas activas incluyen `Robot_Interruptores`, con el símbolo
 `SW_MTS102_A2_SPDT` y la huella `SW_MTS102_A2_PCB_P4.70mm`.
-La PCB usa esa huella para SW1, mientras que el esquema conserva un símbolo
-SPST de dos pines con una asignación de huella distinta. Revisar la correspondencia
-de pines y pads antes de sincronizar la PCB desde el esquema. El filtro por
+El esquema y la PCB asignan esa misma huella a SW1. Queda por verificar la
+correspondencia entre los dos pines del símbolo SPST y los tres pads físicos de
+la huella SPDT antes de sincronizar la PCB desde el esquema. El filtro por
 cantidad de pines puede ocultar una huella de tres pads para un símbolo de dos.
 
 La huella se basó en la MTS-102-A2. La compatibilidad con la STM102-CI comercial

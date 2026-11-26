@@ -1,6 +1,6 @@
 # Arquitectura de GenericAutonomousRobot
 
-Referencia del firmware consolidado en `Grupo-1`, commit `132dcbb`. Los documentos de cada etapa conservan los parámetros y resultados de su momento.
+`132dcbb` es la base funcional previamente validada en `Grupo-1`. El commit posterior `d22adf6` corrigió el texto del estado `EXPLORAR` en la telemetría de navegación. Esa corrección sigue sin compilación ni pruebas de ejecución. Los documentos de cada etapa conservan los parámetros y resultados de su momento.
 
 ## Responsabilidades
 

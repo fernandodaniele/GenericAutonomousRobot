@@ -59,6 +59,7 @@ static void enter_state(NavContext_t* ctx, NavState_t s, uint32_t now)
     if (s != NAV_STATE_SCAN) {
         ctx->close_backup_done = false;   /* termino la maniobra */
     }
+    ctx->heading_saturated = false;       /* la correccion de rumbo arranca de cero */
     ctx->phase = 0;
     ctx->phase_enter_ms = now;
 }
@@ -193,14 +194,19 @@ static void begin_run(NavContext_t* ctx, const NavInput_t* in, uint32_t now)
 {
     enter_state(ctx, run_state(), now);
     ctx->heading_target_mdeg = in->heading_mdeg;
+    ctx->heading_retarget = false;
 }
 
-/* Empieza un giro: guarda el rumbo de partida (el robot esta quieto) */
+/* Empieza un giro: guarda el rumbo de partida (el robot esta quieto).
+ * El rumbo de referencia viejo deja de valer: si el giro se corta antes de
+ * terminar y despues el frente queda libre, se avanza con el rumbo nuevo en
+ * vez de intentar deshacer el giro. */
 static void begin_turn(NavContext_t* ctx, const NavInput_t* in, uint8_t phase,
                        int8_t dir, uint32_t now)
 {
     ctx->turn_dir = dir;
     ctx->turn_start_mdeg = in->heading_mdeg;
+    ctx->heading_retarget = true;
     enter_phase(ctx, phase, now);
 }
 
@@ -252,22 +258,40 @@ static uint32_t scan_median(const NavContext_t* ctx, uint8_t sensor)
 }
 
 /* Correccion de rumbo en el tramo recto: proporcional al desvio respecto del
- * rumbo de referencia (+ = girar a la izquierda). */
-static float heading_hold(const NavContext_t* ctx, const NavInput_t* in)
+ * rumbo de referencia (+ = girar a la izquierda). Si la correccion queda al
+ * tope mas de NAV_HEADING_SAT_MAX_MS, el rumbo actual pasa a ser el "recto"
+ * (si no, un rumbo mal medido deja al robot dando vueltas en circulo). */
+static float heading_hold(NavContext_t* ctx, const NavInput_t* in, uint32_t now)
 {
     if (!NAV_HEADING_HOLD || !in->imu_ok) {
+        ctx->heading_saturated = false;
         return 0.0f;
     }
     const int32_t err_mdeg = ctx->heading_target_mdeg - in->heading_mdeg;
     if (err_mdeg > -NAV_HEADING_DEADBAND_MDEG && err_mdeg < NAV_HEADING_DEADBAND_MDEG) {
+        ctx->heading_saturated = false;
         return 0.0f;
     }
     float w = NAV_HEADING_KP * (float)err_mdeg * (0.0174533f / 1000.0f);
+    bool at_limit = false;
     if (w > NAV_HEADING_MAX_RAD_S) {
         w = NAV_HEADING_MAX_RAD_S;
+        at_limit = true;
     }
     if (w < -NAV_HEADING_MAX_RAD_S) {
         w = -NAV_HEADING_MAX_RAD_S;
+        at_limit = true;
+    }
+    if (!at_limit) {
+        ctx->heading_saturated = false;
+    } else if (!ctx->heading_saturated) {
+        ctx->heading_saturated = true;
+        ctx->heading_sat_since_ms = now;
+    } else if (elapsed(now, ctx->heading_sat_since_ms) >= NAV_HEADING_SAT_MAX_MS) {
+        /* Rumbo no confiable: se deja de corregir y se sigue recto desde aca */
+        ctx->heading_target_mdeg = in->heading_mdeg;
+        ctx->heading_saturated = false;
+        return 0.0f;
     }
     return w;
 }
@@ -284,6 +308,13 @@ static void scan_decide(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* ou
 
     if (front >= NAV_CLEAR_MM) {
         ctx->backup_streak = 0;
+        if (ctx->heading_retarget) {
+            /* Hubo un giro (quizas cortado a la mitad): el rumbo actual es el
+             * "recto". Sin giro se mantiene la referencia (corrige el desvio
+             * de un corte). */
+            ctx->heading_target_mdeg = in->heading_mdeg;
+            ctx->heading_retarget = false;
+        }
         enter_state(ctx, NAV_STATE_FORWARD, now);
         return;
     }
@@ -372,6 +403,7 @@ static void scan_step(NavContext_t* ctx, const NavInput_t* in, NavOutput_t* out,
             if (t >= NAV_SETTLE_MS) {
                 enter_state(ctx, NAV_STATE_FORWARD, now);
                 ctx->heading_target_mdeg = in->heading_mdeg;
+                ctx->heading_retarget = false;
                 out->brake = false;
                 out->linear_mms = NAV_FWD_SPEED_MMS;
             }
@@ -490,6 +522,9 @@ void Nav_Init(NavContext_t* ctx)
     ctx->scan_streak = 0;
     ctx->backup_streak = 0;
     ctx->heading_target_mdeg = 0;
+    ctx->heading_retarget = false;
+    ctx->heading_saturated = false;
+    ctx->heading_sat_since_ms = 0;
     ctx->close_backup_done = false;
     ctx->maneuver_dir = 0;
     ctx->front_block_hits = 0;
@@ -592,7 +627,7 @@ NavOutput_t Nav_Step(NavContext_t* ctx, const NavInput_t* in)
                 set_brake(&out);
             } else {
                 out.linear_mms = NAV_FWD_SPEED_MMS;
-                out.angular_rads = heading_hold(ctx, in);
+                out.angular_rads = heading_hold(ctx, in, now);
             }
             break;
 

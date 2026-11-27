@@ -232,6 +232,14 @@ extern "C" {
 #ifndef NAV_HEADING_DEADBAND_MDEG
 #define NAV_HEADING_DEADBAND_MDEG 2000  // Desvios menores a 2 grados no se corrigen
 #endif
+/* Correccion al tope (NAV_HEADING_MAX_RAD_S) durante mas de esto: el rumbo
+ * medido no es confiable (deriva del giroscopio, eje inclinado, salto al
+ * frenar). Se toma el rumbo actual como "recto" en vez de seguir girando:
+ * sin este limite el robot puede quedar dando vueltas en circulo.
+ * Con el giroscopio bien, 10 grados de desvio se corrigen en ~0,2 s al tope. */
+#ifndef NAV_HEADING_SAT_MAX_MS
+#define NAV_HEADING_SAT_MAX_MS 1500
+#endif
 
 typedef enum {
     NAV_STATE_IDLE = 0,
@@ -314,6 +322,9 @@ typedef struct {
     uint8_t scan_streak;           // Giros o retrocesos seguidos sin avanzar
     uint8_t backup_streak;         // Retrocesos seguidos sin ningun lado libre
     int32_t heading_target_mdeg;   // Rumbo a mantener en el tramo recto
+    bool heading_retarget;         // Hubo un giro en este SCAN: al avanzar, el rumbo actual es el "recto"
+    bool heading_saturated;        // La correccion de rumbo esta al tope
+    uint32_t heading_sat_since_ms; // Desde cuando esta al tope
     int8_t maneuver_dir;           // Sentido de giro de la maniobra en curso (0 = libre de elegir)
     bool close_backup_done;        // Ya hizo el retroceso corto en esta maniobra
     uint8_t front_block_hits;      // Lecturas de frente seguidas con obstaculo (< NAV_OBSTACLE_MM)

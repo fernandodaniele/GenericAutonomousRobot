@@ -176,6 +176,16 @@ int main(void)
     o = run(&c, in, SCAN_TOTAL_MS + STEP_MS);
     CHECK(o.state == NAV_STATE_FORWARD && o.angular_rads < 0.0f);   /* corrige hacia 0 */
 
+    /* Correccion al tope mas de NAV_HEADING_SAT_MAX_MS (rumbo mal medido):
+     * deja de corregir y el rumbo actual pasa a ser el "recto" (sin esto el
+     * robot quedaba dando vueltas en circulo) */
+    o = run(&c, in, NAV_HEADING_SAT_MAX_MS - 10 * STEP_MS);
+    CHECK(o.state == NAV_STATE_FORWARD && o.angular_rads == -NAV_HEADING_MAX_RAD_S);
+    o = run(&c, in, 12 * STEP_MS);
+    CHECK(o.state == NAV_STATE_FORWARD && o.angular_rads == 0.0f && o.linear_mms == NAV_FWD_SPEED_MMS);
+    in.heading_mdeg = 10000 + 5000; o = step(&c, in);
+    CHECK(o.angular_rads < 0.0f);                                  /* corrige respecto de la nueva referencia */
+
     /* Umbral para arrancar: con NAV_CLEAR_MM - 10 de frente no avanza */
     start(&c);
     o = run(&c, walls(NAV_CLEAR_MM - 10, 100, 100), SCAN_TOTAL_MS + 4 * STEP_MS);
@@ -240,6 +250,22 @@ int main(void)
     step(&c, walls(NAV_OBSTACLE_MM - 10, 900, 900));
     o = step(&c, walls(NAV_OBSTACLE_MM - 10, 900, 900));
     CHECK(o.state == NAV_STATE_SCAN && o.brake);
+    sim(false);
+
+    /* Giro cortado a la mitad (lateral pegado) y despues frente libre: avanza
+     * con el rumbo nuevo como "recto", sin intentar deshacer el giro */
+    sim(true);
+    start(&c);
+    o = run_until_turning(&c, walls(200, 900, 100), SCAN_TOTAL_MS + 200);
+    CHECK(o.state == NAV_STATE_SCAN && o.angular_rads > 0.0f);
+    o = step(&c, walls(200, 900, 100));
+    o = step(&c, walls(200, 30, 100));
+    o = step(&c, walls(200, 30, 100));                             /* izquierda pegada confirmada */
+    CHECK(o.state == NAV_STATE_SCAN && o.brake);
+    CHECK(sim_heading > 0 && sim_heading < TURN_CUT_MDEG);         /* giro parcial */
+    o = run(&c, walls(900, 900, 900), SCAN_TOTAL_MS + 2 * STEP_MS);
+    CHECK(o.state == NAV_STATE_FORWARD && o.linear_mms == NAV_FWD_SPEED_MMS);
+    CHECK(o.angular_rads == 0.0f);                                 /* no vuelve hacia el rumbo viejo */
     sim(false);
 
     /* Sin cambio de rumbo, el giro se corta por NAV_TURN_TIMEOUT_MS */
